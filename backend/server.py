@@ -41,11 +41,12 @@ from auth import (
     issue_session_cookie,
     verify_session,
 )
+from checkpoint_registry import (
+    CHECKPOINT_UNASSIGNED,
+    checkpoint_batch_for,
+)
 from checkpoints import compute_checkpoints
 from constants import (
-    CHECKPOINT_NEW12,
-    CHECKPOINT_NEW36,
-    CHECKPOINT_OLD36,
     DUP_EXACT_DUPLICATE,
     DUP_NEW,
     FROZEN_COLLECTOR_SHA256,
@@ -230,15 +231,13 @@ def _persist_raw_path(src: Path, qa_run_id: str) -> Path:
     return dest
 
 
-def _guess_checkpoint(filename: str, session_id: str | None) -> str | None:
-    lower = (filename + " " + (session_id or "")).lower()
-    if "old36" in lower or "old-36" in lower or "old_36" in lower:
-        return CHECKPOINT_OLD36
-    if "new36" in lower or "new-36" in lower or "new_36" in lower:
-        return CHECKPOINT_NEW36
-    if "new12" in lower or "new-12" in lower or "new_12" in lower:
-        return CHECKPOINT_NEW12
-    return None
+def _auto_checkpoint(session_id: str | None) -> str:
+    """Auto-assign the checkpoint batch label from the frozen NEW36 registry.
+
+    Explicitly does NOT infer from filename or timestamp: only exact
+    membership in the frozen list matters. Unknown ids -> UNASSIGNED.
+    """
+    return checkpoint_batch_for(session_id)
 
 
 def _process_source(
@@ -277,9 +276,13 @@ def _process_source(
         db.add(session_row)
         db.flush()
     session_row.last_seen_at = datetime.now(timezone.utc).isoformat()
-    checkpoint_hint = checkpoint_hint_override or _guess_checkpoint(filename, report.session_id)
-    if checkpoint_hint and not session_row.checkpoint_hint:
-        session_row.checkpoint_hint = checkpoint_hint
+    checkpoint_hint = checkpoint_hint_override or _auto_checkpoint(report.session_id)
+    # Always set the batch label - never leave it null, so the Registry
+    # UI clearly shows UNASSIGNED for anything outside the frozen NEW36.
+    if checkpoint_hint_override:
+        session_row.checkpoint_hint = checkpoint_hint_override
+    elif not session_row.checkpoint_hint or session_row.checkpoint_hint == CHECKPOINT_UNASSIGNED:
+        session_row.checkpoint_hint = checkpoint_hint or CHECKPOINT_UNASSIGNED
 
     # 5. Create immutable QA run
     qa_run = QARun(
@@ -309,6 +312,9 @@ def _process_source(
         trades_file_count=report.fields.get("trades_file_count"),
         parquet_total=report.fields.get("parquet_total"),
         parquet_magic_status=report.fields.get("parquet_magic_status"),
+        sync_sequence_status=report.fields.get("sync_sequence_status"),
+        books_sequence_status=report.fields.get("books_sequence_status"),
+        trades_sequence_status=report.fields.get("trades_sequence_status"),
         missed_ticks=report.fields.get("missed_ticks"),
         theoretical_ticks=report.fields.get("theoretical_ticks"),
         missed_tick_pct=report.fields.get("missed_tick_pct"),

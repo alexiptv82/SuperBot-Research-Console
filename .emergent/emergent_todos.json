@@ -1,62 +1,54 @@
 [
   {
-    "content": "Phase 2: Backend - SQLAlchemy models (sessions, qa_runs, audit_log, raw_files)",
+    "content": "Explore backend: DB config, tests, QA engine, parquet validation, models",
     "status": "completed"
   },
   {
-    "content": "Phase 2: Backend - Auth (password gate, signed session)",
+    "content": "Diagnose root cause of 41-session contamination",
     "status": "completed"
   },
   {
-    "content": "Phase 2: Backend - Upload endpoint with ZIP security + SHA256 + dedup",
+    "content": "Install pyarrow (add to requirements.txt)",
     "status": "completed"
   },
   {
-    "content": "Phase 2: Backend - Deterministic QA engine (ZIP/collector/manifest/dataset/parquet/reconnects)",
+    "content": "Backup Preview SQLite DB",
     "status": "completed"
   },
   {
-    "content": "Phase 2: Backend - Tolerant manifest parser with alias registry, UNRESOLVED on missing",
+    "content": "Implement TEST vs RUNTIME DB isolation (env guard + hardened conftest + move root scripts)",
     "status": "completed"
   },
   {
-    "content": "Phase 2: Backend - FrozenAnalysisEngine stub (NOT_CONFIGURED)",
+    "content": "Clean runtime DB: keep only session 20260911T040213Z_43a798b7",
     "status": "completed"
   },
   {
-    "content": "Phase 2: Backend - Checkpoint logic (OLD36/NEW12/TOTAL48/NEW36/TOTAL72)",
+    "content": "Add regression test: tests cannot touch runtime DB",
     "status": "completed"
   },
   {
-    "content": "Phase 2: Backend - Reports export (JSON/CSV/MD) + Audit log endpoints",
+    "content": "Create checkpoint_registry.py (12 NEW36 IDs, NEW12 fixed subset, OLD36=36.0)",
     "status": "completed"
   },
   {
-    "content": "Phase 2: Pytest §14.2 with synthetic fixtures (14 scenarios)",
+    "content": "Implement all-Parquet validation (PAR1 head+tail + metadata + sequence per file)",
     "status": "completed"
   },
   {
-    "content": "Phase 2: Frontend - Design tokens, index.css, App.css cleanup, fonts",
+    "content": "Rewrite checkpoints.py: nominal 3.0h math + telemetry",
     "status": "completed"
   },
   {
-    "content": "Phase 2: Frontend - Login gate + auth context + AppShell (sidebar + topbar)",
+    "content": "Wire auto NEW36 tagging in server.py (remove filename heuristic)",
     "status": "completed"
   },
   {
-    "content": "Phase 2: Frontend - Overview, Upload, Registry, Detail, Reports, Checkpoints, Policy, Audit pages",
+    "content": "Re-run retained real ZIP; verify final verdict + parquet counts",
     "status": "completed"
   },
   {
-    "content": "Phase 3: Dockerfile + README + .env.example (Railway-ready)",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 2: All user stories covered in Development and testing",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 2: End to End Testing using Testing Agent",
+    "content": "Run full pytest suite + write final report",
     "status": "completed"
   }
 ]

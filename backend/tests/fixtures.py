@@ -14,7 +14,30 @@ from dataclasses import dataclass
 from constants import FROZEN_COLLECTOR_SHA256
 
 PAR1 = b"PAR1"
-MINI_PARQUET = PAR1 + b"x" * 32 + PAR1  # 40 bytes; head + trailer magic
+
+
+def _build_valid_parquet_bytes() -> bytes:
+    """Build a real, footer-valid Parquet blob using pyarrow.
+
+    We used to hand-craft bytes with just PAR1 magic at head/tail. The
+    all-files validator now enforces that pyarrow can parse the footer
+    metadata, so the fixture must produce a real Parquet payload.
+    """
+    import io as _io
+
+    import pyarrow as _pa
+    import pyarrow.parquet as _pq
+
+    tbl = _pa.table({"x": _pa.array([1], type=_pa.int64())})
+    sink = _io.BytesIO()
+    _pq.write_table(tbl, sink)
+    return sink.getvalue()
+
+
+VALID_PARQUET = _build_valid_parquet_bytes()
+# Kept as an alias for legacy fixture consumers - now points at a real
+# parquet blob so PyArrow footer parsing succeeds.
+MINI_PARQUET = VALID_PARQUET
 
 
 @dataclass
@@ -65,12 +88,12 @@ def build_zip(opts: BuildOptions) -> bytes:
             if opts.missing_dir == dir_name:
                 return
             for i in range(count):
-                body = MINI_PARQUET if not corrupt else b"NOT_PARQUET"
+                body = VALID_PARQUET if not corrupt else b"NOT_PARQUET"
                 zf.writestr(f"{dir_name}/part-{i:03d}.parquet", body)
             if dup and count > 0:
                 # writestr does not deduplicate; adding same name twice yields
                 # two entries with identical name (real ZIPs allow this).
-                zf.writestr(f"{dir_name}/part-000.parquet", MINI_PARQUET)
+                zf.writestr(f"{dir_name}/part-000.parquet", VALID_PARQUET)
 
         add("sync_grid_100ms", opts.sync_grid_files, opts.duplicate_part, opts.corrupt_parquet)
         add("normalized_books", opts.books_files, False, opts.corrupt_parquet)

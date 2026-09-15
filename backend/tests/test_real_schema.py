@@ -17,6 +17,7 @@ import io
 import json
 import zipfile
 
+from fixtures import VALID_PARQUET
 from manifest_parser import (
     CRITICAL_FIELDS,
     parse_manifest_from_source,
@@ -63,7 +64,7 @@ _SUMMARY = {
 }
 
 PAR1 = b"PAR1"
-MINI_PARQUET = PAR1 + b"x" * 32 + PAR1
+MINI_PARQUET = VALID_PARQUET
 
 
 def _build_real_shape_zip(

@@ -277,21 +277,79 @@ def run_qa(source: ZipSource, original_filename: str) -> QAReport:
     report.fields["parquet_total"] = sum(counts.values())
     verdict = _combine(verdict, dataset_status)
 
-    # 6. Parquet magic checks (lightweight, first 3 files per dir) ---------
-    parquet_status = VERDICT_PASS
-    parquet_detail: list[str] = []
-    for d in DATASET_DIRS:
-        files = [e for e in list_dir_entries(inspection, d) if e.name.endswith(".parquet")]
-        for e in files[:3]:  # cap to keep it cheap
-            head, tail = read_parquet_magic(source, e.name)
-            if not (head and tail):
-                parquet_status = _combine(parquet_status, VERDICT_FAIL)
-                report.failure_reasons.append(f"parquet magic missing: {e.name}")
-                parquet_detail.append(f"BAD:{e.name}")
-            else:
-                parquet_detail.append(f"OK:{e.name}")
-    _record(report, "parquet", parquet_status, "; ".join(parquet_detail) or "no parquet checked")
+    # 6. Parquet ALL-files validation --------------------------------------
+    # Per project directive: every parquet entry must be structurally
+    # validated (head+tail PAR1 magic, pyarrow footer metadata) and the
+    # sequence numbering per dataset dir must be contiguous with no
+    # duplicates. Sampling is NOT sufficient for milestone accounting.
+    from parquet_validator import parquet_overall_status, validate_all_parquet
+
+    pq_result = validate_all_parquet(source)
+    parquet_status = parquet_overall_status(pq_result)
+
+    parquet_detail = (
+        f"total={pq_result.parquet_files_total} "
+        f"magic_pass={pq_result.parquet_magic_passed}/"
+        f"{pq_result.parquet_magic_checked} "
+        f"meta_pass={pq_result.parquet_metadata_passed}/"
+        f"{pq_result.parquet_metadata_checked} "
+        f"gaps={pq_result.parquet_sequence_gaps} "
+        f"dupes={pq_result.parquet_duplicate_parts}"
+    )
+
+    _record(
+        report,
+        "parquet",
+        parquet_status,
+        parquet_detail,
+        pq_result.as_dict(),
+    )
+
+    if parquet_status == VERDICT_FAIL:
+        if pq_result.parquet_magic_failed:
+            report.failure_reasons.append(
+                f"parquet magic failed on {pq_result.parquet_magic_failed} file(s)"
+            )
+        if pq_result.parquet_metadata_failed:
+            report.failure_reasons.append(
+                f"parquet footer metadata failed on {pq_result.parquet_metadata_failed} file(s)"
+            )
+        for d, per_dir in pq_result.per_dir.items():
+            if d in DATASET_DIRS and not per_dir.sequence_ok:
+                report.failure_reasons.append(
+                    f"parquet sequence broken in {d}: {per_dir.sequence_detail}"
+                )
+        if pq_result.parquet_files_total == 0:
+            report.failure_reasons.append("no parquet files present")
+
+    # Expose new deterministic counters at the top-level fields dict so
+    # they end up in QARun.checks + reports for auditability.
     report.fields["parquet_magic_status"] = parquet_status
+    report.fields["parquet_files_total"] = pq_result.parquet_files_total
+    report.fields["parquet_magic_checked"] = pq_result.parquet_magic_checked
+    report.fields["parquet_magic_passed"] = pq_result.parquet_magic_passed
+    report.fields["parquet_magic_failed"] = pq_result.parquet_magic_failed
+    report.fields["parquet_metadata_checked"] = pq_result.parquet_metadata_checked
+    report.fields["parquet_metadata_passed"] = pq_result.parquet_metadata_passed
+    report.fields["parquet_metadata_failed"] = pq_result.parquet_metadata_failed
+    report.fields["parquet_sequence_gaps"] = pq_result.parquet_sequence_gaps
+    report.fields["parquet_duplicate_parts"] = pq_result.parquet_duplicate_parts
+
+    # Per-dir sequence status (for the sync_sequence_status etc. columns).
+    for d in DATASET_DIRS:
+        per = pq_result.per_dir.get(d)
+        status_key_map = {
+            "sync_grid_100ms": "sync_sequence_status",
+            "normalized_books": "books_sequence_status",
+            "normalized_trades": "trades_sequence_status",
+        }
+        key = status_key_map.get(d)
+        if key:
+            if per is None or per.files_seen == 0:
+                report.fields[key] = "FAIL"
+            else:
+                report.fields[key] = "PASS" if per.sequence_ok else "FAIL"
+
     verdict = _combine(verdict, parquet_status)
 
     # 7. Reconnect summary snapshot ----------------------------------------

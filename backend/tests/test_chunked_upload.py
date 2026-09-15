@@ -270,16 +270,16 @@ def test_uploads_limits_endpoint():
 
 
 def _pad_zip(zbytes: bytes, target_mb: int) -> bytes:
-    """Repack the fixture ZIP with padded parquet payloads to a target
-    size while keeping the archive structurally valid."""
+    """Repack the fixture ZIP with a separate padding entry to hit a
+    target size while keeping every parquet payload byte-identical
+    (so the all-files validator still parses footers)."""
     out = io.BytesIO()
     with zipfile.ZipFile(io.BytesIO(zbytes), "r") as zin, zipfile.ZipFile(out, "w", zipfile.ZIP_STORED) as zout:
-        pad_each = (target_mb * 1024 * 1024) // 6
-        pad = b"P" * pad_each
         for info in zin.infolist():
-            data = zin.read(info.filename)
-            if info.filename.endswith(".parquet"):
-                # Preserve PAR1 head + trailer.
-                data = data[:4] + pad + data[-4:]
-            zout.writestr(info.filename, data)
+            zout.writestr(info.filename, zin.read(info.filename))
+        # Add a single padding blob outside the dataset dirs so QA never
+        # tries to interpret it as a parquet part.
+        pad_bytes = max(0, target_mb * 1024 * 1024 - out.tell())
+        if pad_bytes > 0:
+            zout.writestr("padding.bin", b"P" * pad_bytes)
     return out.getvalue()

@@ -86,7 +86,9 @@ def test_corrupted_parquet_metadata_fails():
     data = build_zip(BuildOptions(corrupt_parquet=True))
     r = run_qa(data, "badpq.zip")
     assert r.verdict == VERDICT_FAIL
-    assert any("parquet magic missing" in x for x in r.failure_reasons)
+    # Corrupt bodies fail magic AND metadata; either surface as a reason.
+    joined = " ".join(r.failure_reasons)
+    assert "parquet magic" in joined or "parquet footer metadata" in joined, joined
 
 
 def test_watchdog_true_fails():
