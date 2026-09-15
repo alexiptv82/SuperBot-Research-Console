@@ -58,6 +58,12 @@ from dedup import classify_upload, compute_validated_hours
 from frozen_engine import current_status as engine_status
 from models import AuditLog, QARun, RawFile, Session as SessionModel
 from qa_engine import run_qa
+from raw_storage import (
+    canonical_path as raw_canonical_path,
+    persist_bytes as raw_persist_bytes,
+    persist_from_path as raw_persist_from_path,
+    prune_orphan_blobs as raw_prune_orphan_blobs,
+)
 from reports import to_csv, to_json, to_markdown
 from uploads import DEFAULT_CHUNK_SIZE, MAX_UPLOAD_BYTES, UploadError, UploadManager
 from zip_security import sha256_of_source
@@ -214,21 +220,22 @@ def me(request: Request) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def _persist_raw_bytes(data: bytes, qa_run_id: str) -> Path:
-    """Persist raw ZIP bytes to the mounted persistent volume for retention."""
-    dest = RAW_DIR / f"{qa_run_id}.zip"
-    with open(dest, "wb") as fh:
-        fh.write(data)
-    return dest
+def _persist_raw_bytes(data: bytes, sha256: str) -> Path:
+    """Retain a bytes blob at the canonical SHA256-keyed path.
+
+    Reuses the existing file when we have already retained this exact
+    binary. See ``raw_storage.persist_bytes``.
+    """
+    return raw_persist_bytes(RAW_DIR, data, sha256)
 
 
-def _persist_raw_path(src: Path, qa_run_id: str) -> Path:
-    """Rename an already-on-disk file into the raw ZIP store. No copy \u2014
-    both paths live on the same persistent volume so ``os.replace`` is
-    atomic and doesn't cost memory."""
-    dest = RAW_DIR / f"{qa_run_id}.zip"
-    os.replace(src, dest)
-    return dest
+def _persist_raw_path(src: Path, sha256: str) -> Path:
+    """Retain an already-on-disk file at the canonical SHA256-keyed path.
+
+    If the canonical file already exists, ``src`` is unlinked and the
+    canonical path is reused. See ``raw_storage.persist_from_path``.
+    """
+    return raw_persist_from_path(RAW_DIR, src, sha256)
 
 
 def _auto_checkpoint(session_id: str | None) -> str:
@@ -343,9 +350,9 @@ def _process_source(
     should_retain = retain_raw or report.verdict not in (VERDICT_PASS, VERDICT_PASS_WITH_WARNING)
     if should_retain:
         if is_path:
-            stored = _persist_raw_path(source, qa_run.id)
+            stored = _persist_raw_path(source, report.file_sha256)
         else:
-            stored = _persist_raw_bytes(source, qa_run.id)
+            stored = _persist_raw_bytes(source, report.file_sha256)
         rf = RawFile(
             qa_run_id=qa_run.id,
             stored_path=str(stored),
