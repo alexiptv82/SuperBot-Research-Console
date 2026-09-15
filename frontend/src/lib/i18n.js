@@ -92,6 +92,16 @@ const MESSAGES = {
     "upload.state_validating": "validazione…",
     "upload.remove": "Rimuovi",
     "upload.file_view": "Apri",
+    "upload.retry": "tentativo #{n}",
+    "upload.err.unknown": "Errore di caricamento sconosciuto",
+    "upload.state.QUEUED": "IN CODA",
+    "upload.state.PREPARING": "PREPARAZIONE",
+    "upload.state.UPLOADING": "CARICAMENTO",
+    "upload.state.ASSEMBLING": "ASSEMBLAGGIO",
+    "upload.state.UPLOADED": "CARICATO",
+    "upload.state.QA": "VALIDAZIONE QA",
+    "upload.state.DONE": "COMPLETATO",
+    "upload.state.ERROR": "ERRORE",
 
     // Registry
     "registry.title": "Registro sessioni",
@@ -268,6 +278,16 @@ const MESSAGES = {
     "upload.state_validating": "validating…",
     "upload.remove": "Remove",
     "upload.file_view": "View",
+    "upload.retry": "attempt #{n}",
+    "upload.err.unknown": "Unknown upload error",
+    "upload.state.QUEUED": "QUEUED",
+    "upload.state.PREPARING": "PREPARING",
+    "upload.state.UPLOADING": "UPLOADING",
+    "upload.state.ASSEMBLING": "ASSEMBLING",
+    "upload.state.UPLOADED": "UPLOADED",
+    "upload.state.QA": "QA VALIDATION",
+    "upload.state.DONE": "COMPLETED",
+    "upload.state.ERROR": "ERROR",
 
     "registry.title": "Session Registry",
     "registry.subtitle":

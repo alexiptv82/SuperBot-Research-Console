@@ -58,6 +58,8 @@ from frozen_engine import current_status as engine_status
 from models import AuditLog, QARun, RawFile, Session as SessionModel
 from qa_engine import run_qa
 from reports import to_csv, to_json, to_markdown
+from uploads import DEFAULT_CHUNK_SIZE, MAX_UPLOAD_BYTES, UploadError, UploadManager
+from zip_security import sha256_of_source
 
 logging.basicConfig(
     level=logging.INFO,
@@ -78,6 +80,9 @@ app.add_middleware(
 DATA_DIR = Path(os.environ.get("SUPERBOT_DATA_DIR", "/app/backend/data"))
 RAW_DIR = DATA_DIR / "raw_zips"
 RAW_DIR.mkdir(parents=True, exist_ok=True)
+UPLOAD_DIR = DATA_DIR / "uploads"
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+upload_manager = UploadManager(UPLOAD_DIR)
 
 
 @app.on_event("startup")
@@ -209,15 +214,19 @@ def me(request: Request) -> dict:
 
 
 def _persist_raw_bytes(data: bytes, qa_run_id: str) -> Path:
-    """Persist raw ZIP bytes to the mounted persistent volume for retention.
-
-    In production this directory (``SUPERBOT_DATA_DIR``) is a Railway
-    persistent volume, satisfying \u00a712.7 raw-retention semantics with a
-    single Railway service (no object storage, no extra infra).
-    """
+    """Persist raw ZIP bytes to the mounted persistent volume for retention."""
     dest = RAW_DIR / f"{qa_run_id}.zip"
     with open(dest, "wb") as fh:
         fh.write(data)
+    return dest
+
+
+def _persist_raw_path(src: Path, qa_run_id: str) -> Path:
+    """Rename an already-on-disk file into the raw ZIP store. No copy \u2014
+    both paths live on the same persistent volume so ``os.replace`` is
+    atomic and doesn't cost memory."""
+    dest = RAW_DIR / f"{qa_run_id}.zip"
+    os.replace(src, dest)
     return dest
 
 
@@ -232,15 +241,20 @@ def _guess_checkpoint(filename: str, session_id: str | None) -> str | None:
     return None
 
 
-def _process_bytes(
+def _process_source(
     db: OrmSession,
-    data: bytes,
+    source,  # bytes | Path
     filename: str,
     retain_raw: bool,
     checkpoint_hint_override: str | None,
 ) -> UploadResultItem:
-    # 1. Run QA on in-memory bytes (no pod-local temp files)
-    report = run_qa(data, filename)
+    """Run QA against a bytes blob OR an on-disk file. When ``source`` is
+    a :class:`Path` we never load the file into RAM; QA + SHA256 both
+    stream from disk."""
+    is_path = isinstance(source, Path)
+
+    # 1. Run QA (streams from disk if source is a path).
+    report = run_qa(str(source) if is_path else source, filename)
 
     # 2. Duplicate detection uses session_id + file SHA256 (\u00a712.4)
     dup_status = classify_upload(db, report.session_id, report.file_sha256)
@@ -253,7 +267,7 @@ def _process_bytes(
         duration_hours = None
     validated_hours = compute_validated_hours(report.verdict, dup_status, duration_hours)
 
-    # 4. Resolve / create Session row (keyed on session_id when known)
+    # 4. Resolve / create Session row
     session_key = report.session_id or f"UNKNOWN::{report.file_sha256[:12]}"
     session_row = db.execute(
         select(SessionModel).where(SessionModel.session_id == session_key)
@@ -322,7 +336,10 @@ def _process_bytes(
     # 6. Retention policy per \u00a712.7
     should_retain = retain_raw or report.verdict not in (VERDICT_PASS, VERDICT_PASS_WITH_WARNING)
     if should_retain:
-        stored = _persist_raw_bytes(data, qa_run.id)
+        if is_path:
+            stored = _persist_raw_path(source, qa_run.id)
+        else:
+            stored = _persist_raw_bytes(source, qa_run.id)
         rf = RawFile(
             qa_run_id=qa_run.id,
             stored_path=str(stored),
@@ -335,6 +352,12 @@ def _process_bytes(
         )
         db.add(rf)
     else:
+        # For path sources, delete the assembled .part / temp file.
+        if is_path:
+            try:
+                Path(source).unlink(missing_ok=True)
+            except OSError:
+                pass
         rf = RawFile(
             qa_run_id=qa_run.id,
             stored_path=None,
@@ -371,6 +394,12 @@ def _process_bytes(
     )
 
 
+# Back-compat alias for existing tests / small in-memory uploads.
+def _process_bytes(db, data, filename, retain_raw, checkpoint_hint_override):
+    return _process_source(db, data, filename, retain_raw, checkpoint_hint_override)
+
+
+
 @app.post("/api/sessions/upload")
 async def upload_sessions(
     files: list[UploadFile] = File(...),
@@ -379,22 +408,31 @@ async def upload_sessions(
     db: OrmSession = Depends(get_db),
     _: str = Depends(require_auth),
 ) -> dict:
+    """Legacy single-shot multipart upload.
+
+    Kept for backwards compatibility and unit tests with small synthetic
+    ZIPs. Real (100\u2013500 MB+) sessions MUST go through the chunked
+    endpoints below (/api/uploads/*), which stream to disk and are
+    resilient to proxy body-size limits.
+    """
     results: list[UploadResultItem] = []
-    max_bytes = int(os.environ.get("SUPERBOT_MAX_UPLOAD_MB", "1024")) * 1024 * 1024
+    # Cap the legacy endpoint tightly so nobody accidentally uses it for
+    # a huge ZIP and hits the proxy limit / times out.
+    legacy_cap = 64 * 1024 * 1024  # 64 MiB
     for f in files:
-        # Read the entire upload into memory (bounded by max_bytes) so
-        # nothing is ever written to a pod-local temp file. Only the
-        # retention path (\u00a712.7) touches disk, and only on the mounted
-        # SUPERBOT_DATA_DIR persistent volume.
         data = bytearray()
         while True:
             chunk = await f.read(1024 * 1024)
             if not chunk:
                 break
-            if len(data) + len(chunk) > max_bytes:
+            if len(data) + len(chunk) > legacy_cap:
                 raise HTTPException(
                     status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                    detail=f"File exceeds {max_bytes} bytes",
+                    detail=(
+                        f"File exceeds {legacy_cap} bytes on the legacy endpoint. "
+                        "Use the chunked upload API (/api/uploads/init, "
+                        "/api/uploads/{id}/chunk/{index}, /api/uploads/{id}/complete)."
+                    ),
                 )
             data.extend(chunk)
         try:
@@ -415,6 +453,134 @@ async def upload_sessions(
             raise HTTPException(status_code=500, detail=f"Processing failed: {exc}")
     db.commit()
     return {"count": len(results), "results": [r.model_dump() for r in results]}
+
+
+# ---------------------------------------------------------------------------
+# Chunked upload API (supports large session ZIPs up to SUPERBOT_MAX_UPLOAD_MB)
+# ---------------------------------------------------------------------------
+
+
+class UploadInitBody(BaseModel):
+    filename: str
+    total_size: int
+    chunk_size: int | None = None
+    retain_raw: bool = False
+    checkpoint_hint: str | None = None
+
+
+class UploadCompleteBody(BaseModel):
+    sha256: str | None = None
+
+
+@app.get("/api/uploads/limits")
+def uploads_limits(_: str = Depends(require_auth)) -> dict:
+    return {
+        "max_upload_bytes": MAX_UPLOAD_BYTES,
+        "recommended_chunk_size": DEFAULT_CHUNK_SIZE,
+    }
+
+
+@app.post("/api/uploads/init")
+def uploads_init(body: UploadInitBody, _: str = Depends(require_auth)) -> dict:
+    try:
+        session = upload_manager.init(
+            filename=body.filename,
+            total_size=body.total_size,
+            chunk_size=body.chunk_size or DEFAULT_CHUNK_SIZE,
+            retain_raw=body.retain_raw,
+            checkpoint_hint=body.checkpoint_hint,
+        )
+    except UploadError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail)
+    return session.to_dict()
+
+
+@app.get("/api/uploads/{upload_id}")
+def uploads_status(upload_id: str, _: str = Depends(require_auth)) -> dict:
+    try:
+        session = upload_manager.get(upload_id)
+    except UploadError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail)
+    return session.to_dict()
+
+
+@app.post("/api/uploads/{upload_id}/chunk/{index}")
+async def uploads_chunk(
+    upload_id: str,
+    index: int,
+    request: Request,
+    _: str = Depends(require_auth),
+) -> dict:
+    # Read the raw binary body without any multipart parsing. Bounded by
+    # MAX_CHUNK_BYTES via the manager.
+    data = await request.body()
+    try:
+        session = upload_manager.write_chunk(upload_id, index, data)
+    except UploadError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail)
+    return {
+        "upload_id": session.id,
+        "index": index,
+        "received_count": len(session.received),
+        "total_chunks": session.total_chunks,
+        "progress": len(session.received) / session.total_chunks,
+    }
+
+
+@app.post("/api/uploads/{upload_id}/complete")
+def uploads_complete(
+    upload_id: str,
+    body: UploadCompleteBody,
+    db: OrmSession = Depends(get_db),
+    _: str = Depends(require_auth),
+) -> dict:
+    # 1. Assemble + verify size and SHA256.
+    try:
+        session, digest = upload_manager.finalize(upload_id, body.sha256)
+    except UploadError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail)
+    part_path = session.part_path
+    filename = session.filename
+    retain_raw = session.retain_raw
+    checkpoint_hint = session.checkpoint_hint
+    # 2. Drop the session from the manager \u2014 we take ownership of the
+    # file for QA (rename on retention, unlink otherwise).
+    upload_manager.consume(upload_id)
+    # 3. Run QA + registry + audit against the on-disk path (no RAM blowup).
+    try:
+        item = _process_source(
+            db, part_path, filename, retain_raw, checkpoint_hint
+        )
+        db.commit()
+    except Exception as exc:
+        logger.exception("Chunked upload finalize failed for %s", filename)
+        # Clean up the assembled file if QA blew up mid-processing.
+        try:
+            part_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        log_event(
+            db,
+            event_type="upload.error",
+            message=f"finalize crash for {filename}: {exc}",
+            outcome="FAIL",
+        )
+        db.commit()
+        raise HTTPException(status_code=500, detail=f"Processing failed: {exc}")
+    result = item.model_dump()
+    result["server_sha256"] = digest
+    return result
+
+
+@app.delete("/api/uploads/{upload_id}")
+def uploads_abort(upload_id: str, _: str = Depends(require_auth)) -> dict:
+    upload_manager.abort(upload_id)
+    return {"upload_id": upload_id, "aborted": True}
+
+
+@app.post("/api/uploads/cleanup_stale")
+def uploads_cleanup_stale(_: str = Depends(require_auth)) -> dict:
+    return {"removed": upload_manager.cleanup_stale()}
 
 
 # ---------------------------------------------------------------------------

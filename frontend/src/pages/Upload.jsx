@@ -1,25 +1,47 @@
-import React, { useCallback, useRef, useState } from "react";
-import { api } from "@/lib/api";
-import { useT } from "@/lib/locale";
+import React, { useCallback, useMemo, useRef, useState } from "react";
+import { useT, useLocale } from "@/lib/locale";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
 import { VerdictBadge, DuplicateStateText } from "@/components/VerdictBadge";
 import { Upload as UploadIcon, X, FileArchive, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Link } from "react-router-dom";
+import { uploadChunked } from "@/lib/chunkedUpload";
 
 const CHECKPOINTS = ["", "OLD36", "NEW12", "NEW36"];
+const STATES = {
+  QUEUED: "QUEUED",
+  PREPARING: "PREPARING",
+  UPLOADING: "UPLOADING",
+  ASSEMBLING: "ASSEMBLING",
+  UPLOADED: "UPLOADED",
+  QA: "QA",
+  DONE: "DONE",
+  ERROR: "ERROR",
+};
+
+function fmtBytes(n) {
+  if (!Number.isFinite(n)) return "—";
+  const units = ["B", "KB", "MB", "GB"];
+  let v = n;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i += 1; }
+  return `${v.toFixed(v >= 10 || i === 0 ? 0 : 2)} ${units[i]}`;
+}
 
 export default function UploadPage() {
   const t = useT();
+  const { fmtNumber } = useLocale();
   const [files, setFiles] = useState([]);
   const [drag, setDrag] = useState(false);
   const [retainRaw, setRetainRaw] = useState(false);
   const [checkpoint, setCheckpoint] = useState("");
   const [busy, setBusy] = useState(false);
   const inputRef = useRef(null);
+  const abortRefs = useRef({});
 
   const addFiles = useCallback((selected) => {
     const arr = Array.from(selected || []);
@@ -28,9 +50,12 @@ export default function UploadPage() {
       ...arr.map((f) => ({
         file: f,
         id: `${f.name}:${f.size}:${Math.random().toString(36).slice(2, 8)}`,
-        state: "queued",
+        state: STATES.QUEUED,
+        uploadedBytes: 0,
+        totalBytes: f.size,
         result: null,
         error: null,
+        retryAttempt: 0,
       })),
     ]);
   }, []);
@@ -41,34 +66,60 @@ export default function UploadPage() {
     if (e.dataTransfer?.files?.length) addFiles(e.dataTransfer.files);
   };
 
-  const remove = (id) => setFiles((prev) => prev.filter((f) => f.id !== id));
+  const remove = (id) => {
+    const ctrl = abortRefs.current[id];
+    if (ctrl && !ctrl.signal.aborted) ctrl.abort();
+    setFiles((prev) => prev.filter((f) => f.id !== id));
+  };
+
+  const updateOne = useCallback((id, patch) => {
+    setFiles((prev) => prev.map((f) => (f.id === id ? { ...f, ...patch } : f)));
+  }, []);
 
   const upload = async () => {
     if (!files.length) return;
     setBusy(true);
     for (const item of files) {
-      if (item.state === "done") continue;
-      setFiles((prev) => prev.map((f) => (f.id === item.id ? { ...f, state: "uploading" } : f)));
-      const fd = new FormData();
-      fd.append("files", item.file, item.file.name);
-      fd.append("retain_raw", retainRaw ? "true" : "false");
-      if (checkpoint) fd.append("checkpoint_hint", checkpoint);
+      if (item.state === STATES.DONE) continue;
+      const ctrl = new AbortController();
+      abortRefs.current[item.id] = ctrl;
+      updateOne(item.id, { state: STATES.PREPARING, error: null, uploadedBytes: 0 });
       try {
-        const r = await api.post("/sessions/upload", fd, {
-          headers: { "Content-Type": "multipart/form-data" },
+        const result = await uploadChunked({
+          file: item.file,
+          retainRaw,
+          checkpointHint: checkpoint,
+          signal: ctrl.signal,
+          onProgress: (p) => {
+            if (p.phase === "prepare" || p.phase === "hashing") {
+              updateOne(item.id, { state: STATES.PREPARING });
+            } else if (p.phase === "retry") {
+              updateOne(item.id, { state: STATES.UPLOADING, retryAttempt: p.attempt });
+            } else if (p.phase === "uploading") {
+              updateOne(item.id, {
+                state: STATES.UPLOADING,
+                uploadedBytes: p.uploadedBytes,
+                totalBytes: p.totalBytes,
+                retryAttempt: 0,
+              });
+            } else if (p.phase === "assembling") {
+              updateOne(item.id, {
+                state: STATES.ASSEMBLING,
+                uploadedBytes: p.uploadedBytes,
+              });
+            } else if (p.phase === "qa") {
+              updateOne(item.id, { state: STATES.QA });
+            }
+          },
         });
-        const res = r.data?.results?.[0];
-        setFiles((prev) =>
-          prev.map((f) => (f.id === item.id ? { ...f, state: "done", result: res } : f)),
-        );
+        updateOne(item.id, { state: STATES.DONE, result, uploadedBytes: item.totalBytes });
       } catch (e) {
-        setFiles((prev) =>
-          prev.map((f) =>
-            f.id === item.id
-              ? { ...f, state: "error", error: e?.response?.data?.detail || "Upload failed" }
-              : f,
-          ),
-        );
+        updateOne(item.id, {
+          state: STATES.ERROR,
+          error: e?.message || t("upload.err.unknown"),
+        });
+      } finally {
+        delete abortRefs.current[item.id];
       }
     }
     setBusy(false);
@@ -127,9 +178,7 @@ export default function UploadPage() {
                 onChange={(e) => setCheckpoint(e.target.value)}
               >
                 {CHECKPOINTS.map((c) => (
-                  <option key={c} value={c}>
-                    {c || t("upload.checkpoint_auto")}
-                  </option>
+                  <option key={c} value={c}>{c || t("upload.checkpoint_auto")}</option>
                 ))}
               </select>
             </div>
@@ -145,50 +194,91 @@ export default function UploadPage() {
           <CardHeader>
             <CardTitle className="text-sm font-semibold tracking-wide">{t("upload.queue")}</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2">
+          <CardContent className="space-y-3">
             {files.map((f) => (
-              <div key={f.id} data-testid="upload-file-row" className="flex items-center gap-3 rounded-lg border bg-background/40 px-3 py-2">
-                <FileArchive className="h-4 w-4 text-muted-foreground" />
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm truncate">{f.file.name}</div>
-                  <div className="text-[10px] text-muted-foreground font-mono">
-                    {(f.file.size / (1024 * 1024)).toFixed(2)} MB
-                    {f.result?.file_sha256 && (
-                      <span className="ml-2">sha256={f.result.file_sha256.slice(0, 12)}…</span>
-                    )}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {f.state === "queued" && <span className="text-xs text-muted-foreground">{t("upload.state_queued")}</span>}
-                  {f.state === "uploading" && (
-                    <span className="text-xs text-muted-foreground flex items-center gap-1">
-                      <Loader2 className="h-3 w-3 animate-spin" /> {t("upload.state_validating")}
-                    </span>
-                  )}
-                  {f.state === "done" && f.result && (
-                    <>
-                      <span className="text-[10px] text-muted-foreground uppercase">
-                        <DuplicateStateText state={f.result.duplicate_status} />
-                      </span>
-                      <VerdictBadge verdict={f.result.verdict} size="sm" />
-                      {f.result.session_id && (
-                        <Link to={`/session/${encodeURIComponent(f.result.session_id)}`} className="text-xs text-[hsl(var(--focus))] hover:underline" data-testid="upload-file-view">
-                          {t("upload.file_view")}
-                        </Link>
-                      )}
-                    </>
-                  )}
-                  {f.state === "error" && (
-                    <span className="text-xs text-[hsl(var(--verdict-fail))]">{f.error}</span>
-                  )}
-                  <Button variant="ghost" size="icon" onClick={() => remove(f.id)} aria-label={t("upload.remove")} data-testid="upload-file-remove-button">
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
+              <FileRow
+                key={f.id}
+                item={f}
+                onRemove={() => remove(f.id)}
+                t={t}
+                fmtNumber={fmtNumber}
+              />
             ))}
           </CardContent>
         </Card>
+      )}
+    </div>
+  );
+}
+
+function FileRow({ item, onRemove, t, fmtNumber }) {
+  const pct = item.totalBytes ? Math.min(100, (item.uploadedBytes / item.totalBytes) * 100) : 0;
+  const stateKey = `upload.state.${item.state}`;
+  const stateLabel = t(stateKey);
+  return (
+    <div data-testid="upload-file-row" data-state={item.state} className="rounded-lg border bg-background/40 px-3 py-3">
+      <div className="flex items-center gap-3">
+        <FileArchive className="h-4 w-4 text-muted-foreground" />
+        <div className="flex-1 min-w-0">
+          <div className="text-sm truncate">{item.file.name}</div>
+          <div className="text-[10px] text-muted-foreground font-mono">
+            {fmtBytes(item.totalBytes)}
+            {item.result?.file_sha256 && (
+              <span className="ml-2">sha256={item.result.file_sha256.slice(0, 12)}…</span>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {item.state === STATES.DONE && item.result && (
+            <>
+              <span className="text-[10px] text-muted-foreground uppercase">
+                <DuplicateStateText state={item.result.duplicate_status} />
+              </span>
+              <VerdictBadge verdict={item.result.verdict} size="sm" />
+              {item.result.session_id && (
+                <Link
+                  to={`/session/${encodeURIComponent(item.result.session_id)}`}
+                  className="text-xs text-[hsl(var(--focus))] hover:underline"
+                  data-testid="upload-file-view"
+                >
+                  {t("upload.file_view")}
+                </Link>
+              )}
+            </>
+          )}
+          <Button variant="ghost" size="icon" onClick={onRemove} aria-label={t("upload.remove")} data-testid="upload-file-remove-button">
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+      {item.state !== STATES.QUEUED && item.state !== STATES.DONE && (
+        <div className="mt-2 space-y-1">
+          <div className="flex items-center justify-between text-[10px] text-muted-foreground font-mono">
+            <span
+              data-testid="upload-status-label"
+              className="uppercase tracking-wider text-foreground"
+            >
+              {stateLabel}
+              {item.retryAttempt > 0 && (
+                <span className="ml-2 text-[hsl(var(--verdict-warn))]">
+                  {t("upload.retry", { n: item.retryAttempt })}
+                </span>
+              )}
+            </span>
+            <span>
+              {fmtBytes(item.uploadedBytes)} / {fmtBytes(item.totalBytes)} · {fmtNumber(pct, { maximumFractionDigits: 1 })}%
+            </span>
+          </div>
+          <Progress value={pct} />
+        </div>
+      )}
+      {item.state === STATES.ERROR && (
+        <div
+          data-testid="upload-file-error"
+          className="mt-2 text-xs text-[hsl(var(--verdict-fail))] break-words"
+        >
+          {t("upload.state.ERROR")}: {item.error}
+        </div>
       )}
     </div>
   );

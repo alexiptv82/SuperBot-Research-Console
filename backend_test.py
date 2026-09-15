@@ -6,6 +6,9 @@ import sys
 import requests
 from pathlib import Path
 import time
+import hashlib
+import io
+import zipfile
 
 # Add backend paths for imports
 sys.path.insert(0, '/app/backend/tests')
@@ -288,6 +291,566 @@ class BackendTester:
         
         self.log("📦", f"Verified SAME_SESSION_DIFFERENT_FILE detection", Colors.YELLOW)
     
+    
+    # ========== CHUNKED UPLOAD TESTS ==========
+    
+    def _pad_zip(self, zbytes, target_mb):
+        """Repack the fixture ZIP with padded parquet payloads to a target size"""
+        out = io.BytesIO()
+        with zipfile.ZipFile(io.BytesIO(zbytes), "r") as zin, \
+             zipfile.ZipFile(out, "w", zipfile.ZIP_STORED) as zout:
+            pad_each = (target_mb * 1024 * 1024) // 6
+            pad = b"P" * pad_each
+            for info in zin.infolist():
+                data = zin.read(info.filename)
+                if info.filename.endswith(".parquet"):
+                    # Preserve PAR1 head + trailer
+                    data = data[:4] + pad + data[-4:]
+                zout.writestr(info.filename, data)
+        return out.getvalue()
+    
+    def test_chunked_uploads_limits(self):
+        """GET /api/uploads/limits returns max_upload_bytes >= 1 GiB and recommended_chunk_size = 8 MiB"""
+        resp = self.get("uploads/limits", expected_status=200, use_auth=True)
+        data = resp.json()
+        
+        assert "max_upload_bytes" in data, "Missing max_upload_bytes"
+        assert "recommended_chunk_size" in data, "Missing recommended_chunk_size"
+        
+        # Check max_upload_bytes >= 1 GiB
+        assert data["max_upload_bytes"] >= 1024 * 1024 * 1024, \
+            f"Expected max_upload_bytes >= 1 GiB, got {data['max_upload_bytes']}"
+        
+        # Check recommended_chunk_size = 8 MiB
+        assert data["recommended_chunk_size"] == 8 * 1024 * 1024, \
+            f"Expected recommended_chunk_size = 8 MiB, got {data['recommended_chunk_size']}"
+        
+        self.log("📊", f"Upload limits: max={data['max_upload_bytes']/(1024**3):.1f} GiB, chunk={data['recommended_chunk_size']/(1024**2):.0f} MiB", Colors.YELLOW)
+    
+    def test_legacy_upload_rejects_large_file(self):
+        """Legacy POST /api/sessions/upload rejects 65 MiB file with HTTP 413"""
+        # Create a 65 MiB payload (exceeds 64 MiB legacy cap)
+        large_data = b"\x00" * (65 * 1024 * 1024)
+        
+        files = {'files': ('large.zip', large_data, 'application/zip')}
+        data = {'retain_raw': 'false'}
+        
+        resp = requests.post(
+            f"{BASE_URL}/sessions/upload",
+            files=files,
+            data=data,
+            cookies=self.session_cookie
+        )
+        
+        assert resp.status_code == 413, \
+            f"Expected 413 for 65 MiB file, got {resp.status_code}"
+        
+        error_detail = resp.json().get("detail", "")
+        assert "chunked upload" in error_detail.lower(), \
+            f"Expected 'chunked upload' in error message, got: {error_detail}"
+        
+        self.log("🚫", "Legacy endpoint correctly rejects 65 MiB file with 413", Colors.YELLOW)
+    
+    def test_chunked_upload_small_file(self):
+        """Chunked upload: small ZIP split into 4 chunks → init → chunks → complete → verdict=PASS"""
+        zip_bytes = build_zip(BuildOptions(
+            session_id=f'20260910T200000Z_chunked_small_{TEST_RUN_ID}',
+            collector_sha256=FROZEN_COLLECTOR_SHA256,
+            exit_code=0,
+            watchdog=False,
+            writer_errors=0
+        ))
+        
+        sha256 = hashlib.sha256(zip_bytes).hexdigest()
+        chunk_size = 512  # Small chunks for testing
+        
+        # 1. Init
+        init_resp = self.post("uploads/init", json={
+            "filename": "chunked_small.zip",
+            "total_size": len(zip_bytes),
+            "chunk_size": chunk_size,
+            "retain_raw": False,
+            "checkpoint_hint": "NEW12"
+        }, expected_status=200, use_auth=True)
+        
+        init_data = init_resp.json()
+        upload_id = init_data["upload_id"]
+        total_chunks = init_data["total_chunks"]
+        
+        assert total_chunks >= 2, f"Expected at least 2 chunks, got {total_chunks}"
+        self.log("📤", f"Initialized chunked upload: {upload_id}, {total_chunks} chunks", Colors.YELLOW)
+        
+        # 2. Upload chunks
+        for i in range(total_chunks):
+            start = i * chunk_size
+            end = min(len(zip_bytes), start + chunk_size)
+            chunk_data = zip_bytes[start:end]
+            
+            resp = requests.post(
+                f"{BASE_URL}/uploads/{upload_id}/chunk/{i}",
+                data=chunk_data,
+                headers={"Content-Type": "application/octet-stream"},
+                cookies=self.session_cookie
+            )
+            
+            assert resp.status_code == 200, \
+                f"Chunk {i} upload failed: {resp.status_code}, {resp.text[:200]}"
+            
+            chunk_resp = resp.json()
+            assert chunk_resp["received_count"] == i + 1, \
+                f"Expected received_count={i+1}, got {chunk_resp['received_count']}"
+        
+        self.log("📤", f"Uploaded all {total_chunks} chunks", Colors.YELLOW)
+        
+        # 3. Complete
+        complete_resp = self.post(f"uploads/{upload_id}/complete", json={
+            "sha256": sha256
+        }, expected_status=200, use_auth=True)
+        
+        result = complete_resp.json()
+        
+        assert result["verdict"] == "PASS", f"Expected PASS, got {result['verdict']}"
+        assert result["server_sha256"] == sha256, \
+            f"SHA256 mismatch: expected {sha256}, got {result['server_sha256']}"
+        assert result["duplicate_status"] == "NEW", \
+            f"Expected NEW, got {result['duplicate_status']}"
+        
+        self.log("✅", f"Chunked upload completed: verdict={result['verdict']}, sha256 verified", Colors.GREEN)
+    
+    def test_chunked_upload_large_file(self):
+        """Chunked upload: ~30 MB synthetic ZIP split into multiple 8 MiB chunks → verdict=PASS"""
+        zip_bytes = build_zip(BuildOptions(
+            session_id=f'20260910T210000Z_chunked_large_{TEST_RUN_ID}',
+            collector_sha256=FROZEN_COLLECTOR_SHA256,
+            exit_code=0,
+            watchdog=False,
+            writer_errors=0
+        ))
+        
+        # Pad to ~30 MB
+        padded = self._pad_zip(zip_bytes, target_mb=30)
+        sha256 = hashlib.sha256(padded).hexdigest()
+        chunk_size = 8 * 1024 * 1024  # 8 MiB
+        
+        self.log("📦", f"Created {len(padded)/(1024**2):.1f} MB synthetic ZIP", Colors.YELLOW)
+        
+        # 1. Init
+        init_resp = self.post("uploads/init", json={
+            "filename": "chunked_large.zip",
+            "total_size": len(padded),
+            "chunk_size": chunk_size,
+            "retain_raw": False,
+            "checkpoint_hint": "NEW12"
+        }, expected_status=200, use_auth=True)
+        
+        init_data = init_resp.json()
+        upload_id = init_data["upload_id"]
+        total_chunks = init_data["total_chunks"]
+        
+        assert total_chunks >= 2, f"Expected at least 2 chunks for 30 MB, got {total_chunks}"
+        self.log("📤", f"Initialized large upload: {upload_id}, {total_chunks} chunks", Colors.YELLOW)
+        
+        # 2. Upload chunks
+        for i in range(total_chunks):
+            start = i * chunk_size
+            end = min(len(padded), start + chunk_size)
+            chunk_data = padded[start:end]
+            
+            resp = requests.post(
+                f"{BASE_URL}/uploads/{upload_id}/chunk/{i}",
+                data=chunk_data,
+                headers={"Content-Type": "application/octet-stream"},
+                cookies=self.session_cookie,
+                timeout=120
+            )
+            
+            assert resp.status_code == 200, \
+                f"Chunk {i} upload failed: {resp.status_code}, {resp.text[:200]}"
+            
+            if (i + 1) % 2 == 0:
+                self.log("📤", f"Uploaded chunk {i+1}/{total_chunks}", Colors.YELLOW)
+        
+        self.log("📤", f"Uploaded all {total_chunks} chunks", Colors.YELLOW)
+        
+        # 3. Complete
+        complete_resp = self.post(f"uploads/{upload_id}/complete", json={
+            "sha256": sha256
+        }, expected_status=200, use_auth=True)
+        
+        result = complete_resp.json()
+        
+        assert result["verdict"] == "PASS", f"Expected PASS, got {result['verdict']}"
+        assert result["server_sha256"] == sha256, \
+            f"SHA256 mismatch: expected {sha256}, got {result['server_sha256']}"
+        
+        self.log("✅", f"Large chunked upload completed: {len(padded)/(1024**2):.1f} MB, verdict={result['verdict']}", Colors.GREEN)
+    
+    def test_chunked_upload_missing_chunk(self):
+        """Chunked upload: missing chunk on complete → HTTP 400 with 'missing chunks'"""
+        zip_bytes = build_zip(BuildOptions(
+            session_id=f'20260910T220000Z_chunked_missing_{TEST_RUN_ID}',
+            collector_sha256=FROZEN_COLLECTOR_SHA256,
+            exit_code=0
+        ))
+        
+        sha256 = hashlib.sha256(zip_bytes).hexdigest()
+        chunk_size = 512
+        
+        # Init
+        init_resp = self.post("uploads/init", json={
+            "filename": "missing_chunk.zip",
+            "total_size": len(zip_bytes),
+            "chunk_size": chunk_size
+        }, expected_status=200, use_auth=True)
+        
+        upload_id = init_resp.json()["upload_id"]
+        total_chunks = init_resp.json()["total_chunks"]
+        
+        # Upload all chunks EXCEPT chunk 1
+        for i in range(total_chunks):
+            if i == 1:
+                continue  # Skip chunk 1
+            start = i * chunk_size
+            end = min(len(zip_bytes), start + chunk_size)
+            chunk_data = zip_bytes[start:end]
+            
+            requests.post(
+                f"{BASE_URL}/uploads/{upload_id}/chunk/{i}",
+                data=chunk_data,
+                headers={"Content-Type": "application/octet-stream"},
+                cookies=self.session_cookie
+            )
+        
+        # Try to complete - should fail
+        resp = requests.post(
+            f"{BASE_URL}/uploads/{upload_id}/complete",
+            json={"sha256": sha256},
+            cookies=self.session_cookie
+        )
+        
+        assert resp.status_code == 400, \
+            f"Expected 400 for missing chunk, got {resp.status_code}"
+        
+        error_detail = resp.json().get("detail", "")
+        assert "missing chunks" in error_detail.lower(), \
+            f"Expected 'missing chunks' in error, got: {error_detail}"
+        
+        self.log("🚫", "Missing chunk correctly rejected with 400", Colors.YELLOW)
+    
+    def test_chunked_upload_idempotent_chunk(self):
+        """Chunked upload: duplicate chunk re-upload is idempotent (resume case)"""
+        zip_bytes = build_zip(BuildOptions(
+            session_id=f'20260910T230000Z_chunked_resume_{TEST_RUN_ID}',
+            collector_sha256=FROZEN_COLLECTOR_SHA256,
+            exit_code=0
+        ))
+        
+        sha256 = hashlib.sha256(zip_bytes).hexdigest()
+        chunk_size = 512
+        
+        # Init
+        init_resp = self.post("uploads/init", json={
+            "filename": "resume.zip",
+            "total_size": len(zip_bytes),
+            "chunk_size": chunk_size
+        }, expected_status=200, use_auth=True)
+        
+        upload_id = init_resp.json()["upload_id"]
+        total_chunks = init_resp.json()["total_chunks"]
+        
+        # Upload chunk 0 twice (resume case)
+        chunk_0 = zip_bytes[:chunk_size]
+        
+        resp1 = requests.post(
+            f"{BASE_URL}/uploads/{upload_id}/chunk/0",
+            data=chunk_0,
+            headers={"Content-Type": "application/octet-stream"},
+            cookies=self.session_cookie
+        )
+        
+        resp2 = requests.post(
+            f"{BASE_URL}/uploads/{upload_id}/chunk/0",
+            data=chunk_0,
+            headers={"Content-Type": "application/octet-stream"},
+            cookies=self.session_cookie
+        )
+        
+        assert resp1.status_code == 200 and resp2.status_code == 200, \
+            f"Duplicate chunk upload failed: {resp1.status_code}, {resp2.status_code}"
+        
+        # Upload remaining chunks
+        for i in range(1, total_chunks):
+            start = i * chunk_size
+            end = min(len(zip_bytes), start + chunk_size)
+            chunk_data = zip_bytes[start:end]
+            
+            requests.post(
+                f"{BASE_URL}/uploads/{upload_id}/chunk/{i}",
+                data=chunk_data,
+                headers={"Content-Type": "application/octet-stream"},
+                cookies=self.session_cookie
+            )
+        
+        # Complete
+        complete_resp = self.post(f"uploads/{upload_id}/complete", json={
+            "sha256": sha256
+        }, expected_status=200, use_auth=True)
+        
+        assert complete_resp.json()["verdict"] == "PASS"
+        
+        self.log("✅", "Idempotent chunk re-upload works (resume case)", Colors.GREEN)
+    
+    def test_chunked_upload_wrong_chunk_size(self):
+        """Chunked upload: wrong chunk size for non-final index → HTTP 400"""
+        zip_bytes = build_zip(BuildOptions(
+            session_id=f'20260910T235000Z_chunked_wrongsize_{TEST_RUN_ID}',
+            collector_sha256=FROZEN_COLLECTOR_SHA256,
+            exit_code=0
+        ))
+        
+        chunk_size = 512
+        
+        # Init
+        init_resp = self.post("uploads/init", json={
+            "filename": "wrongsize.zip",
+            "total_size": len(zip_bytes),
+            "chunk_size": chunk_size
+        }, expected_status=200, use_auth=True)
+        
+        upload_id = init_resp.json()["upload_id"]
+        
+        # Send a shorter chunk than expected for index 0 (non-final)
+        resp = requests.post(
+            f"{BASE_URL}/uploads/{upload_id}/chunk/0",
+            data=zip_bytes[:256],  # Only 256 bytes instead of 512
+            headers={"Content-Type": "application/octet-stream"},
+            cookies=self.session_cookie
+        )
+        
+        assert resp.status_code == 400, \
+            f"Expected 400 for wrong chunk size, got {resp.status_code}"
+        
+        error_detail = resp.json().get("detail", "")
+        assert "size mismatch" in error_detail.lower(), \
+            f"Expected 'size mismatch' in error, got: {error_detail}"
+        
+        self.log("🚫", "Wrong chunk size correctly rejected with 400", Colors.YELLOW)
+    
+    def test_chunked_upload_sha256_mismatch(self):
+        """Chunked upload: SHA256 mismatch on complete → HTTP 400"""
+        zip_bytes = build_zip(BuildOptions(
+            session_id=f'20260911T000000Z_chunked_sha_bad_{TEST_RUN_ID}',
+            collector_sha256=FROZEN_COLLECTOR_SHA256,
+            exit_code=0
+        ))
+        
+        chunk_size = 4096
+        
+        # Init
+        init_resp = self.post("uploads/init", json={
+            "filename": "sha_bad.zip",
+            "total_size": len(zip_bytes),
+            "chunk_size": chunk_size
+        }, expected_status=200, use_auth=True)
+        
+        upload_id = init_resp.json()["upload_id"]
+        total_chunks = init_resp.json()["total_chunks"]
+        
+        # Upload all chunks
+        for i in range(total_chunks):
+            start = i * chunk_size
+            end = min(len(zip_bytes), start + chunk_size)
+            chunk_data = zip_bytes[start:end]
+            
+            requests.post(
+                f"{BASE_URL}/uploads/{upload_id}/chunk/{i}",
+                data=chunk_data,
+                headers={"Content-Type": "application/octet-stream"},
+                cookies=self.session_cookie
+            )
+        
+        # Try to complete with wrong SHA256
+        resp = requests.post(
+            f"{BASE_URL}/uploads/{upload_id}/complete",
+            json={"sha256": "0" * 64},  # Wrong hash
+            cookies=self.session_cookie
+        )
+        
+        assert resp.status_code == 400, \
+            f"Expected 400 for SHA256 mismatch, got {resp.status_code}"
+        
+        error_detail = resp.json().get("detail", "")
+        assert "sha256 mismatch" in error_detail.lower(), \
+            f"Expected 'sha256 mismatch' in error, got: {error_detail}"
+        
+        self.log("🚫", "SHA256 mismatch correctly rejected with 400", Colors.YELLOW)
+    
+    def test_chunked_upload_abort(self):
+        """DELETE /api/uploads/{id} aborts session; subsequent GET returns 404"""
+        # Init
+        init_resp = self.post("uploads/init", json={
+            "filename": "abort.zip",
+            "total_size": 2048,
+            "chunk_size": 1024
+        }, expected_status=200, use_auth=True)
+        
+        upload_id = init_resp.json()["upload_id"]
+        
+        # Upload one chunk
+        requests.post(
+            f"{BASE_URL}/uploads/{upload_id}/chunk/0",
+            data=b"\x00" * 1024,
+            headers={"Content-Type": "application/octet-stream"},
+            cookies=self.session_cookie
+        )
+        
+        # Abort
+        resp = requests.delete(
+            f"{BASE_URL}/uploads/{upload_id}",
+            cookies=self.session_cookie
+        )
+        
+        assert resp.status_code == 200, \
+            f"Expected 200 for abort, got {resp.status_code}"
+        
+        # Try to get status - should be 404
+        resp2 = requests.get(
+            f"{BASE_URL}/uploads/{upload_id}",
+            cookies=self.session_cookie
+        )
+        
+        assert resp2.status_code == 404, \
+            f"Expected 404 after abort, got {resp2.status_code}"
+        
+        self.log("🗑️", "Abort correctly removes upload session", Colors.YELLOW)
+    
+    def test_chunked_upload_no_qa_before_complete(self):
+        """Chunked upload: QA does NOT run before /complete is called"""
+        zip_bytes = build_zip(BuildOptions(
+            session_id=f'20260911T010000Z_chunked_noqa_{TEST_RUN_ID}',
+            collector_sha256=FROZEN_COLLECTOR_SHA256,
+            exit_code=0
+        ))
+        
+        chunk_size = 512
+        
+        # Init
+        init_resp = self.post("uploads/init", json={
+            "filename": "noqa.zip",
+            "total_size": len(zip_bytes),
+            "chunk_size": chunk_size
+        }, expected_status=200, use_auth=True)
+        
+        upload_id = init_resp.json()["upload_id"]
+        
+        # Upload only first chunk (don't complete)
+        requests.post(
+            f"{BASE_URL}/uploads/{upload_id}/chunk/0",
+            data=zip_bytes[:chunk_size],
+            headers={"Content-Type": "application/octet-stream"},
+            cookies=self.session_cookie
+        )
+        
+        # Check that session does NOT exist in registry
+        resp = self.get(f"sessions?q=20260911T010000Z_chunked_noqa_{TEST_RUN_ID}", 
+                       expected_status=200, use_auth=True)
+        sessions = resp.json()["sessions"]
+        
+        session_ids = [s["session_id"] for s in sessions]
+        assert f'20260911T010000Z_chunked_noqa_{TEST_RUN_ID}' not in session_ids, \
+            "Session should NOT exist before /complete is called"
+        
+        # Cleanup
+        requests.delete(f"{BASE_URL}/uploads/{upload_id}", cookies=self.session_cookie)
+        
+        self.log("✅", "QA correctly does NOT run before /complete", Colors.GREEN)
+    
+    def test_chunked_upload_160mb_live_preview(self):
+        """CRITICAL: Chunked upload ~160 MB file to LIVE PREVIEW URL → verdict=PASS"""
+        self.log("🚨", "CRITICAL TEST: Uploading ~160 MB file to live preview URL", Colors.YELLOW)
+        
+        zip_bytes = build_zip(BuildOptions(
+            session_id=f'20260911T020000Z_chunked_160mb_{TEST_RUN_ID}',
+            collector_sha256=FROZEN_COLLECTOR_SHA256,
+            exit_code=0,
+            watchdog=False,
+            writer_errors=0
+        ))
+        
+        # Pad to ~160 MB
+        padded = self._pad_zip(zip_bytes, target_mb=160)
+        sha256 = hashlib.sha256(padded).hexdigest()
+        chunk_size = 8 * 1024 * 1024  # 8 MiB
+        
+        self.log("📦", f"Created {len(padded)/(1024**2):.1f} MB synthetic ZIP", Colors.YELLOW)
+        
+        # 1. Init
+        init_resp = self.post("uploads/init", json={
+            "filename": "critical_160mb.zip",
+            "total_size": len(padded),
+            "chunk_size": chunk_size,
+            "retain_raw": False,
+            "checkpoint_hint": "NEW12"
+        }, expected_status=200, use_auth=True)
+        
+        init_data = init_resp.json()
+        upload_id = init_data["upload_id"]
+        total_chunks = init_data["total_chunks"]
+        
+        self.log("📤", f"Initialized 160 MB upload: {upload_id}, {total_chunks} chunks", Colors.YELLOW)
+        
+        # 2. Upload chunks
+        start_time = time.time()
+        for i in range(total_chunks):
+            chunk_start = i * chunk_size
+            chunk_end = min(len(padded), chunk_start + chunk_size)
+            chunk_data = padded[chunk_start:chunk_end]
+            
+            resp = requests.post(
+                f"{BASE_URL}/uploads/{upload_id}/chunk/{i}",
+                data=chunk_data,
+                headers={"Content-Type": "application/octet-stream"},
+                cookies=self.session_cookie,
+                timeout=120
+            )
+            
+            assert resp.status_code == 200, \
+                f"Chunk {i} upload failed: {resp.status_code}, {resp.text[:200]}"
+            
+            if (i + 1) % 5 == 0 or i == total_chunks - 1:
+                elapsed = time.time() - start_time
+                self.log("📤", f"Uploaded chunk {i+1}/{total_chunks} ({elapsed:.1f}s elapsed)", Colors.YELLOW)
+        
+        upload_time = time.time() - start_time
+        self.log("📤", f"Uploaded all {total_chunks} chunks in {upload_time:.1f}s", Colors.YELLOW)
+        
+        # 3. Complete
+        complete_start = time.time()
+        complete_resp = self.post(f"uploads/{upload_id}/complete", json={
+            "sha256": sha256
+        }, expected_status=200, use_auth=True)
+        
+        complete_time = time.time() - complete_start
+        result = complete_resp.json()
+        
+        assert result["verdict"] == "PASS", f"Expected PASS, got {result['verdict']}"
+        assert result["server_sha256"] == sha256, \
+            f"SHA256 mismatch: expected {sha256}, got {result['server_sha256']}"
+        assert result["duplicate_status"] == "NEW", \
+            f"Expected NEW, got {result['duplicate_status']}"
+        
+        # Verify session appears in registry
+        resp = self.get("sessions", expected_status=200, use_auth=True)
+        sessions = resp.json()["sessions"]
+        session_ids = [s["session_id"] for s in sessions]
+        
+        assert result["session_id"] in session_ids, \
+            f"Session {result['session_id']} not found in registry"
+        
+        total_time = upload_time + complete_time
+        self.log("✅", f"CRITICAL TEST PASSED: 160 MB upload successful in {total_time:.1f}s (upload: {upload_time:.1f}s, QA: {complete_time:.1f}s)", Colors.GREEN)
+        self.log("🎉", f"Session {result['session_id']} created with verdict={result['verdict']}", Colors.GREEN)
+
     # ========== REGISTRY TESTS ==========
     
     def test_sessions_list(self):
@@ -541,6 +1104,19 @@ class BackendTester:
         # Reprocess
         self.test("Reprocess retained session", self.test_reprocess_retained_session)
         self.test("Reprocess non-retained fails", self.test_reprocess_not_retained_fails)
+        
+        # Chunked upload tests
+        self.test("Chunked uploads limits endpoint", self.test_chunked_uploads_limits)
+        self.test("Legacy upload rejects 65 MiB file", self.test_legacy_upload_rejects_large_file)
+        self.test("Chunked upload small file", self.test_chunked_upload_small_file)
+        self.test("Chunked upload large file (~30 MB)", self.test_chunked_upload_large_file)
+        self.test("Chunked upload missing chunk", self.test_chunked_upload_missing_chunk)
+        self.test("Chunked upload idempotent chunk", self.test_chunked_upload_idempotent_chunk)
+        self.test("Chunked upload wrong chunk size", self.test_chunked_upload_wrong_chunk_size)
+        self.test("Chunked upload SHA256 mismatch", self.test_chunked_upload_sha256_mismatch)
+        self.test("Chunked upload abort", self.test_chunked_upload_abort)
+        self.test("Chunked upload no QA before complete", self.test_chunked_upload_no_qa_before_complete)
+        self.test("CRITICAL: Chunked upload 160 MB to live preview", self.test_chunked_upload_160mb_live_preview)
         
         # Summary
         print("\n" + "="*80)
