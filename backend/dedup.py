@@ -66,12 +66,30 @@ def compute_validated_hours(
 
 
 def session_total_validated_hours(db: OrmSession, session_id: str) -> float:
-    """Sum of validated_hours for a session considering only latest run per session_id.
+    """Validated hours contributed by a session, computed consistently
+    across reprocessing events (\u00a712.4: duplicates never add hours twice).
 
-    We keep this simple: a session's validated hours is the max validated_hours
-    across its runs (never sum, to avoid double-counting reprocesses).
+    Rule:
+    - If any run for this session_id is PASS or PASS_WITH_WARNING, credit
+      the session with that run's ``duration_hours`` (or SESSION_HOURS if
+      the manifest didn't expose duration). This is intentionally
+      idempotent: re-running QA on the retained raw ZIP after a parser
+      fix upgrades the session's hours the moment a passing run exists,
+      without ever double-counting.
+    - Otherwise return 0.
     """
-    rows = db.execute(
-        select(QARun.validated_hours).where(QARun.session_id == session_id)
-    ).scalars().all()
-    return max([r or 0.0 for r in rows] or [0.0])
+    from constants import SESSION_HOURS as _SESSION_HOURS
+
+    runs = db.execute(
+        select(QARun.operational_status, QARun.duration_hours, QARun.validated_hours)
+        .where(QARun.session_id == session_id)
+        .order_by(QARun.uploaded_at.desc())
+    ).all()
+    for status, duration, hours in runs:
+        if status in (VERDICT_PASS, VERDICT_PASS_WITH_WARNING):
+            if hours and hours > 0:
+                return float(hours)
+            if duration and duration > 0:
+                return float(duration)
+            return float(_SESSION_HOURS)
+    return 0.0

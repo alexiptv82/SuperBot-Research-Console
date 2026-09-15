@@ -83,3 +83,11 @@ android-sdk/
 
 # overlay black-box crash/user-report dumps — session data, never history
 **/.emergent/recordings/
+backend/data/raw_zips/d26a84cc-9f84-4e89-ba31-aeff2fa4a88f.zip
+backend/data/raw_zips/0dff31ad-df4e-4e8e-a14b-8cb955bf746c.zip
+backend/data/raw_zips/1bd2c956-e1f4-491e-bf82-86fe0433549d.zip
+backend/data/raw_zips/57ce8ce0-c2c1-4024-8fc5-ed6eb55b2d1f.zip
+backend/data/raw_zips/746f1aab-94c9-47e3-9a50-43a663f36c34.zip
+backend/data/raw_zips/80046b68-0404-4b08-bf14-c5937ddff3bc.zip
+backend/data/raw_zips/37694c49-f674-419f-9304-f36af86053eb.zip
+backend/data/raw_zips/3ebce6a2-a0ea-4719-8527-01c294f98c7c.zip
