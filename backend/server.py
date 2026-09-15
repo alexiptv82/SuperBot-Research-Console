@@ -1,0 +1,712 @@
+"""SuperBot Research Console V1 \u2014 FastAPI application.
+
+Deterministic QA over MultiVenue 3H session ZIPs. No exchange credentials,
+no trading, no LLM at runtime. All routes are prefixed with ``/api`` per
+platform ingress requirements.
+"""
+from __future__ import annotations
+
+import logging
+import os
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from dotenv import load_dotenv
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
+from pydantic import BaseModel
+from sqlalchemy import desc, select
+from sqlalchemy.orm import Session as OrmSession
+from starlette.middleware.cors import CORSMiddleware
+
+ROOT_DIR = Path(__file__).parent
+load_dotenv(ROOT_DIR / ".env")
+
+from audit import log_event
+from auth import (
+    SESSION_COOKIE,
+    check_password,
+    clear_session_cookie,
+    issue_session_cookie,
+    verify_session,
+)
+from checkpoints import compute_checkpoints
+from constants import (
+    CHECKPOINT_NEW12,
+    CHECKPOINT_NEW36,
+    CHECKPOINT_OLD36,
+    DUP_EXACT_DUPLICATE,
+    DUP_NEW,
+    FROZEN_COLLECTOR_SHA256,
+    VERDICT_PASS,
+    VERDICT_PASS_WITH_WARNING,
+)
+from database import get_db, init_db
+from dedup import classify_upload, compute_validated_hours
+from frozen_engine import current_status as engine_status
+from models import AuditLog, QARun, RawFile, Session as SessionModel
+from qa_engine import run_qa
+from reports import to_csv, to_json, to_markdown
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger("superbot")
+
+app = FastAPI(title="SuperBot Research Console V1")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_credentials=True,
+    allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+DATA_DIR = Path(os.environ.get("SUPERBOT_DATA_DIR", "/app/backend/data"))
+RAW_DIR = DATA_DIR / "raw_zips"
+RAW_DIR.mkdir(parents=True, exist_ok=True)
+
+
+@app.on_event("startup")
+def _startup() -> None:
+    init_db()
+    logger.info("SuperBot Research Console V1 ready. DB=%s", os.environ.get("SUPERBOT_DB_PATH"))
+
+
+# ---------------------------------------------------------------------------
+# Auth helpers
+# ---------------------------------------------------------------------------
+
+
+def require_auth(request: Request) -> str:
+    return verify_session(request)
+
+
+# ---------------------------------------------------------------------------
+# Pydantic response schemas (minimal; kept close to the DB shape)
+# ---------------------------------------------------------------------------
+
+
+class LoginBody(BaseModel):
+    password: str
+
+
+class UploadResultItem(BaseModel):
+    filename: str
+    session_id: str | None
+    file_sha256: str
+    duplicate_status: str
+    verdict: str
+    validated_hours: float
+    qa_run_id: str
+    failure_reasons: list[str]
+    warnings: list[str]
+    missing_fields: list[str]
+    retained: bool
+
+
+# ---------------------------------------------------------------------------
+# Health + policy (public)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/health")
+def health() -> dict:
+    return {"status": "ok", "service": "superbot-research-console-v1"}
+
+
+@app.get("/api/policy")
+def policy() -> dict:
+    """Return frozen project policy that the console must never change."""
+    return {
+        "collector_sha256": FROZEN_COLLECTOR_SHA256,
+        "verdicts": ["PASS", "PASS_WITH_WARNING", "FAIL", "UNRESOLVED"],
+        "duplicate_states": [
+            "NEW",
+            "EXACT_DUPLICATE",
+            "SAME_SESSION_DIFFERENT_FILE",
+            "CONFLICT",
+        ],
+        "frozen_horizons": ["100ms", "200ms", "500ms", "1s", "2s", "5s", "10s", "30s"],
+        "economic_hurdle_bps": 15,
+        "quantiles": ["q80", "q90", "q95"],
+        "frozen_rules": [
+            "Later deterministic measurements supersede prose.",
+            "Narrative AI output never overrides a numeric FAIL.",
+            "Collector code/hash frozen.",
+            "q80/q90/q95 definitions frozen; q90 primary.",
+            "Signal, composite and weight definitions frozen.",
+            "Overlap rules frozen.",
+            "Data-quality filters frozen.",
+            "Horizon set frozen: 100ms, 200ms, 500ms, 1s, 2s, 5s, 10s, 30s.",
+            "15 bps economic hurdle binding for standalone directional promotion.",
+            "100ms\u20135s execution timing interpretation; 10s\u201330s markout / adverse-selection.",
+        ],
+        "prohibitions_v1": [
+            "No exchange credentials.",
+            "No create/cancel order endpoints.",
+            "No live positions, withdrawals, or trading buttons.",
+            "No paper trading in V1.",
+            "No AI runtime dependency required for QA.",
+            "No modification of the frozen collector.",
+            "No modification of the frozen quantitative methodology.",
+            "No production trading deployment.",
+        ],
+        "engine": engine_status().__dict__,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Auth routes
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/auth/login")
+def login(body: LoginBody, response: Response, db: OrmSession = Depends(get_db)) -> dict:
+    if not check_password(body.password):
+        log_event(db, "auth.login_failed", "Invalid password attempt", outcome="FAIL")
+        db.commit()
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid password")
+    issue_session_cookie(response)
+    log_event(db, "auth.login_success", "Owner logged in", outcome="PASS")
+    db.commit()
+    return {"authenticated": True}
+
+
+@app.post("/api/auth/logout")
+def logout(response: Response, db: OrmSession = Depends(get_db), _: str = Depends(require_auth)) -> dict:
+    clear_session_cookie(response)
+    log_event(db, "auth.logout", "Owner logged out", outcome="PASS")
+    db.commit()
+    return {"authenticated": False}
+
+
+@app.get("/api/auth/me")
+def me(request: Request) -> dict:
+    try:
+        verify_session(request)
+        return {"authenticated": True, "actor": "owner"}
+    except HTTPException:
+        return {"authenticated": False}
+
+
+# ---------------------------------------------------------------------------
+# Upload + QA
+# ---------------------------------------------------------------------------
+
+
+def _persist_raw_bytes(data: bytes, qa_run_id: str) -> Path:
+    """Persist raw ZIP bytes to the mounted persistent volume for retention.
+
+    In production this directory (``SUPERBOT_DATA_DIR``) is a Railway
+    persistent volume, satisfying \u00a712.7 raw-retention semantics with a
+    single Railway service (no object storage, no extra infra).
+    """
+    dest = RAW_DIR / f"{qa_run_id}.zip"
+    with open(dest, "wb") as fh:
+        fh.write(data)
+    return dest
+
+
+def _guess_checkpoint(filename: str, session_id: str | None) -> str | None:
+    lower = (filename + " " + (session_id or "")).lower()
+    if "old36" in lower or "old-36" in lower or "old_36" in lower:
+        return CHECKPOINT_OLD36
+    if "new36" in lower or "new-36" in lower or "new_36" in lower:
+        return CHECKPOINT_NEW36
+    if "new12" in lower or "new-12" in lower or "new_12" in lower:
+        return CHECKPOINT_NEW12
+    return None
+
+
+def _process_bytes(
+    db: OrmSession,
+    data: bytes,
+    filename: str,
+    retain_raw: bool,
+    checkpoint_hint_override: str | None,
+) -> UploadResultItem:
+    # 1. Run QA on in-memory bytes (no pod-local temp files)
+    report = run_qa(data, filename)
+
+    # 2. Duplicate detection uses session_id + file SHA256 (\u00a712.4)
+    dup_status = classify_upload(db, report.session_id, report.file_sha256)
+
+    # 3. Compute validated_hours contribution
+    duration_hours = None
+    try:
+        duration_hours = float(report.fields.get("duration_hours")) if report.fields.get("duration_hours") else None
+    except (TypeError, ValueError):
+        duration_hours = None
+    validated_hours = compute_validated_hours(report.verdict, dup_status, duration_hours)
+
+    # 4. Resolve / create Session row (keyed on session_id when known)
+    session_key = report.session_id or f"UNKNOWN::{report.file_sha256[:12]}"
+    session_row = db.execute(
+        select(SessionModel).where(SessionModel.session_id == session_key)
+    ).scalars().first()
+    if session_row is None:
+        session_row = SessionModel(session_id=session_key)
+        db.add(session_row)
+        db.flush()
+    session_row.last_seen_at = datetime.now(timezone.utc).isoformat()
+    checkpoint_hint = checkpoint_hint_override or _guess_checkpoint(filename, report.session_id)
+    if checkpoint_hint and not session_row.checkpoint_hint:
+        session_row.checkpoint_hint = checkpoint_hint
+
+    # 5. Create immutable QA run
+    qa_run = QARun(
+        session_pk=session_row.id,
+        session_id=session_key,
+        original_filename=filename,
+        source_file_sha256=report.file_sha256,
+        collector_sha256=(
+            str(report.fields.get("collector_sha256")).lower()
+            if report.fields.get("collector_sha256") is not None
+            else None
+        ),
+        start_time=report.fields.get("start_time"),
+        end_time=report.fields.get("end_time"),
+        duration_hours=duration_hours,
+        operational_status=report.verdict,
+        duplicate_status=dup_status,
+        zip_crc_status=report.checks.get("zip", {}).get("status"),
+        manifest_status=report.checks.get("manifest", {}).get("status"),
+        runtime_status=report.checks.get("runtime", {}).get("status"),
+        watchdog_status=(
+            "TRUE" if report.fields.get("watchdog") else ("FALSE" if report.fields.get("watchdog") is False else None)
+        ),
+        exit_code=int(report.fields["exit_code"]) if isinstance(report.fields.get("exit_code"), (int, float)) else None,
+        sync_grid_file_count=report.fields.get("sync_grid_file_count"),
+        books_file_count=report.fields.get("books_file_count"),
+        trades_file_count=report.fields.get("trades_file_count"),
+        parquet_total=report.fields.get("parquet_total"),
+        parquet_magic_status=report.fields.get("parquet_magic_status"),
+        missed_ticks=report.fields.get("missed_ticks"),
+        theoretical_ticks=report.fields.get("theoretical_ticks"),
+        missed_tick_pct=report.fields.get("missed_tick_pct"),
+        lag_gt_50ms=report.fields.get("lag_gt_50ms"),
+        max_lag_ms=report.fields.get("max_lag_ms"),
+        writer_errors=report.fields.get("writer_errors"),
+        websocket_errors=report.fields.get("websocket_errors"),
+        reconnect_count=report.fields.get("reconnect_count"),
+        reconnect_summary=report.fields.get("reconnect_summary"),
+        unknown_side_count=report.fields.get("unknown_side_count"),
+        final_buffer_status=(
+            str(report.fields.get("final_buffer_status")) if report.fields.get("final_buffer_status") is not None else None
+        ),
+        validated_hours=validated_hours,
+        failure_reasons=list(report.failure_reasons),
+        warnings=list(report.warnings),
+        checks=report.checks,
+        manifest_raw=report.manifest_raw,
+        missing_fields=list(report.missing_fields),
+    )
+    db.add(qa_run)
+    db.flush()
+    session_row.current_qa_run_id = qa_run.id
+
+    # 6. Retention policy per \u00a712.7
+    should_retain = retain_raw or report.verdict not in (VERDICT_PASS, VERDICT_PASS_WITH_WARNING)
+    if should_retain:
+        stored = _persist_raw_bytes(data, qa_run.id)
+        rf = RawFile(
+            qa_run_id=qa_run.id,
+            stored_path=str(stored),
+            size_bytes=stored.stat().st_size,
+            retained=True,
+            retention_reason=(
+                "user_toggle" if retain_raw and report.verdict in (VERDICT_PASS, VERDICT_PASS_WITH_WARNING)
+                else "non_pass_verdict"
+            ),
+        )
+        db.add(rf)
+    else:
+        rf = RawFile(
+            qa_run_id=qa_run.id,
+            stored_path=None,
+            size_bytes=None,
+            retained=False,
+            retention_reason="pass_default_delete",
+            deleted_at=datetime.now(timezone.utc).isoformat(),
+        )
+        db.add(rf)
+
+    # 7. Audit
+    log_event(
+        db,
+        event_type="upload.qa",
+        session_id=session_key,
+        qa_run_id=qa_run.id,
+        outcome=report.verdict,
+        message=f"Uploaded {filename}; dup={dup_status}; hours={validated_hours}",
+        payload={"failure_reasons": report.failure_reasons, "warnings": report.warnings},
+    )
+
+    return UploadResultItem(
+        filename=filename,
+        session_id=report.session_id,
+        file_sha256=report.file_sha256,
+        duplicate_status=dup_status,
+        verdict=report.verdict,
+        validated_hours=validated_hours,
+        qa_run_id=qa_run.id,
+        failure_reasons=list(report.failure_reasons),
+        warnings=list(report.warnings),
+        missing_fields=list(report.missing_fields),
+        retained=should_retain,
+    )
+
+
+@app.post("/api/sessions/upload")
+async def upload_sessions(
+    files: list[UploadFile] = File(...),
+    retain_raw: bool = Form(False),
+    checkpoint_hint: str | None = Form(None),
+    db: OrmSession = Depends(get_db),
+    _: str = Depends(require_auth),
+) -> dict:
+    results: list[UploadResultItem] = []
+    max_bytes = int(os.environ.get("SUPERBOT_MAX_UPLOAD_MB", "1024")) * 1024 * 1024
+    for f in files:
+        # Read the entire upload into memory (bounded by max_bytes) so
+        # nothing is ever written to a pod-local temp file. Only the
+        # retention path (\u00a712.7) touches disk, and only on the mounted
+        # SUPERBOT_DATA_DIR persistent volume.
+        data = bytearray()
+        while True:
+            chunk = await f.read(1024 * 1024)
+            if not chunk:
+                break
+            if len(data) + len(chunk) > max_bytes:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail=f"File exceeds {max_bytes} bytes",
+                )
+            data.extend(chunk)
+        try:
+            item = _process_bytes(
+                db, bytes(data), f.filename or "unknown.zip", retain_raw, checkpoint_hint
+            )
+            results.append(item)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.exception("Upload processing failed for %s", f.filename)
+            log_event(
+                db,
+                event_type="upload.error",
+                message=f"crash processing {f.filename}: {exc}",
+                outcome="FAIL",
+            )
+            raise HTTPException(status_code=500, detail=f"Processing failed: {exc}")
+    db.commit()
+    return {"count": len(results), "results": [r.model_dump() for r in results]}
+
+
+# ---------------------------------------------------------------------------
+# Registry + detail
+# ---------------------------------------------------------------------------
+
+
+def _qa_run_to_dict(run: QARun) -> dict[str, Any]:
+    return {
+        "id": run.id,
+        "session_id": run.session_id,
+        "original_filename": run.original_filename,
+        "uploaded_at": run.uploaded_at,
+        "source_file_sha256": run.source_file_sha256,
+        "collector_sha256": run.collector_sha256,
+        "start_time": run.start_time,
+        "end_time": run.end_time,
+        "duration_hours": run.duration_hours,
+        "operational_status": run.operational_status,
+        "duplicate_status": run.duplicate_status,
+        "zip_crc_status": run.zip_crc_status,
+        "manifest_status": run.manifest_status,
+        "runtime_status": run.runtime_status,
+        "watchdog_status": run.watchdog_status,
+        "exit_code": run.exit_code,
+        "sync_grid_file_count": run.sync_grid_file_count,
+        "books_file_count": run.books_file_count,
+        "trades_file_count": run.trades_file_count,
+        "parquet_total": run.parquet_total,
+        "parquet_magic_status": run.parquet_magic_status,
+        "sync_sequence_status": run.sync_sequence_status,
+        "books_sequence_status": run.books_sequence_status,
+        "trades_sequence_status": run.trades_sequence_status,
+        "missed_ticks": run.missed_ticks,
+        "theoretical_ticks": run.theoretical_ticks,
+        "missed_tick_pct": run.missed_tick_pct,
+        "lag_gt_50ms": run.lag_gt_50ms,
+        "max_lag_ms": run.max_lag_ms,
+        "writer_errors": run.writer_errors,
+        "websocket_errors": run.websocket_errors,
+        "reconnect_count": run.reconnect_count,
+        "reconnect_summary": run.reconnect_summary,
+        "unknown_side_count": run.unknown_side_count,
+        "final_buffer_status": run.final_buffer_status,
+        "validated_hours": run.validated_hours,
+        "failure_reasons": run.failure_reasons or [],
+        "warnings": run.warnings or [],
+        "checks": run.checks or {},
+        "manifest_raw": run.manifest_raw,
+        "missing_fields": run.missing_fields or [],
+        "qa_timestamp": run.qa_timestamp,
+        "retained": bool(run.raw_file and run.raw_file.retained),
+        "retention_reason": run.raw_file.retention_reason if run.raw_file else None,
+    }
+
+
+@app.get("/api/sessions")
+def list_sessions(
+    status_filter: str | None = Query(None, alias="status"),
+    q: str | None = None,
+    db: OrmSession = Depends(get_db),
+    _: str = Depends(require_auth),
+) -> dict:
+    """List latest QA run per session_id."""
+    stmt = select(SessionModel)
+    rows = db.execute(stmt).scalars().all()
+    result = []
+    for s in rows:
+        run = None
+        if s.current_qa_run_id:
+            run = db.get(QARun, s.current_qa_run_id)
+        if run is None:
+            run = db.execute(
+                select(QARun).where(QARun.session_pk == s.id).order_by(desc(QARun.uploaded_at))
+            ).scalars().first()
+        if run is None:
+            continue
+        if status_filter and run.operational_status != status_filter:
+            continue
+        if q and q.lower() not in (run.session_id or "").lower() and q.lower() not in (run.original_filename or "").lower():
+            continue
+        item = _qa_run_to_dict(run)
+        item["checkpoint_hint"] = s.checkpoint_hint
+        item["first_seen_at"] = s.first_seen_at
+        item["last_seen_at"] = s.last_seen_at
+        result.append(item)
+    result.sort(key=lambda x: x["uploaded_at"], reverse=True)
+    return {"count": len(result), "sessions": result}
+
+
+@app.get("/api/sessions/{session_id}")
+def get_session(
+    session_id: str,
+    db: OrmSession = Depends(get_db),
+    _: str = Depends(require_auth),
+) -> dict:
+    s = db.execute(select(SessionModel).where(SessionModel.session_id == session_id)).scalars().first()
+    if s is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    runs = db.execute(
+        select(QARun).where(QARun.session_pk == s.id).order_by(desc(QARun.uploaded_at))
+    ).scalars().all()
+    return {
+        "session_id": s.session_id,
+        "checkpoint_hint": s.checkpoint_hint,
+        "first_seen_at": s.first_seen_at,
+        "last_seen_at": s.last_seen_at,
+        "current_qa_run_id": s.current_qa_run_id,
+        "qa_runs": [_qa_run_to_dict(r) for r in runs],
+    }
+
+
+@app.post("/api/sessions/{session_id}/reprocess")
+def reprocess_session(
+    session_id: str,
+    db: OrmSession = Depends(get_db),
+    _: str = Depends(require_auth),
+) -> dict:
+    """Re-run QA on the retained raw ZIP of the latest run, if available."""
+    s = db.execute(select(SessionModel).where(SessionModel.session_id == session_id)).scalars().first()
+    if s is None or not s.current_qa_run_id:
+        raise HTTPException(status_code=404, detail="Session not found")
+    latest = db.get(QARun, s.current_qa_run_id)
+    if not latest or not latest.raw_file or not latest.raw_file.retained or not latest.raw_file.stored_path:
+        raise HTTPException(status_code=409, detail="No retained raw ZIP to reprocess")
+    src = latest.raw_file.stored_path
+    if not os.path.exists(src):
+        raise HTTPException(status_code=410, detail="Retained raw ZIP missing on disk")
+    with open(src, "rb") as fh:
+        data = fh.read()
+    item = _process_bytes(
+        db, data, latest.original_filename, retain_raw=True, checkpoint_hint_override=s.checkpoint_hint
+    )
+    log_event(
+        db,
+        event_type="session.reprocess",
+        session_id=session_id,
+        qa_run_id=item.qa_run_id,
+        outcome=item.verdict,
+        message=f"Reprocessed session {session_id}",
+    )
+    db.commit()
+    return item.model_dump()
+
+
+# ---------------------------------------------------------------------------
+# Checkpoints + engine
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/checkpoints")
+def checkpoints(db: OrmSession = Depends(get_db), _: str = Depends(require_auth)) -> dict:
+    return compute_checkpoints(db)
+
+
+@app.get("/api/engine")
+def engine(_: str = Depends(require_auth)) -> dict:
+    return engine_status().__dict__
+
+
+class CheckpointAssign(BaseModel):
+    checkpoint_hint: str | None
+
+
+@app.post("/api/sessions/{session_id}/checkpoint")
+def assign_checkpoint(
+    session_id: str,
+    body: CheckpointAssign,
+    db: OrmSession = Depends(get_db),
+    _: str = Depends(require_auth),
+) -> dict:
+    s = db.execute(select(SessionModel).where(SessionModel.session_id == session_id)).scalars().first()
+    if s is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    old = s.checkpoint_hint
+    s.checkpoint_hint = body.checkpoint_hint
+    log_event(
+        db,
+        event_type="session.checkpoint_assigned",
+        session_id=session_id,
+        message=f"checkpoint_hint {old} -> {body.checkpoint_hint}",
+        outcome="PASS",
+    )
+    db.commit()
+    return {"session_id": session_id, "checkpoint_hint": s.checkpoint_hint}
+
+
+# ---------------------------------------------------------------------------
+# Reports
+# ---------------------------------------------------------------------------
+
+
+def _all_latest_runs(db: OrmSession) -> list[QARun]:
+    sessions = db.execute(select(SessionModel)).scalars().all()
+    runs: list[QARun] = []
+    for s in sessions:
+        if s.current_qa_run_id:
+            r = db.get(QARun, s.current_qa_run_id)
+            if r:
+                runs.append(r)
+    runs.sort(key=lambda r: r.uploaded_at, reverse=True)
+    return runs
+
+
+@app.get("/api/reports/export")
+def export_reports(
+    fmt: str = Query("json", pattern="^(json|csv|md)$"),
+    session_id: str | None = None,
+    db: OrmSession = Depends(get_db),
+    _: str = Depends(require_auth),
+) -> Response:
+    if session_id:
+        s = db.execute(select(SessionModel).where(SessionModel.session_id == session_id)).scalars().first()
+        if s is None:
+            raise HTTPException(status_code=404, detail="Session not found")
+        runs = db.execute(
+            select(QARun).where(QARun.session_pk == s.id).order_by(desc(QARun.uploaded_at))
+        ).scalars().all()
+    else:
+        runs = _all_latest_runs(db)
+
+    if fmt == "json":
+        body = to_json(runs)
+        return Response(content=body, media_type="application/json",
+                        headers={"Content-Disposition": f"attachment; filename=superbot_report.json"})
+    if fmt == "csv":
+        body = to_csv(runs)
+        return Response(content=body, media_type="text/csv",
+                        headers={"Content-Disposition": f"attachment; filename=superbot_report.csv"})
+    body = to_markdown(runs)
+    return Response(content=body, media_type="text/markdown",
+                    headers={"Content-Disposition": f"attachment; filename=superbot_report.md"})
+
+
+# ---------------------------------------------------------------------------
+# Audit log
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/audit")
+def audit_log(
+    event_type: str | None = None,
+    outcome: str | None = None,
+    limit: int = Query(200, ge=1, le=2000),
+    db: OrmSession = Depends(get_db),
+    _: str = Depends(require_auth),
+) -> dict:
+    stmt = select(AuditLog).order_by(desc(AuditLog.ts))
+    if event_type:
+        stmt = stmt.where(AuditLog.event_type == event_type)
+    if outcome:
+        stmt = stmt.where(AuditLog.outcome == outcome)
+    stmt = stmt.limit(limit)
+    rows = db.execute(stmt).scalars().all()
+    return {
+        "count": len(rows),
+        "events": [
+            {
+                "id": r.id,
+                "ts": r.ts,
+                "actor": r.actor,
+                "event_type": r.event_type,
+                "session_id": r.session_id,
+                "qa_run_id": r.qa_run_id,
+                "message": r.message,
+                "outcome": r.outcome,
+                "payload": r.payload,
+            }
+            for r in rows
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Overview aggregate
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/overview")
+def overview(db: OrmSession = Depends(get_db), _: str = Depends(require_auth)) -> dict:
+    sessions = db.execute(select(SessionModel)).scalars().all()
+    session_count = len(sessions)
+    latest_runs = _all_latest_runs(db)
+    verdict_counts = {"PASS": 0, "PASS_WITH_WARNING": 0, "FAIL": 0, "UNRESOLVED": 0}
+    for r in latest_runs:
+        verdict_counts[r.operational_status] = verdict_counts.get(r.operational_status, 0) + 1
+    recent = [_qa_run_to_dict(r) for r in latest_runs[:8]]
+    return {
+        "sessions": session_count,
+        "verdict_counts": verdict_counts,
+        "recent": recent,
+        "checkpoints": compute_checkpoints(db),
+        "engine": engine_status().__dict__,
+        "collector_sha256": FROZEN_COLLECTOR_SHA256,
+    }

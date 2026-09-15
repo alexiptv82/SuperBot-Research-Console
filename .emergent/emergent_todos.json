@@ -1,0 +1,62 @@
+[
+  {
+    "content": "Phase 2: Backend - SQLAlchemy models (sessions, qa_runs, audit_log, raw_files)",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 2: Backend - Auth (password gate, signed session)",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 2: Backend - Upload endpoint with ZIP security + SHA256 + dedup",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 2: Backend - Deterministic QA engine (ZIP/collector/manifest/dataset/parquet/reconnects)",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 2: Backend - Tolerant manifest parser with alias registry, UNRESOLVED on missing",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 2: Backend - FrozenAnalysisEngine stub (NOT_CONFIGURED)",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 2: Backend - Checkpoint logic (OLD36/NEW12/TOTAL48/NEW36/TOTAL72)",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 2: Backend - Reports export (JSON/CSV/MD) + Audit log endpoints",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 2: Pytest §14.2 with synthetic fixtures (14 scenarios)",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 2: Frontend - Design tokens, index.css, App.css cleanup, fonts",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 2: Frontend - Login gate + auth context + AppShell (sidebar + topbar)",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 2: Frontend - Overview, Upload, Registry, Detail, Reports, Checkpoints, Policy, Audit pages",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 3: Dockerfile + README + .env.example (Railway-ready)",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 2: All user stories covered in Development and testing",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 2: End to End Testing using Testing Agent",
+    "status": "completed"
+  }
+]

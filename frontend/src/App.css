@@ -1,0 +1,22 @@
+/* SuperBot Research Console — minimal shell styles (no CRA defaults). */
+.App {
+    min-height: 100vh;
+}
+
+/* Progress ring stroke transition */
+.checkpoint-ring circle {
+    transition: stroke-dashoffset 400ms ease-out;
+}
+
+/* Subtle scrollbar for dark theme */
+.dark ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+.dark ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 6px;
+}
+.dark ::-webkit-scrollbar-track {
+    background: transparent;
+}
