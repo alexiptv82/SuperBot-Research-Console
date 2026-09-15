@@ -1,10 +1,11 @@
 import React, { useCallback, useRef, useState } from "react";
 import { api } from "@/lib/api";
+import { useT } from "@/lib/locale";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { VerdictBadge } from "@/components/VerdictBadge";
+import { VerdictBadge, DuplicateStateText } from "@/components/VerdictBadge";
 import { Upload as UploadIcon, X, FileArchive, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Link } from "react-router-dom";
@@ -12,6 +13,7 @@ import { Link } from "react-router-dom";
 const CHECKPOINTS = ["", "OLD36", "NEW12", "NEW36"];
 
 export default function UploadPage() {
+  const t = useT();
   const [files, setFiles] = useState([]);
   const [drag, setDrag] = useState(false);
   const [retainRaw, setRetainRaw] = useState(false);
@@ -75,24 +77,18 @@ export default function UploadPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">Upload Sessions</h1>
-        <p className="text-sm text-muted-foreground">
-          Drag one or more MultiVenue 3H session ZIPs. Each file is validated deterministically
-          against the frozen collector SHA256 and session policy.
-        </p>
+        <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">{t("upload.title")}</h1>
+        <p className="text-sm text-muted-foreground">{t("upload.subtitle")}</p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm font-semibold tracking-wide">Ingest</CardTitle>
+          <CardTitle className="text-sm font-semibold tracking-wide">{t("upload.ingest")}</CardTitle>
         </CardHeader>
         <CardContent>
           <div
             data-testid="upload-dropzone"
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDrag(true);
-            }}
+            onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
             onDragLeave={() => setDrag(false)}
             onDrop={onDrop}
             onClick={() => inputRef.current?.click()}
@@ -104,10 +100,8 @@ export default function UploadPage() {
             )}
           >
             <UploadIcon className="h-8 w-8 text-muted-foreground" />
-            <div className="mt-3 text-sm font-medium">Drop ZIP files here or click to browse</div>
-            <div className="mt-1 text-xs text-muted-foreground">
-              Files stay in memory during QA; retention is controlled below.
-            </div>
+            <div className="mt-3 text-sm font-medium">{t("upload.drop_hint")}</div>
+            <div className="mt-1 text-xs text-muted-foreground">{t("upload.drop_note")}</div>
             <input
               ref={inputRef}
               data-testid="upload-file-input"
@@ -121,18 +115,11 @@ export default function UploadPage() {
 
           <div className="mt-4 flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
             <div className="flex items-center gap-3">
-              <Switch
-                id="retain"
-                checked={retainRaw}
-                onCheckedChange={setRetainRaw}
-                data-testid="upload-retain-raw-toggle"
-              />
-              <Label htmlFor="retain" className="text-xs">
-                Retain raw ZIP after validation
-              </Label>
+              <Switch id="retain" checked={retainRaw} onCheckedChange={setRetainRaw} data-testid="upload-retain-raw-toggle" />
+              <Label htmlFor="retain" className="text-xs">{t("upload.retain")}</Label>
             </div>
             <div className="flex items-center gap-2 text-xs">
-              <span className="text-muted-foreground">Checkpoint hint:</span>
+              <span className="text-muted-foreground">{t("upload.checkpoint_hint")}</span>
               <select
                 data-testid="upload-checkpoint-hint"
                 className="rounded-md border bg-background px-2 py-1 text-xs"
@@ -141,17 +128,13 @@ export default function UploadPage() {
               >
                 {CHECKPOINTS.map((c) => (
                   <option key={c} value={c}>
-                    {c || "(auto from filename)"}
+                    {c || t("upload.checkpoint_auto")}
                   </option>
                 ))}
               </select>
             </div>
-            <Button
-              onClick={upload}
-              disabled={busy || files.length === 0}
-              data-testid="upload-start-button"
-            >
-              {busy && <Loader2 className="h-4 w-4 mr-2 animate-spin" />} Validate {files.length ? `(${files.length})` : ""}
+            <Button onClick={upload} disabled={busy || files.length === 0} data-testid="upload-start-button">
+              {busy && <Loader2 className="h-4 w-4 mr-2 animate-spin" />} {t("upload.start")} {files.length ? `(${files.length})` : ""}
             </Button>
           </div>
         </CardContent>
@@ -160,15 +143,11 @@ export default function UploadPage() {
       {files.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm font-semibold tracking-wide">Queue</CardTitle>
+            <CardTitle className="text-sm font-semibold tracking-wide">{t("upload.queue")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             {files.map((f) => (
-              <div
-                key={f.id}
-                data-testid="upload-file-row"
-                className="flex items-center gap-3 rounded-lg border bg-background/40 px-3 py-2"
-              >
+              <div key={f.id} data-testid="upload-file-row" className="flex items-center gap-3 rounded-lg border bg-background/40 px-3 py-2">
                 <FileArchive className="h-4 w-4 text-muted-foreground" />
                 <div className="flex-1 min-w-0">
                   <div className="text-sm truncate">{f.file.name}</div>
@@ -180,27 +159,21 @@ export default function UploadPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  {f.state === "queued" && (
-                    <span className="text-xs text-muted-foreground">queued</span>
-                  )}
+                  {f.state === "queued" && <span className="text-xs text-muted-foreground">{t("upload.state_queued")}</span>}
                   {f.state === "uploading" && (
                     <span className="text-xs text-muted-foreground flex items-center gap-1">
-                      <Loader2 className="h-3 w-3 animate-spin" /> validating
+                      <Loader2 className="h-3 w-3 animate-spin" /> {t("upload.state_validating")}
                     </span>
                   )}
                   {f.state === "done" && f.result && (
                     <>
                       <span className="text-[10px] text-muted-foreground uppercase">
-                        {f.result.duplicate_status}
+                        <DuplicateStateText state={f.result.duplicate_status} />
                       </span>
                       <VerdictBadge verdict={f.result.verdict} size="sm" />
                       {f.result.session_id && (
-                        <Link
-                          to={`/session/${encodeURIComponent(f.result.session_id)}`}
-                          className="text-xs text-[hsl(var(--focus))] hover:underline"
-                          data-testid="upload-file-view"
-                        >
-                          View
+                        <Link to={`/session/${encodeURIComponent(f.result.session_id)}`} className="text-xs text-[hsl(var(--focus))] hover:underline" data-testid="upload-file-view">
+                          {t("upload.file_view")}
                         </Link>
                       )}
                     </>
@@ -208,13 +181,7 @@ export default function UploadPage() {
                   {f.state === "error" && (
                     <span className="text-xs text-[hsl(var(--verdict-fail))]">{f.error}</span>
                   )}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => remove(f.id)}
-                    aria-label="Remove"
-                    data-testid="upload-file-remove-button"
-                  >
+                  <Button variant="ghost" size="icon" onClick={() => remove(f.id)} aria-label={t("upload.remove")} data-testid="upload-file-remove-button">
                     <X className="h-4 w-4" />
                   </Button>
                 </div>

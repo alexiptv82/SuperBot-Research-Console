@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
+import { useLocale, useT } from "@/lib/locale";
 import { api } from "@/lib/api";
 import {
   LayoutDashboard,
@@ -16,15 +17,16 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 
 const NAV = [
-  { to: "/", label: "Overview", icon: LayoutDashboard, testId: "sidebar-nav-overview" },
-  { to: "/upload", label: "Upload Sessions", icon: Upload, testId: "sidebar-nav-upload" },
-  { to: "/registry", label: "Session Registry", icon: Database, testId: "sidebar-nav-registry" },
-  { to: "/reports", label: "QA Reports", icon: FileText, testId: "sidebar-nav-reports" },
-  { to: "/checkpoints", label: "Checkpoints", icon: Target, testId: "sidebar-nav-checkpoints" },
-  { to: "/policy", label: "Project Policy", icon: ShieldCheck, testId: "sidebar-nav-policy" },
-  { to: "/audit", label: "System / Audit Log", icon: ScrollText, testId: "sidebar-nav-audit" },
+  { to: "/", labelKey: "nav.overview", icon: LayoutDashboard, testId: "sidebar-nav-overview" },
+  { to: "/upload", labelKey: "nav.upload", icon: Upload, testId: "sidebar-nav-upload" },
+  { to: "/registry", labelKey: "nav.registry", icon: Database, testId: "sidebar-nav-registry" },
+  { to: "/reports", labelKey: "nav.reports", icon: FileText, testId: "sidebar-nav-reports" },
+  { to: "/checkpoints", labelKey: "nav.checkpoints", icon: Target, testId: "sidebar-nav-checkpoints" },
+  { to: "/policy", labelKey: "nav.policy", icon: ShieldCheck, testId: "sidebar-nav-policy" },
+  { to: "/audit", labelKey: "nav.audit", icon: ScrollText, testId: "sidebar-nav-audit" },
 ];
 
 function useTheme() {
@@ -44,6 +46,8 @@ export function AppShell() {
   const nav = useNavigate();
   const loc = useLocation();
   const { dark, toggle } = useTheme();
+  const t = useT();
+  useLocale();
   const [overview, setOverview] = useState(null);
 
   useEffect(() => {
@@ -58,7 +62,6 @@ export function AppShell() {
 
   return (
     <div className="min-h-screen w-full bg-background text-foreground grid grid-cols-1 md:grid-cols-[264px_1fr]">
-      {/* Sidebar */}
       <aside className="hidden md:flex flex-col border-r bg-card">
         <div className="px-4 py-5 border-b">
           <Link to="/" className="flex items-center gap-2">
@@ -84,7 +87,7 @@ export function AppShell() {
               }
             >
               <n.icon className="h-4 w-4" />
-              <span>{n.label}</span>
+              <span>{t(n.labelKey)}</span>
             </NavLink>
           ))}
         </nav>
@@ -95,35 +98,33 @@ export function AppShell() {
         </div>
       </aside>
 
-      {/* Main */}
       <div className="flex flex-col min-h-screen">
         <header className="h-14 border-b bg-background/80 backdrop-blur flex items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-3">
             <div className="md:hidden text-sm font-semibold">SuperBot</div>
-            <div className="text-xs text-muted-foreground">
-              <span className="hidden sm:inline">Deterministic QA console — no trading, no exchange creds</span>
-            </div>
+            <div className="text-xs text-muted-foreground hidden sm:block">{t("top.subtitle")}</div>
           </div>
           <div className="flex items-center gap-2">
             <span
               data-testid="topbar-session-count"
               className="hidden sm:inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium text-muted-foreground"
             >
-              {sessionCount} sessions
+              {t("top.sessions_count", { n: sessionCount })}
             </span>
             <span
               data-testid="topbar-engine-status-pill"
               className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium text-muted-foreground"
-              title="FrozenAnalysisEngine status"
+              title="FrozenAnalysisEngine"
             >
               <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground" />
-              Engine: {engineStatus}
+              {t("top.engine_status", { status: engineStatus })}
             </span>
+            <LanguageSwitcher />
             <Button
               variant="ghost"
               size="icon"
               onClick={toggle}
-              aria-label="Toggle theme"
+              aria-label={t("top.theme")}
               data-testid="topbar-theme-toggle"
             >
               {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
@@ -137,12 +138,11 @@ export function AppShell() {
               }}
               data-testid="topbar-logout-button"
             >
-              <LogOut className="h-4 w-4 mr-1" /> Logout
+              <LogOut className="h-4 w-4 mr-1" /> {t("top.logout")}
             </Button>
           </div>
         </header>
 
-        {/* Mobile top nav */}
         <nav className="md:hidden flex overflow-x-auto border-b bg-card px-2">
           {NAV.map((n) => (
             <NavLink
@@ -157,7 +157,7 @@ export function AppShell() {
                 )
               }
             >
-              {n.label}
+              {t(n.labelKey)}
             </NavLink>
           ))}
         </nav>

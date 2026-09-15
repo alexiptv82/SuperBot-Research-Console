@@ -175,20 +175,20 @@ def policy() -> dict:
 
 
 @app.post("/api/auth/login")
-def login(body: LoginBody, response: Response, db: OrmSession = Depends(get_db)) -> dict:
+def login(body: LoginBody, request: Request, response: Response, db: OrmSession = Depends(get_db)) -> dict:
     if not check_password(body.password):
         log_event(db, "auth.login_failed", "Invalid password attempt", outcome="FAIL")
         db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid password")
-    issue_session_cookie(response)
+    issue_session_cookie(response, request)
     log_event(db, "auth.login_success", "Owner logged in", outcome="PASS")
     db.commit()
     return {"authenticated": True}
 
 
 @app.post("/api/auth/logout")
-def logout(response: Response, db: OrmSession = Depends(get_db), _: str = Depends(require_auth)) -> dict:
-    clear_session_cookie(response)
+def logout(request: Request, response: Response, db: OrmSession = Depends(get_db), _: str = Depends(require_auth)) -> dict:
+    clear_session_cookie(response, request)
     log_event(db, "auth.logout", "Owner logged out", outcome="PASS")
     db.commit()
     return {"authenticated": False}

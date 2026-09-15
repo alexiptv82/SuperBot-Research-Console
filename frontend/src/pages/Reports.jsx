@@ -1,11 +1,12 @@
 import React from "react";
+import { useT } from "@/lib/locale";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Download } from "lucide-react";
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL || "";
 
-function ExportCard({ fmt, label, testId, description }) {
+function ExportCard({ fmt, label, testId, description, downloadLabel }) {
   return (
     <Card>
       <CardHeader>
@@ -15,7 +16,7 @@ function ExportCard({ fmt, label, testId, description }) {
         <p className="text-xs text-muted-foreground">{description}</p>
         <Button asChild variant="secondary" data-testid={testId}>
           <a href={`${BACKEND}/api/reports/export?fmt=${fmt}`}>
-            <Download className="h-4 w-4 mr-1" /> Download
+            <Download className="h-4 w-4 mr-1" /> {downloadLabel}
           </a>
         </Button>
       </CardContent>
@@ -24,34 +25,17 @@ function ExportCard({ fmt, label, testId, description }) {
 }
 
 export default function ReportsPage() {
+  const t = useT();
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">QA Reports</h1>
-        <p className="text-sm text-muted-foreground">
-          Registry-wide exports of the latest QA run per session. All fields from §12.3 are
-          included.
-        </p>
+        <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">{t("reports.title")}</h1>
+        <p className="text-sm text-muted-foreground">{t("reports.subtitle")}</p>
       </div>
       <div className="grid gap-4 md:grid-cols-3">
-        <ExportCard
-          fmt="json"
-          label="JSON"
-          description="Machine-friendly, includes nested checks and manifest."
-          testId="reports-export-json-button"
-        />
-        <ExportCard
-          fmt="csv"
-          label="CSV"
-          description="Flat spreadsheet-friendly export; nested fields as JSON strings."
-          testId="reports-export-csv-button"
-        />
-        <ExportCard
-          fmt="md"
-          label="Markdown"
-          description="Human-readable summary suitable for handoff / ChatGPT audit."
-          testId="reports-export-md-button"
-        />
+        <ExportCard fmt="json" label="JSON" description={t("reports.json_desc")} downloadLabel={t("reports.download")} testId="reports-export-json-button" />
+        <ExportCard fmt="csv" label="CSV" description={t("reports.csv_desc")} downloadLabel={t("reports.download")} testId="reports-export-csv-button" />
+        <ExportCard fmt="md" label="Markdown" description={t("reports.md_desc")} downloadLabel={t("reports.download")} testId="reports-export-md-button" />
       </div>
     </div>
   );

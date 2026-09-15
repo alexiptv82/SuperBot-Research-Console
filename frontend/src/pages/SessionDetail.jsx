@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "@/lib/api";
+import { useT, useLocale } from "@/lib/locale";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { VerdictBadge } from "@/components/VerdictBadge";
+import { VerdictBadge, DuplicateStateText } from "@/components/VerdictBadge";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { ArrowLeft, Download, RefreshCcw } from "lucide-react";
 
@@ -19,17 +20,17 @@ function KV({ label, value, mono = false }) {
 }
 
 export default function SessionDetailPage() {
+  const t = useT();
+  const { fmtDate, fmtNumber } = useLocale();
   const { sessionId } = useParams();
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState(false);
   const nav = useNavigate();
 
   const load = () => api.get(`/sessions/${encodeURIComponent(sessionId)}`).then((r) => setData(r.data));
-  useEffect(() => {
-    load();
-  }, [sessionId]);
+  useEffect(() => { load(); }, [sessionId]);
 
-  if (!data) return <div className="text-sm text-muted-foreground">Loading…</div>;
+  if (!data) return <div className="text-sm text-muted-foreground">{t("common.loading")}</div>;
   const runs = data.qa_runs || [];
   const latest = runs[0];
 
@@ -39,10 +40,8 @@ export default function SessionDetailPage() {
       await api.post(`/sessions/${encodeURIComponent(sessionId)}/reprocess`);
       await load();
     } catch (e) {
-      alert(e?.response?.data?.detail || "Reprocess failed");
-    } finally {
-      setBusy(false);
-    }
+      alert(e?.response?.data?.detail || t("detail.reprocess_failed"));
+    } finally { setBusy(false); }
   };
 
   return (
@@ -50,48 +49,36 @@ export default function SessionDetailPage() {
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div className="space-y-1">
           <button onClick={() => nav(-1)} className="text-xs text-muted-foreground hover:underline flex items-center gap-1">
-            <ArrowLeft className="h-3 w-3" /> back
+            <ArrowLeft className="h-3 w-3" /> {t("detail.back")}
           </button>
-          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight font-mono break-all">
-            {data.session_id}
-          </h1>
+          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight font-mono break-all">{data.session_id}</h1>
           <div className="flex items-center gap-2">
             {latest && <VerdictBadge verdict={latest.operational_status} />}
-            <span className="text-xs text-muted-foreground">{runs.length} QA run(s)</span>
+            <span className="text-xs text-muted-foreground">{t("detail.runs_count", { n: runs.length })}</span>
             {data.checkpoint_hint && (
-              <span className="text-[10px] rounded border px-1.5 py-0.5 uppercase text-muted-foreground">
-                {data.checkpoint_hint}
-              </span>
+              <span className="text-[10px] rounded border px-1.5 py-0.5 uppercase text-muted-foreground">{data.checkpoint_hint}</span>
             )}
           </div>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <Button
-            asChild
-            variant="secondary"
-            data-testid="session-detail-download-json"
-          >
+          <Button asChild variant="secondary" data-testid="session-detail-download-json">
             <a href={`${BACKEND}/api/reports/export?fmt=json&session_id=${encodeURIComponent(sessionId)}`}>
-              <Download className="h-4 w-4 mr-1" /> JSON
+              <Download className="h-4 w-4 mr-1" /> {t("detail.download_json")}
             </a>
           </Button>
           <Button asChild variant="secondary" data-testid="session-detail-download-csv">
             <a href={`${BACKEND}/api/reports/export?fmt=csv&session_id=${encodeURIComponent(sessionId)}`}>
-              <Download className="h-4 w-4 mr-1" /> CSV
+              <Download className="h-4 w-4 mr-1" /> {t("detail.download_csv")}
             </a>
           </Button>
           <Button asChild variant="secondary" data-testid="session-detail-download-md">
             <a href={`${BACKEND}/api/reports/export?fmt=md&session_id=${encodeURIComponent(sessionId)}`}>
-              <Download className="h-4 w-4 mr-1" /> Markdown
+              <Download className="h-4 w-4 mr-1" /> {t("detail.download_md")}
             </a>
           </Button>
-          <Button
-            onClick={reprocess}
-            disabled={busy || !latest?.retained}
-            data-testid="session-detail-reprocess-button"
-            title={latest?.retained ? "Reprocess retained raw ZIP" : "No retained raw ZIP"}
-          >
-            <RefreshCcw className="h-4 w-4 mr-2" /> Reprocess
+          <Button onClick={reprocess} disabled={busy || !latest?.retained} data-testid="session-detail-reprocess-button"
+            title={latest?.retained ? t("detail.reprocess_tooltip_ok") : t("detail.reprocess_tooltip_ko")}>
+            <RefreshCcw className="h-4 w-4 mr-2" /> {t("detail.reprocess")}
           </Button>
         </div>
       </div>
@@ -99,63 +86,39 @@ export default function SessionDetailPage() {
       {latest && (
         <Card data-testid="session-detail-section">
           <CardHeader>
-            <CardTitle className="text-sm font-semibold tracking-wide">Latest QA run</CardTitle>
+            <CardTitle className="text-sm font-semibold tracking-wide">{t("detail.latest")}</CardTitle>
           </CardHeader>
           <CardContent>
             <Accordion type="multiple" defaultValue={["identity", "verdict", "runtime"]}>
               <AccordionItem value="identity">
-                <AccordionTrigger>Identity</AccordionTrigger>
+                <AccordionTrigger>{t("detail.section.identity")}</AccordionTrigger>
                 <AccordionContent>
                   <KV label="session_id" mono value={latest.session_id} />
                   <KV label="original_filename" value={latest.original_filename} />
-                  <KV label="uploaded_at" mono value={latest.uploaded_at} />
+                  <KV label="uploaded_at" mono value={fmtDate(latest.uploaded_at)} />
                   <KV label="source_file_sha256" mono value={latest.source_file_sha256} />
                   <KV label="collector_sha256" mono value={latest.collector_sha256} />
                   <KV label="start_time" mono value={latest.start_time} />
                   <KV label="end_time" mono value={latest.end_time} />
                   <KV label="duration_hours" value={latest.duration_hours} />
-                  <KV label="duplicate_status" value={latest.duplicate_status} />
+                  <KV label="duplicate_status" value={<DuplicateStateText state={latest.duplicate_status} />} />
                 </AccordionContent>
               </AccordionItem>
               <AccordionItem value="verdict">
-                <AccordionTrigger>Verdict &amp; reasons</AccordionTrigger>
+                <AccordionTrigger>{t("detail.section.verdict")}</AccordionTrigger>
                 <AccordionContent>
                   <KV label="operational_status" value={<VerdictBadge verdict={latest.operational_status} size="sm" />} />
-                  <KV label="validated_hours" mono value={latest.validated_hours?.toFixed?.(2) ?? latest.validated_hours} />
-                  <KV
-                    label="failure_reasons"
-                    value={
-                      (latest.failure_reasons || []).length ? (
-                        <ul className="list-disc pl-5 text-xs">
-                          {latest.failure_reasons.map((r, i) => <li key={i}>{r}</li>)}
-                        </ul>
-                      ) : "—"
-                    }
-                  />
-                  <KV
-                    label="warnings"
-                    value={
-                      (latest.warnings || []).length ? (
-                        <ul className="list-disc pl-5 text-xs">
-                          {latest.warnings.map((r, i) => <li key={i}>{r}</li>)}
-                        </ul>
-                      ) : "—"
-                    }
-                  />
-                  <KV
-                    label="missing_fields"
-                    value={
-                      (latest.missing_fields || []).length ? (
-                        <ul className="list-disc pl-5 text-xs font-mono">
-                          {latest.missing_fields.map((r, i) => <li key={i}>{r}</li>)}
-                        </ul>
-                      ) : "—"
-                    }
-                  />
+                  <KV label="validated_hours" mono value={fmtNumber(latest.validated_hours || 0, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} />
+                  <KV label={t("detail.field.failure_reasons")}
+                    value={(latest.failure_reasons || []).length ? (<ul className="list-disc pl-5 text-xs">{latest.failure_reasons.map((r, i) => <li key={i}>{r}</li>)}</ul>) : t("common.none")} />
+                  <KV label={t("detail.field.warnings")}
+                    value={(latest.warnings || []).length ? (<ul className="list-disc pl-5 text-xs">{latest.warnings.map((r, i) => <li key={i}>{r}</li>)}</ul>) : t("common.none")} />
+                  <KV label={t("detail.field.missing_fields")}
+                    value={(latest.missing_fields || []).length ? (<ul className="list-disc pl-5 text-xs font-mono">{latest.missing_fields.map((r, i) => <li key={i}>{r}</li>)}</ul>) : t("common.none")} />
                 </AccordionContent>
               </AccordionItem>
               <AccordionItem value="runtime">
-                <AccordionTrigger>Runtime</AccordionTrigger>
+                <AccordionTrigger>{t("detail.section.runtime")}</AccordionTrigger>
                 <AccordionContent>
                   <KV label="zip_crc_status" value={latest.zip_crc_status} />
                   <KV label="manifest_status" value={latest.manifest_status} />
@@ -174,7 +137,7 @@ export default function SessionDetailPage() {
                 </AccordionContent>
               </AccordionItem>
               <AccordionItem value="dataset">
-                <AccordionTrigger>Dataset structure</AccordionTrigger>
+                <AccordionTrigger>{t("detail.section.dataset")}</AccordionTrigger>
                 <AccordionContent>
                   <KV label="sync_grid_file_count" value={latest.sync_grid_file_count} />
                   <KV label="books_file_count" value={latest.books_file_count} />
@@ -184,37 +147,29 @@ export default function SessionDetailPage() {
                 </AccordionContent>
               </AccordionItem>
               <AccordionItem value="reconnects">
-                <AccordionTrigger>Reconnects</AccordionTrigger>
+                <AccordionTrigger>{t("detail.section.reconnects")}</AccordionTrigger>
                 <AccordionContent>
                   <KV label="reconnect_count" value={latest.reconnect_count} />
-                  <KV
-                    label="reconnect_summary"
-                    mono
-                    value={<pre className="whitespace-pre-wrap text-[10px]">{JSON.stringify(latest.reconnect_summary, null, 2)}</pre>}
-                  />
+                  <KV label="reconnect_summary" mono value={<pre className="whitespace-pre-wrap text-[10px]">{JSON.stringify(latest.reconnect_summary, null, 2)}</pre>} />
                 </AccordionContent>
               </AccordionItem>
               <AccordionItem value="retention">
-                <AccordionTrigger>Retention</AccordionTrigger>
+                <AccordionTrigger>{t("detail.section.retention")}</AccordionTrigger>
                 <AccordionContent>
-                  <KV label="retained" value={latest.retained ? "YES" : "NO"} />
-                  <KV label="retention_reason" value={latest.retention_reason} />
+                  <KV label={t("detail.field.retained")} value={latest.retained ? t("detail.retained_yes") : t("detail.retained_no")} />
+                  <KV label={t("detail.field.retention_reason")} value={latest.retention_reason} />
                 </AccordionContent>
               </AccordionItem>
               <AccordionItem value="checks">
-                <AccordionTrigger>Per-check breakdown</AccordionTrigger>
+                <AccordionTrigger>{t("detail.section.checks")}</AccordionTrigger>
                 <AccordionContent>
-                  <pre className="font-mono text-[10px] whitespace-pre-wrap">
-                    {JSON.stringify(latest.checks, null, 2)}
-                  </pre>
+                  <pre className="font-mono text-[10px] whitespace-pre-wrap">{JSON.stringify(latest.checks, null, 2)}</pre>
                 </AccordionContent>
               </AccordionItem>
               <AccordionItem value="manifest">
-                <AccordionTrigger>Manifest raw</AccordionTrigger>
+                <AccordionTrigger>{t("detail.section.manifest")}</AccordionTrigger>
                 <AccordionContent>
-                  <pre className="font-mono text-[10px] whitespace-pre-wrap">
-                    {JSON.stringify(latest.manifest_raw, null, 2) || "—"}
-                  </pre>
+                  <pre className="font-mono text-[10px] whitespace-pre-wrap">{JSON.stringify(latest.manifest_raw, null, 2) || t("common.none")}</pre>
                 </AccordionContent>
               </AccordionItem>
             </Accordion>
@@ -224,7 +179,7 @@ export default function SessionDetailPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm font-semibold tracking-wide">Reprocess history</CardTitle>
+          <CardTitle className="text-sm font-semibold tracking-wide">{t("detail.reprocess_history")}</CardTitle>
         </CardHeader>
         <CardContent>
           <ul className="divide-y">
@@ -232,7 +187,7 @@ export default function SessionDetailPage() {
               <li key={r.id} className="flex items-center justify-between py-2">
                 <div className="flex items-center gap-3">
                   <VerdictBadge verdict={r.operational_status} size="sm" />
-                  <span className="font-mono text-[10px] text-muted-foreground">{r.uploaded_at}</span>
+                  <span className="font-mono text-[10px] text-muted-foreground">{fmtDate(r.uploaded_at)}</span>
                 </div>
                 <div className="text-[10px] text-muted-foreground font-mono">{r.source_file_sha256.slice(0, 16)}…</div>
               </li>

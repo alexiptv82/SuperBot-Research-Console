@@ -1,0 +1,61 @@
+{
+  "summary": "Completed comprehensive testing of AUTH PERSISTENCE FIX and ITALIAN LOCALIZATION. All backend APIs (24/24 tests) and frontend features passed successfully. The critical auto-logout bug is FIXED - users remain authenticated for 30+ seconds without any auto-logout. Italian localization is fully functional with proper machine value preservation.",
+  
+  "backend_issues": {
+    "critical_bugs": [],
+    "flaky_endpoints": []
+  },
+  
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  
+  "passed_tests": [
+    "Backend: All 24 API tests passed (100% success rate)",
+    "Auth: Login with correct password 'superbot' works",
+    "Auth: Wrong password returns 401 with Italian error 'Password errata. Accesso negato.'",
+    "Auth: /api/auth/me returns authenticated=true after login",
+    "Auth CRITICAL: No auto-logout after 30 seconds of inactivity - polling /api/auth/me every 5s for 30s confirmed session persistence",
+    "Auth: Session cookie has SameSite=None and Secure=True on HTTPS (correct for iframe/cross-site contexts)",
+    "Auth: All pages (/upload, /registry, /reports, /checkpoints, /policy, /audit) navigated successfully without logout",
+    "Auth: Browser refresh maintains authentication - user stays on / without redirect to /login",
+    "Auth: Logout clears session and redirects to /login",
+    "Auth: /api/overview returns 401 after logout",
+    "Auth: Unauthenticated navigation to / redirects to /login",
+    "Localization: Italian is default language on fresh session (localStorage cleared)",
+    "Localization: Login page shows 'Accesso proprietario' title and 'Accedi' button",
+    "Localization: Verdict badges display Italian text (SUPERATO, SUPERATO CON AVVISO, ERRORE, DA RISOLVERE)",
+    "Localization: Verdict badges have machine data-verdict attributes (PASS, PASS_WITH_WARNING, FAIL, UNRESOLVED)",
+    "Localization: Checkpoint labels remain in machine format (OLD36, NEW12, TOTAL48, NEW36, TOTAL72)",
+    "Localization: /api/overview returns machine values {PASS, PASS_WITH_WARNING, FAIL, UNRESOLVED} regardless of UI locale",
+    "Localization: Collector SHA256 unchanged: e924edc1b8348d9cc8e74a37eaa17e6bbc80116de29d2f7a00cd43444d1265a3",
+    "Localization: Language switcher works - switch to English changes verdicts to 'PASS', 'FAIL', etc",
+    "Localization: Sidebar switches between Italian (Panoramica, Carica sessioni) and English (Overview, Upload Sessions)",
+    "Localization: Switch back to Italian restores Italian labels",
+    "Localization: Policy page title in Italian 'Regole di progetto', SHA256 unchanged",
+    "Localization: Checkpoints page title in Italian 'Milestone'",
+    "Localization: Audit page title in Italian 'Log di sistema / Audit'",
+    "Localization: Event types remain in machine format (auth.login_success, upload.qa, etc)"
+  ],
+  
+  "test_report_links": [
+    "/app/backend_test.py",
+    "/tmp/backend_test_output.txt"
+  ],
+  
+  "action_item_for_main_agent": "",
+  
+  "updated_files": [],
+  
+  "success_percentage": {
+    "backend": "100% (24/24 tests passed)",
+    "frontend_auth": "100% (11/11 tests passed)",
+    "frontend_localization": "100% (13/13 tests passed)",
+    "overall": "100%"
+  },
+  
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_test_itself": false
+}
