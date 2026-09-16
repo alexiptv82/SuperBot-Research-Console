@@ -1,0 +1,294 @@
+{
+  "generated_at_utc": "2026-09-16T03:04:46.586541+00:00",
+  "rules": [
+    {
+      "key": "horizons",
+      "status": "EXPLICIT_EVIDENCE",
+      "confidence": "high",
+      "depends_on_raw_old36": false,
+      "source_artifacts": [
+        "CP24/CP36 block-level CSV `horizon_ms` distinct values = {100,200,500,1000,2000,5000,10000,30000}",
+        "Handoff \u00a712 states the eight horizons explicitly"
+      ],
+      "inferred_hypothesis": null
+    },
+    {
+      "key": "quantiles",
+      "status": "EXPLICIT_EVIDENCE",
+      "confidence": "high",
+      "depends_on_raw_old36": false,
+      "source_artifacts": [
+        "CP24/CP36 block-level CSV `q` distinct values = {0.8,0.9,0.95}",
+        "Reports state q90 is the primary decision quantile"
+      ],
+      "inferred_hypothesis": null
+    },
+    {
+      "key": "evaluation_block",
+      "status": "EXPLICIT_EVIDENCE",
+      "confidence": "high",
+      "depends_on_raw_old36": false,
+      "source_artifacts": [
+        "CP24 has 14 (session,asset) blocks, CP36 all36 has 22 = 14+8",
+        "Every block-level CSV keys on session+asset"
+      ],
+      "inferred_hypothesis": null
+    },
+    {
+      "key": "quality_gate",
+      "status": "EXPLICIT_EVIDENCE",
+      "confidence": "high",
+      "depends_on_raw_old36": false,
+      "source_artifacts": [
+        "Handoff \u00a712 states the quality gate",
+        "Collector exposes adjusted_fair_venue_count, book_age_recv_ms, mid"
+      ],
+      "inferred_hypothesis": null
+    },
+    {
+      "key": "target_definition",
+      "status": "EXPLICIT_EVIDENCE",
+      "confidence": "high",
+      "depends_on_raw_old36": false,
+      "source_artifacts": [
+        "Handoff \u00a712 target",
+        "Collector uses log(x2/x1)*10000 for every bps quantity"
+      ],
+      "inferred_hypothesis": null
+    },
+    {
+      "key": "simple_feature_list",
+      "status": "EXPLICIT_EVIDENCE",
+      "confidence": "high",
+      "depends_on_raw_old36": false,
+      "source_artifacts": [
+        "CP24 simple block-level CSV distinct `feature` values"
+      ],
+      "inferred_hypothesis": null
+    },
+    {
+      "key": "composite_horizons",
+      "status": "EXPLICIT_EVIDENCE",
+      "confidence": "high",
+      "depends_on_raw_old36": false,
+      "source_artifacts": [
+        "CP24 composite block-level CSV `horizon_ms` distinct values = {1000, 2000, 5000, 10000, 30000}",
+        "CP36 composite_block_level_new12 same subset",
+        "Row totals: 14*10*5*3 = 2100 (CP24), 8*10*5*3 = 1200 (CP36)."
+      ],
+      "inferred_hypothesis": null
+    },
+    {
+      "key": "composite_feature_list",
+      "status": "EXPLICIT_EVIDENCE",
+      "confidence": "high",
+      "depends_on_raw_old36": false,
+      "source_artifacts": [
+        "CP24 composite block-level CSV distinct `feature` values"
+      ],
+      "inferred_hypothesis": null
+    },
+    {
+      "key": "analysis_feature_to_grid_column_map",
+      "status": "INFERRED_PENDING",
+      "confidence": "medium",
+      "depends_on_raw_old36": true,
+      "source_artifacts": [
+        "Feature names + collector output field names are mutually suggestive; final confirmation requires reproducing block N and mean_signed_bps against a raw OLD36 grid."
+      ],
+      "inferred_hypothesis": "see phase1_audit.md \u00a72 mapping table."
+    },
+    {
+      "key": "sign_conventions_simple",
+      "status": "EXPLICIT_EVIDENCE",
+      "confidence": "high",
+      "depends_on_raw_old36": false,
+      "source_artifacts": [
+        "Handoff \u00a712 direction rules"
+      ],
+      "inferred_hypothesis": null
+    },
+    {
+      "key": "forward_return_alignment",
+      "status": "INFERRED_PENDING",
+      "confidence": "medium",
+      "depends_on_raw_old36": true,
+      "source_artifacts": [
+        "Grid is a 100ms monotonic sampler; log/bps convention explicit",
+        "Exact end-of-session truncation (censor last H rows vs. drop) not specified anywhere in the artifacts"
+      ],
+      "inferred_hypothesis": "Drop rows where t+H exceeds grid end; drop rows where either mid is not finite/positive."
+    },
+    {
+      "key": "event_selection_tail",
+      "status": "INFERRED_PENDING",
+      "confidence": "medium",
+      "depends_on_raw_old36": true,
+      "source_artifacts": [
+        "All 24H threshold values observed in CSV are positive, consistent with quantiles of |signal| on symmetric signed signals",
+        "Report describes q80/q90/q95 tail selection"
+      ],
+      "inferred_hypothesis": "threshold = numpy.quantile(|signal|, q); event iff |signal| >= threshold."
+    },
+    {
+      "key": "overlap_spacing",
+      "status": "EXPLICIT_EVIDENCE",
+      "confidence": "high",
+      "depends_on_raw_old36": false,
+      "source_artifacts": [
+        "Handoff \u00a712 states the spacing rule"
+      ],
+      "inferred_hypothesis": null
+    },
+    {
+      "key": "overlap_ordering",
+      "status": "MISSING",
+      "confidence": "low",
+      "depends_on_raw_old36": true,
+      "source_artifacts": [],
+      "inferred_hypothesis": "greedy earliest-first pass along the grid."
+    },
+    {
+      "key": "tie_handling",
+      "status": "MISSING",
+      "confidence": "low",
+      "depends_on_raw_old36": true,
+      "source_artifacts": [],
+      "inferred_hypothesis": "|signal| >= threshold (inclusive)."
+    },
+    {
+      "key": "nan_handling",
+      "status": "MISSING",
+      "confidence": "low",
+      "depends_on_raw_old36": true,
+      "source_artifacts": [],
+      "inferred_hypothesis": "drop rows with NaN signal or NaN forward mid."
+    },
+    {
+      "key": "session_end_truncation",
+      "status": "MISSING",
+      "confidence": "low",
+      "depends_on_raw_old36": true,
+      "source_artifacts": [],
+      "inferred_hypothesis": "drop rows where t+H > session end for each horizon independently."
+    },
+    {
+      "key": "positive_block_rule",
+      "status": "MATH_UNIQUE",
+      "confidence": "high",
+      "depends_on_raw_old36": false,
+      "source_artifacts": [
+        "Aggregates CSVs report positive_blocks; block-level CSVs allow verifying that this is the count of blocks where mean_signed_bps > 0"
+      ],
+      "inferred_hypothesis": null
+    },
+    {
+      "key": "composite_formula_depthBoth",
+      "status": "AMBIGUOUS",
+      "confidence": "low",
+      "depends_on_raw_old36": true,
+      "source_artifacts": [
+        "CP24 threshold values for depthBoth differ from either component; consistent with a derived-signal quantile (e.g. mean of two normalized components) but multiple normalizations satisfy this."
+      ],
+      "inferred_hypothesis": "depthBoth = (rank(depth_imbalance_l1) + rank(depth_imbalance_l5)) / 2, then threshold on |depthBoth|. Not selected without golden regression."
+    },
+    {
+      "key": "composite_formula_gap_star",
+      "status": "AMBIGUOUS",
+      "confidence": "medium",
+      "depends_on_raw_old36": true,
+      "source_artifacts": [
+        "CP24 CSV thresholds for every gap_* composite match the fair_gap_reversion threshold exactly for the same block/horizon/q. This proves the gap_* composites gate on the fair-gap quantile. The auxiliary condition (sign agreement vs magnitude threshold on the second component) is not determined by the artifacts."
+      ],
+      "inferred_hypothesis": "Event iff fair-gap quantile crossed AND sign of second component agrees with -sign(gap)."
+    },
+    {
+      "key": "composite_formula_leader1000_extOFI",
+      "status": "AMBIGUOUS",
+      "confidence": "medium",
+      "depends_on_raw_old36": true,
+      "source_artifacts": [
+        "CP24 CSV thresholds match leader_gap_1000ms threshold exactly; composite gates on leader1000 quantile. Combination with extOFI remains underspecified by artifacts."
+      ],
+      "inferred_hypothesis": "Event iff leader1000 quantile crossed AND sign(extOFI) agrees with sign(leader_gap)."
+    },
+    {
+      "key": "composite_weights",
+      "status": "MISSING",
+      "confidence": "low",
+      "depends_on_raw_old36": true,
+      "source_artifacts": [
+        "No weights file present in either checkpoint ZIP"
+      ],
+      "inferred_hypothesis": "equal weights."
+    },
+    {
+      "key": "component_normalization",
+      "status": "MISSING",
+      "confidence": "low",
+      "depends_on_raw_old36": true,
+      "source_artifacts": [],
+      "inferred_hypothesis": "per-block rank-uniform transform."
+    },
+    {
+      "key": "alignment_filter",
+      "status": "MISSING",
+      "confidence": "low",
+      "depends_on_raw_old36": true,
+      "source_artifacts": [
+        "Collector exposes bitget_fair_ofi_alignment and bitget_fair_trade_alignment (both = sign(-gap)*sign(local_signal)). Whether composites use these binary flags or thresholded magnitudes is not stated."
+      ],
+      "inferred_hypothesis": "Use the collector-provided alignment binary; require ==+1."
+    },
+    {
+      "key": "block_aggregation_weight",
+      "status": "MATH_UNIQUE",
+      "confidence": "medium",
+      "depends_on_raw_old36": true,
+      "source_artifacts": [
+        "Aggregate mean_signed_bps in simple_aggregates_24h.csv equals the pooled mean if reproduced from per-event returns, or the unweighted mean of per-block means. Which one applies is decidable once the raw grids are available."
+      ],
+      "inferred_hypothesis": "unweighted mean of per-block mean_signed_bps."
+    },
+    {
+      "key": "btc_eth_aggregation",
+      "status": "MATH_UNIQUE",
+      "confidence": "high",
+      "depends_on_raw_old36": true,
+      "source_artifacts": [
+        "Aggregate row count `blocks` includes both BTC and ETH; BTC and ETH appear as independent (session,asset) blocks."
+      ],
+      "inferred_hypothesis": "BTC and ETH are treated as independent blocks; no cross-asset weighting."
+    },
+    {
+      "key": "dispersion_tertile_boundaries",
+      "status": "AMBIGUOUS",
+      "confidence": "medium",
+      "depends_on_raw_old36": true,
+      "source_artifacts": [
+        "Per-block disp_lo and disp_hi columns are exposed in fair-gap dispersion CSVs; whether they are computed on the quality-filtered grid, event-only rows, or across the whole session is not stated."
+      ],
+      "inferred_hypothesis": "per-block tertiles of external_perp_dispersion_bps on the quality-filtered grid rows."
+    },
+    {
+      "key": "economic_hurdle_bps",
+      "status": "EXPLICIT_EVIDENCE",
+      "confidence": "high",
+      "depends_on_raw_old36": false,
+      "source_artifacts": [
+        "Handoff \u00a712; both CP24 and CP36 reports"
+      ],
+      "inferred_hypothesis": null
+    },
+    {
+      "key": "horizon_domain_split",
+      "status": "EXPLICIT_EVIDENCE",
+      "confidence": "high",
+      "depends_on_raw_old36": false,
+      "source_artifacts": [
+        "CP24 and CP36 reports state this split verbatim"
+      ],
+      "inferred_hypothesis": null
+    }
+  ]
+}

@@ -1,22 +1,42 @@
 [
   {
-    "content": "Diagnose retention issue (11 identical 172MB copies)",
+    "content": "Add OLD36_REFERENCE registry (11 sessions + per-session nominal hours)",
     "status": "completed"
   },
   {
-    "content": "Refactor retention to content-addressed (SHA256-keyed) storage",
+    "content": "Wire historical import: auto-tag OLD36_REFERENCE on upload; keep OLD36 baseline math untouched",
     "status": "completed"
   },
   {
-    "content": "Prune existing 11 duplicate ZIPs, repoint DB rows to canonical",
+    "content": "Expose /api/reference/old36 + old36_reference section in /api/checkpoints",
     "status": "completed"
   },
   {
-    "content": "Add regression tests for retention dedup + reprocess x10 + duplicate upload",
+    "content": "Copy CP24/CP36 golden CSVs into /app/backend/recovery/goldens/",
     "status": "completed"
   },
   {
-    "content": "Run full pytest + verify disk savings + final report",
+    "content": "Build recovery sandbox: NEW36 firewall + OLD36-only raw access",
+    "status": "completed"
+  },
+  {
+    "content": "Build recovery rules + provenance catalog",
+    "status": "completed"
+  },
+  {
+    "content": "Build golden regression harness (skeleton)",
+    "status": "completed"
+  },
+  {
+    "content": "Add sandbox firewall + registry pytest coverage",
+    "status": "completed"
+  },
+  {
+    "content": "Generate initial recovery reports",
+    "status": "completed"
+  },
+  {
+    "content": "Verify: FrozenAnalysisEngine still NOT_CONFIGURED; NEW36 sealed; full test suite",
     "status": "completed"
   }
 ]

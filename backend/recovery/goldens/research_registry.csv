@@ -1,0 +1,9 @@
+candidate_id,family,asset,evidence,decision
+MV_LAG50_BINANCE_BTC,structural_feature,BTC,Binance leads Bitget ~50 ms in both sessions,RETAIN_FEATURE
+MV_LAG50_BINANCE_ETH,structural_feature,ETH,Binance leads Bitget ~50 ms in both sessions,RETAIN_FEATURE
+MV_LAG50_OKX_BTC,structural_feature,BTC,OKX leads Bitget ~50 ms in both sessions,RETAIN_FEATURE
+MV_LAG50_OKX_ETH,structural_feature,ETH,OKX leads Bitget ~50 ms in both sessions,RETAIN_FEATURE
+MV_RESID_CATCHUP_BTC,standalone_alpha,BTC,~1.4-1.5 bps zero-delay gross; collapses after 50-100 ms,REJECT_ALPHA_RETAIN_FEATURE
+MV_RESID_CATCHUP_ETH,standalone_alpha,ETH,~1.2-2.5 bps zero-delay gross; collapses after 50-100 ms,REJECT_ALPHA_RETAIN_FEATURE
+MV_FLOW_CONFIRM,secondary_feature,BTC/ETH,Small incremental value after leader-price confirmation,RETAIN_SECONDARY
+DYNAMIC_MARKET_GRAPH_V0,architecture,BTC/ETH,Dynamic leader/follower and fair-price feature layer,PROMOTE_RESEARCH

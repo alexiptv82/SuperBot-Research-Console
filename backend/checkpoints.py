@@ -23,6 +23,8 @@ from sqlalchemy.orm import Session as OrmSession
 from checkpoint_registry import (
     NEW12_SESSION_IDS,
     NEW36_SESSION_IDS,
+    OLD36_REFERENCE_NOMINAL_HOURS,
+    OLD36_REFERENCE_SESSIONS,
     OLD36_VALIDATED_HOURS,
     SESSION_NOMINAL_HOURS,
     is_valid_milestone_verdict,
@@ -105,6 +107,59 @@ def _summarize_registered(db: OrmSession, ids: tuple[str, ...]) -> dict:
     }
 
 
+def _summarize_old36_reference(db: OrmSession) -> dict:
+    """Report which of the 11 historical raw-reference sessions are
+    present in SuperBot storage.
+
+    IMPORTANT: this NEVER affects milestone totals. OLD36 baseline
+    stays locked at ``OLD36_VALIDATED_HOURS``. These figures are
+    purely raw-availability telemetry used to gate the validator
+    recovery workflow.
+    """
+    details: list[dict] = []
+    present = 0
+    hours_present = 0.0
+    for sid in OLD36_REFERENCE_SESSIONS:
+        row = _session_row(db, sid)
+        latest_run = None
+        if row is not None:
+            latest_run = db.execute(
+                select(QARun)
+                .where(QARun.session_id == sid)
+                .order_by(QARun.uploaded_at.desc())
+            ).scalars().first()
+        nominal = OLD36_REFERENCE_NOMINAL_HOURS[sid]
+        is_present = row is not None
+        if is_present:
+            present += 1
+            hours_present += nominal
+        details.append(
+            {
+                "session_id": sid,
+                "nominal_hours": nominal,
+                "present": is_present,
+                "latest_verdict": (
+                    latest_run.operational_status if latest_run is not None else None
+                ),
+                "checkpoint_hint": row.checkpoint_hint if row is not None else None,
+            }
+        )
+    return {
+        "expected_sessions": len(OLD36_REFERENCE_SESSIONS),
+        "present_sessions": present,
+        "expected_nominal_hours": OLD36_VALIDATED_HOURS,
+        "present_nominal_hours": round(hours_present, 4),
+        "milestone_impact_hours": 0.0,
+        "note": (
+            "OLD36 baseline stays fixed at OLD36_VALIDATED_HOURS (36.0h) "
+            "regardless of how many raw-reference sessions are physically "
+            "imported. This block reports raw availability only, for "
+            "validator-recovery gating."
+        ),
+        "sessions": details,
+    }
+
+
 def compute_checkpoints(db: OrmSession) -> dict:
     """Return the full milestone / checkpoint report.
 
@@ -159,6 +214,7 @@ def compute_checkpoints(db: OrmSession) -> dict:
             "NEW12": new12_summary["sessions"],
             "NEW36": new36_summary["sessions"],
         },
+        "old36_reference": _summarize_old36_reference(db),
         "data_qa_ready": ready,
         "note": (
             "Milestone hours are NOMINAL (3.0h per registered confirmation "

@@ -44,6 +44,12 @@ SESSION_NOMINAL_HOURS: float = 3.0
 #: registered NEW36 batch. Auto-tagged on upload; never inferred.
 CHECKPOINT_UNASSIGNED: str = "UNASSIGNED"
 
+#: Historical raw-reference batch. Used for validator recovery only;
+#: these uploads DO NOT contribute to milestone totals (the OLD36
+#: baseline stays at ``OLD36_VALIDATED_HOURS``, an immutable
+#: constant, regardless of whether the raw ZIPs are present).
+CHECKPOINT_OLD36_REFERENCE: str = "OLD36_REFERENCE"
+
 #: Verdicts that count toward milestone completion (§12.4 hour rules).
 VALID_MILESTONE_VERDICTS: frozenset[str] = frozenset(
     {VERDICT_PASS, VERDICT_PASS_WITH_WARNING}
@@ -87,6 +93,72 @@ _NEW12_SET: frozenset[str] = frozenset(NEW12_SESSION_IDS)
 
 
 # ---------------------------------------------------------------------------
+# Frozen OLD36 historical raw-reference registry
+# ---------------------------------------------------------------------------
+#
+# These 11 session_ids are the frozen historical dataset that produced
+# the CP24 and CP36 checkpoint outputs. They are supplied for VALIDATOR
+# RECOVERY purposes only:
+#
+# - Their raw ZIPs may be uploaded through the normal chunked pipeline.
+# - Auto-tagged as ``OLD36_REFERENCE`` on upload.
+# - Deterministic operational QA still runs.
+# - Content-addressed raw retention + duplicate protection still apply.
+# - They DO NOT contribute to milestone totals. OLD36 baseline stays
+#   locked at ``OLD36_VALIDATED_HOURS`` (36.0h), regardless of how
+#   many historical sessions are physically present.
+# - Unknown historical IDs must NOT be inferred into OLD36_REFERENCE.
+#
+# Per-session nominal durations sum to exactly 36.0h and are used
+# ONLY for raw-availability reporting (X of 11 sessions, Y of 36.0h
+# nominal). They never affect the 36.0h baseline math.
+
+OLD36_REFERENCE_SESSIONS: tuple[str, ...] = (
+    "20260905T073818Z_e44d99bd",  # 6.0h
+    "20260906T054317Z_7973d176",  # 3.0h
+    "20260906T092548Z_d18fd1e3",  # 3.0h
+    "20260906T221530Z_db18dc51",  # 3.0h
+    "20260907T070729Z_48d293bf",  # 3.0h
+    "20260907T124300Z_6ac966eb",  # 3.0h
+    "20260907T160215Z_ee5b0782",  # 3.0h
+    "20260907T221751Z_3abdfd02",  # 3.0h
+    "20260908T074322Z_1057297f",  # 3.0h
+    "20260908T120838Z_3cfee030",  # 3.0h
+    "20260909T171030Z_1952d031",  # 3.0h
+)
+
+OLD36_REFERENCE_NOMINAL_HOURS: dict[str, float] = {
+    "20260905T073818Z_e44d99bd": 6.0,
+    "20260906T054317Z_7973d176": 3.0,
+    "20260906T092548Z_d18fd1e3": 3.0,
+    "20260906T221530Z_db18dc51": 3.0,
+    "20260907T070729Z_48d293bf": 3.0,
+    "20260907T124300Z_6ac966eb": 3.0,
+    "20260907T160215Z_ee5b0782": 3.0,
+    "20260907T221751Z_3abdfd02": 3.0,
+    "20260908T074322Z_1057297f": 3.0,
+    "20260908T120838Z_3cfee030": 3.0,
+    "20260909T171030Z_1952d031": 3.0,
+}
+
+# Sanity gates (fail fast at import time if the registry is edited wrong).
+assert len(OLD36_REFERENCE_SESSIONS) == 11, "OLD36_REFERENCE must contain 11 session_ids"
+assert len(set(OLD36_REFERENCE_SESSIONS)) == 11, "OLD36_REFERENCE ids must be unique"
+assert set(OLD36_REFERENCE_NOMINAL_HOURS.keys()) == set(OLD36_REFERENCE_SESSIONS), (
+    "OLD36_REFERENCE_NOMINAL_HOURS keys must match OLD36_REFERENCE_SESSIONS"
+)
+assert abs(sum(OLD36_REFERENCE_NOMINAL_HOURS.values()) - OLD36_VALIDATED_HOURS) < 1e-9, (
+    "OLD36_REFERENCE nominal hours must sum to OLD36_VALIDATED_HOURS (36.0)"
+)
+# OLD36_REFERENCE and NEW36 must never overlap (independent dataset identity).
+assert set(OLD36_REFERENCE_SESSIONS).isdisjoint(set(NEW36_SESSION_IDS)), (
+    "OLD36_REFERENCE and NEW36 registries must be disjoint"
+)
+
+_OLD36_REF_SET: frozenset[str] = frozenset(OLD36_REFERENCE_SESSIONS)
+
+
+# ---------------------------------------------------------------------------
 # Public helpers
 # ---------------------------------------------------------------------------
 
@@ -96,9 +168,17 @@ def checkpoint_batch_for(session_id: str | None) -> str:
 
     Only exact-match membership decides the label. Never infer from
     timestamps or filenames.
+
+    Precedence (mutually exclusive):
+    1. NEW36 — the 12 confirmation-batch ids.
+    2. OLD36_REFERENCE — the 11 historical raw-reference ids used for
+       validator recovery ONLY (they never contribute milestone hours).
+    3. UNASSIGNED — everything else.
     """
     if session_id and session_id in _NEW36_SET:
         return CHECKPOINT_NEW36
+    if session_id and session_id in _OLD36_REF_SET:
+        return CHECKPOINT_OLD36_REFERENCE
     return CHECKPOINT_UNASSIGNED
 
 
@@ -108,6 +188,12 @@ def is_new36_registered(session_id: str | None) -> bool:
 
 def is_new12_registered(session_id: str | None) -> bool:
     return bool(session_id) and session_id in _NEW12_SET
+
+
+def is_old36_reference(session_id: str | None) -> bool:
+    """True iff ``session_id`` is one of the 11 historical raw-reference
+    sessions supplied for validator recovery."""
+    return bool(session_id) and session_id in _OLD36_REF_SET
 
 
 def new36_index(session_id: str | None) -> int | None:

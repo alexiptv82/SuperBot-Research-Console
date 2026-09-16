@@ -749,6 +749,16 @@ def checkpoints(db: OrmSession = Depends(get_db), _: str = Depends(require_auth)
     return compute_checkpoints(db)
 
 
+@app.get("/api/reference/old36")
+def reference_old36(db: OrmSession = Depends(get_db), _: str = Depends(require_auth)) -> dict:
+    """Detailed OLD36 raw-reference availability.
+
+    Read-only telemetry: NEVER affects milestone totals. The OLD36
+    baseline (36.0h) is an immutable project constant.
+    """
+    return compute_checkpoints(db)["old36_reference"]
+
+
 @app.get("/api/engine")
 def engine(_: str = Depends(require_auth)) -> dict:
     return engine_status().__dict__
