@@ -37,6 +37,7 @@ firewall is orthogonal and remains in force.
 """
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import tempfile
@@ -281,6 +282,31 @@ frontend can render it verbatim.
 """
 
 
+def _default_workdir_parent() -> Path:
+    """Return a workdir parent that lives on the SAME filesystem as
+    the retained-raw storage.
+
+    Rationale: ``raw_storage.persist_from_path`` uses ``os.replace``
+    to move accepted inner ZIPs into the canonical
+    ``<data_dir>/raw_zips/{sha256}.zip`` location. If the workdir is
+    on ``/tmp`` (an overlay filesystem in this deployment) and the
+    data dir is on a dedicated volume, ``os.replace`` raises
+    ``OSError: [Errno 18] Invalid cross-device link``, the exception
+    propagates out of ``_process_source`` after the QA row has been
+    flushed, and the retained-raw ``raw_files`` row is never created.
+    That is exactly the bug that made the first real 2.14 GiB bundle
+    finalize appear to "succeed" (QA rows landed as PASS) while
+    silently losing every retained raw ZIP on disk.
+
+    We solve it by keeping the extraction workdir under
+    ``<data_dir>/bundle_import_tmp`` so cross-fs renames never occur.
+    """
+    data_dir = Path(os.environ.get("SUPERBOT_DATA_DIR", "/app/backend/data"))
+    parent = data_dir / "bundle_import_tmp"
+    parent.mkdir(parents=True, exist_ok=True)
+    return parent
+
+
 def import_bundle(
     outer_zip_path: Path,
     *,
@@ -319,7 +345,9 @@ def import_bundle(
         For any outer-archive validation failure.
     """
     if workdir is None:
-        workdir = Path(tempfile.mkdtemp(prefix="old36-bundle-"))
+        workdir = Path(
+            tempfile.mkdtemp(prefix="old36-bundle-", dir=str(_default_workdir_parent()))
+        )
     else:
         workdir.mkdir(parents=True, exist_ok=True)
 

@@ -98,8 +98,34 @@ def persist_from_path(raw_dir: Path, src: Path, sha256: str) -> Path:
         except OSError:
             pass
         return dest
-    os.replace(src, dest)
+    try:
+        os.replace(src, dest)
+    except OSError as exc:
+        # EXDEV: src and dest live on different filesystems (e.g. /tmp
+        # vs a mounted data volume). Fall back to a bounded-memory
+        # streamed copy so the retention row is still written and the
+        # source is unlinked afterwards. This keeps callers agnostic
+        # to filesystem topology.
+        import errno
+
+        if exc.errno != errno.EXDEV:
+            raise
+        _stream_copy(src, dest)
+        try:
+            src.unlink()
+        except OSError:
+            pass
     return dest
+
+
+def _stream_copy(src: Path, dest: Path) -> None:
+    """Bounded-memory copy: 1 MiB chunks, no whole-file load."""
+    with open(src, "rb", buffering=0) as fsrc, open(dest, "wb", buffering=0) as fdst:
+        while True:
+            buf = fsrc.read(1024 * 1024)
+            if not buf:
+                break
+            fdst.write(buf)
 
 
 def prune_orphan_blobs(raw_dir: Path, referenced_paths: Iterable[str]) -> list[str]:
