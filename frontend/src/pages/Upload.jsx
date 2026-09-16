@@ -691,7 +691,6 @@ function MultipartBundlePanel({ t, fmtNumber }) {
             data-testid="bundle-multipart-file-input"
             type="file"
             multiple
-            accept=".part-00,.part-01,.part-02,.part-03,.part-04"
             className="hidden"
             onChange={(e) => onSelect(e.target.files)}
           />
