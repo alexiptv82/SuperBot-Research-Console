@@ -151,6 +151,24 @@ const MESSAGES = {
     "bundle.multipart.uploaded": "caricata",
     "bundle.multipart.start": "Ricostruisci e importa",
 
+    // Async server-side finalize job
+    "bundle.job.status.QUEUED": "IN CODA",
+    "bundle.job.status.RUNNING": "IN ESECUZIONE",
+    "bundle.job.status.COMPLETE": "COMPLETATO",
+    "bundle.job.status.FAILED": "FALLITO",
+    "bundle.job.stage.QUEUED": "In coda",
+    "bundle.job.stage.PREPARING": "Preparazione",
+    "bundle.job.stage.REASSEMBLING": "Ricostruzione bundle",
+    "bundle.job.stage.VERIFYING_SHA256": "Verifica SHA256",
+    "bundle.job.stage.VERIFYING_ZIP": "Verifica archivio",
+    "bundle.job.stage.IMPORTING": "Importazione OLD36",
+    "bundle.job.stage.CLEANUP": "Pulizia",
+    "bundle.job.stage.COMPLETE": "Completato",
+    "bundle.job.stage.FAILED": "Errore",
+    "bundle.job.sessions_progress": "sessioni",
+    "bundle.job.passed": "PASS",
+    "bundle.job.failed": "FAIL",
+
     // Registry
     "registry.title": "Registro sessioni",
     "registry.subtitle":
@@ -384,6 +402,24 @@ const MESSAGES = {
     "bundle.multipart.ready": "ready",
     "bundle.multipart.uploaded": "uploaded",
     "bundle.multipart.start": "Reassemble and import",
+
+    // Async server-side finalize job
+    "bundle.job.status.QUEUED": "QUEUED",
+    "bundle.job.status.RUNNING": "RUNNING",
+    "bundle.job.status.COMPLETE": "COMPLETE",
+    "bundle.job.status.FAILED": "FAILED",
+    "bundle.job.stage.QUEUED": "Queued",
+    "bundle.job.stage.PREPARING": "Preparing",
+    "bundle.job.stage.REASSEMBLING": "Reassembling bundle",
+    "bundle.job.stage.VERIFYING_SHA256": "Verifying SHA256",
+    "bundle.job.stage.VERIFYING_ZIP": "Verifying archive",
+    "bundle.job.stage.IMPORTING": "Importing OLD36",
+    "bundle.job.stage.CLEANUP": "Cleanup",
+    "bundle.job.stage.COMPLETE": "Complete",
+    "bundle.job.stage.FAILED": "Failed",
+    "bundle.job.sessions_progress": "sessions",
+    "bundle.job.passed": "PASS",
+    "bundle.job.failed": "FAIL",
 
     "registry.title": "Session Registry",
     "registry.subtitle":

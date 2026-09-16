@@ -159,6 +159,46 @@ class RawFile(Base):
     qa_run: Mapped[QARun] = relationship("QARun", back_populates="raw_file")
 
 
+class BundleJob(Base):
+    """Async multipart bundle finalization job.
+
+    Persists the full lifecycle of a multipart-bundle reassembly + import
+    so that Cloudflare / client disconnects cannot destroy in-flight work
+    and browser refreshes can rejoin an active job.
+
+    Rows are append-only in intent; ``status``/``current_stage`` /
+    counters are updated in-place by the background worker (one row
+    per job).
+    """
+
+    __tablename__ = "bundle_jobs"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    kind: Mapped[str] = mapped_column(String, default="old36_multipart", index=True)
+    multipart_id: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
+    handoff_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    bundle_filename: Mapped[str] = mapped_column(String, default="")
+    expected_sha256: Mapped[str] = mapped_column(String, default="")
+    actual_sha256: Mapped[str | None] = mapped_column(String, nullable=True)
+    bytes_total: Mapped[int] = mapped_column(Integer, default=0)
+    bytes_processed: Mapped[int] = mapped_column(Integer, default=0)
+    parts_present: Mapped[int] = mapped_column(Integer, default=0)
+    sessions_total: Mapped[int] = mapped_column(Integer, default=0)
+    sessions_processed: Mapped[int] = mapped_column(Integer, default=0)
+    sessions_passed: Mapped[int] = mapped_column(Integer, default=0)
+    sessions_failed: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String, default="QUEUED", index=True)
+    current_stage: Mapped[str] = mapped_column(String, default="QUEUED")
+    stage_detail: Mapped[str] = mapped_column(String, default="")
+    error_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    result_summary: Mapped[Any] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[str] = mapped_column(String, default=_utcnow_iso, index=True)
+    updated_at: Mapped[str] = mapped_column(String, default=_utcnow_iso, index=True)
+    started_at: Mapped[str | None] = mapped_column(String, nullable=True)
+    finished_at: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
 class AuditLog(Base):
     """Append-only immutable audit trail."""
 

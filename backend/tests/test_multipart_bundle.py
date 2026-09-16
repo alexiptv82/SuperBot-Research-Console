@@ -125,12 +125,21 @@ def patched_manifest(monkeypatch):
         upload_manager=srv.bundle_manager,
         base_dir=srv.MULTIPART_WORK_DIR,
     )
+    # Rebuild the async job manager so it references the new controller.
+    from bundle_job_worker import BundleJobManager
+
+    srv.bundle_job_manager = BundleJobManager(
+        multipart_controller=srv.multipart_controller,
+        import_runner=srv._bundle_import_runner,
+        max_workers=1,
+    )
     yield {
         "outer": outer,
         "parts": parts,
         "expected_sha": exp_sha,
         "expected_size": exp_size,
     }
+    srv.bundle_job_manager.shutdown(wait=False)
 
 
 @pytest.fixture()
@@ -154,6 +163,7 @@ def _clean_db():
         conn.execute(text("DELETE FROM qa_runs"))
         conn.execute(text("DELETE FROM sessions"))
         conn.execute(text("DELETE FROM audit_log"))
+        conn.execute(text("DELETE FROM bundle_jobs"))
     yield
 
 
@@ -186,6 +196,29 @@ def _upload_part(client, slot, blob, *, chunk_size=None):
 def _full_upload(client, mp_session, parts):
     for slot, (_, _, blob) in zip(mp_session["slots"], parts):
         _upload_part(client, slot, blob)
+
+
+def _assemble_and_wait(client, mp_id, *, timeout=60):
+    """POST /assemble (returns 202 + job_id) then block on the worker
+    and GET the terminal job state. Returns the TestClient-style
+    response for the final GET so existing test assertions keep
+    working (``.status_code`` / ``.json()``)."""
+    r = client.post(f"/api/bundles/multipart/{mp_id}/assemble")
+    if r.status_code >= 400:
+        return r
+    body = r.json()
+    assert "job_id" in body, body
+    job_id = body["job_id"]
+    from server import bundle_job_manager
+    bundle_job_manager.wait(job_id, timeout=timeout)
+    return client.get(f"/api/bundles/jobs/{job_id}")
+
+
+def _job_result(resp):
+    """Extract the ``result_summary`` from an ``_assemble_and_wait`` OK
+    response so tests can keep asserting the same shape as before."""
+    job = resp.json()["job"]
+    return job.get("result_summary") or {}
 
 
 # ---------------------------------------------------------------------------
@@ -272,9 +305,11 @@ class TestReconstruction:
         cp0 = client.get("/api/checkpoints").json()["checkpoints"]
         mp = _init(client, patched_manifest["parts"]).json()
         _full_upload(client, mp, patched_manifest["parts"])
-        r = client.post(f"/api/bundles/multipart/{mp['multipart_id']}/assemble")
+        r = _assemble_and_wait(client, mp["multipart_id"])
         assert r.status_code == 200, r.text
-        body = r.json()
+        job = r.json()["job"]
+        assert job["status"] == "COMPLETE", job.get("error_message") or job
+        body = job["result_summary"]
         assert body["results"]["ok"] == 11
         assert body["results"]["failed"] == 0
         assert body["multipart_reassembly"]["bundle_sha256"] == patched_manifest["expected_sha"]
@@ -293,6 +328,7 @@ class TestReconstruction:
         # Upload only 4 of 5 parts.
         for slot, (_, _, blob) in zip(mp["slots"][:-1], patched_manifest["parts"][:-1]):
             _upload_part(client, slot, blob)
+        # Endpoint pre-check must reject BEFORE enqueue: HTTP 400.
         r = client.post(f"/api/bundles/multipart/{mp['multipart_id']}/assemble")
         assert r.status_code == 400
         assert "chunk(s) missing" in r.text
@@ -307,9 +343,12 @@ class TestReconstruction:
         parts[2] = (name, size, bytes(blob))
         for slot, (_, _, b) in zip(mp["slots"], parts):
             _upload_part(client, slot, b)
-        r = client.post(f"/api/bundles/multipart/{mp['multipart_id']}/assemble")
-        assert r.status_code == 400
-        assert "SHA256 mismatch" in r.text
+        r = _assemble_and_wait(client, mp["multipart_id"])
+        # Job accepted (202/200 via poll) but ends in FAILED.
+        assert r.status_code == 200, r.text
+        job = r.json()["job"]
+        assert job["status"] == "FAILED", job
+        assert "SHA256 mismatch" in (job.get("error_message") or "")
 
     def test_retry_after_completed_reconstruction_idempotent(
         self, patched_manifest, client, tmp_path, monkeypatch
@@ -323,15 +362,16 @@ class TestReconstruction:
         # First run.
         mp = _init(client, patched_manifest["parts"]).json()
         _full_upload(client, mp, patched_manifest["parts"])
-        client.post(f"/api/bundles/multipart/{mp['multipart_id']}/assemble")
+        _assemble_and_wait(client, mp["multipart_id"])
         first = sorted(p.name for p in raw_dir.glob("*.zip"))
         assert len(first) == 11
 
         # Second run \u2014 identical parts.
         mp2 = _init(client, patched_manifest["parts"]).json()
         _full_upload(client, mp2, patched_manifest["parts"])
-        r = client.post(f"/api/bundles/multipart/{mp2['multipart_id']}/assemble")
-        for e in r.json()["results"]["sessions"]:
+        r = _assemble_and_wait(client, mp2["multipart_id"])
+        body = _job_result(r)
+        for e in body["results"]["sessions"]:
             assert e["result"]["duplicate_status"] == "EXACT_DUPLICATE"
             assert e["result"]["validated_hours"] == 0.0
         second = sorted(p.name for p in raw_dir.glob("*.zip"))
@@ -360,9 +400,10 @@ class TestInterruptedResume:
         client.delete(f"/api/bundles/multipart/{mp['multipart_id']}")
         mp2 = _init(client, patched_manifest["parts"]).json()
         _full_upload(client, mp2, patched_manifest["parts"])
-        r = client.post(f"/api/bundles/multipart/{mp2['multipart_id']}/assemble")
+        r = _assemble_and_wait(client, mp2["multipart_id"])
         assert r.status_code == 200, r.text
-        assert r.json()["results"]["ok"] == 11
+        body = _job_result(r)
+        assert body["results"]["ok"] == 11
 
 
 # ---------------------------------------------------------------------------
@@ -377,8 +418,9 @@ class TestCleanup:
         mp = _init(client, patched_manifest["parts"]).json()
         wd = Path(srv.MULTIPART_WORK_DIR) / mp["multipart_id"]
         _full_upload(client, mp, patched_manifest["parts"])
-        r = client.post(f"/api/bundles/multipart/{mp['multipart_id']}/assemble")
+        r = _assemble_and_wait(client, mp["multipart_id"])
         assert r.status_code == 200
+        assert r.json()["job"]["status"] == "COMPLETE"
         assert not wd.exists(), f"multipart workdir must be wiped: {wd}"
 
     def test_no_part_files_left_after_success(self, patched_manifest, client):
@@ -388,7 +430,7 @@ class TestCleanup:
         before = set(Path(srv.BUNDLE_UPLOAD_DIR).glob("*.part"))
         mp = _init(client, patched_manifest["parts"]).json()
         _full_upload(client, mp, patched_manifest["parts"])
-        client.post(f"/api/bundles/multipart/{mp['multipart_id']}/assemble")
+        _assemble_and_wait(client, mp["multipart_id"])
         after = set(Path(srv.BUNDLE_UPLOAD_DIR).glob("*.part"))
         assert after == before, "part .part files must be unlinked"
 
@@ -411,15 +453,24 @@ class TestCleanup:
         mp = _init(client, patched_manifest["parts"]).json()
         parts = list(patched_manifest["parts"])
         name, size, blob = parts[0]
-        parts[0] = (name, size, bytes(bytearray(blob) or b"x") if False else b"\x00" * size)
+        parts[0] = (name, size, b"\x00" * size)
         for slot, (_, _, b) in zip(mp["slots"], parts):
             _upload_part(client, slot, b)
-        r = client.post(f"/api/bundles/multipart/{mp['multipart_id']}/assemble")
-        assert r.status_code == 400
-        # Reassembled tmp must be gone.
+        r = _assemble_and_wait(client, mp["multipart_id"])
+        # Async job ends FAILED (not HTTP 400).
+        assert r.json()["job"]["status"] == "FAILED"
+        # Reassembled tmp must be gone even on failure.
         wd = Path(srv.MULTIPART_WORK_DIR) / mp["multipart_id"]
         reassembled = wd / (f"{mp_mod.EXPECTED_BUNDLE_NAME}.part-reassembled")
         assert not reassembled.exists()
+        # And the .part files MUST still exist (deterministic failure
+        # keeps parts so the owner can inspect / retry without
+        # re-uploading 2.14 GiB).
+        remaining = list(Path(srv.BUNDLE_UPLOAD_DIR).glob("*.part"))
+        assert len(remaining) >= 5, (
+            "SHA mismatch must keep .part files for owner-driven recovery, "
+            f"got {len(remaining)}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -431,7 +482,7 @@ class TestInvariantsAfterMultipart:
     def test_firewall_intact(self, patched_manifest, client):
         mp = _init(client, patched_manifest["parts"]).json()
         _full_upload(client, mp, patched_manifest["parts"])
-        client.post(f"/api/bundles/multipart/{mp['multipart_id']}/assemble")
+        _assemble_and_wait(client, mp["multipart_id"])
         for sid in NEW36_SESSION_IDS:
             with pytest.raises(NEW36QuantitativeFirewallError):
                 assert_recovery_allowed(sid)
@@ -439,7 +490,7 @@ class TestInvariantsAfterMultipart:
     def test_engine_not_configured(self, patched_manifest, client):
         mp = _init(client, patched_manifest["parts"]).json()
         _full_upload(client, mp, patched_manifest["parts"])
-        client.post(f"/api/bundles/multipart/{mp['multipart_id']}/assemble")
+        _assemble_and_wait(client, mp["multipart_id"])
         s = current_status()
         assert s.status == "NOT_CONFIGURED"
         assert s.accepts_input is False

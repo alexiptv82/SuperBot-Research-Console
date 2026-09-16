@@ -110,6 +110,14 @@ def _startup() -> None:
     logger.info("SuperBot Research Console V1 ready. DB=%s", os.environ.get("SUPERBOT_DB_PATH"))
 
 
+@app.on_event("shutdown")
+def _shutdown() -> None:
+    try:
+        bundle_job_manager.shutdown(wait=False)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 # ---------------------------------------------------------------------------
 # Auth helpers
 # ---------------------------------------------------------------------------
@@ -697,11 +705,142 @@ from multipart_bundle import (
     MultipartBundleError,
 )
 import multipart_bundle as _mp_mod
+from bundle_job_worker import (
+    ACTIVE_STATUSES as JOB_ACTIVE_STATUSES,
+    BundleJobError,
+    BundleJobManager,
+    STAGE_IMPORTING,
+    STATUS_COMPLETE,
+    job_to_dict,
+)
 
 MULTIPART_WORK_DIR = DATA_DIR / "bundle_multipart"
 multipart_controller = MultipartBundleController(
     upload_manager=bundle_manager,
     base_dir=MULTIPART_WORK_DIR,
+)
+
+
+def _bundle_import_runner(
+    db: OrmSession,
+    outer_path: Path,
+    filename: str,
+    digest: str,
+    job,  # BundleJob (avoid circular import in signature)
+) -> dict:
+    """Import runner invoked by the async bundle-job worker.
+
+    Runs outer-archive validation + per-session ingestion, streaming
+    progress updates back into the ``bundle_jobs`` row so the
+    frontend poller sees live 1/11 .. 11/11 progression.
+    """
+    from bundle_import import (
+        BundleImportError,
+        import_bundle,
+        summarize as bundle_summarize,
+    )
+
+    def _process_inner(inner_path, inner_name, checkpoint_hint):
+        item = _process_source(db, inner_path, inner_name, True, checkpoint_hint)
+        db.commit()
+        return item.model_dump()
+
+    passed = 0
+    failed = 0
+
+    def _on_progress(stage: str, payload: dict) -> None:
+        nonlocal passed, failed
+        if stage == "validated":
+            bundle_job_manager.update(
+                db,
+                job.id,
+                stage=STAGE_IMPORTING,
+                stage_detail=(
+                    f"importing session 0/{payload.get('found', 0)}"
+                ),
+                sessions_total=int(payload.get("found") or job.sessions_total),
+                sessions_processed=0,
+                sessions_passed=0,
+                sessions_failed=0,
+            )
+        elif stage == "session_start":
+            idx = int(payload.get("index") or 0)
+            total = int(payload.get("total") or 0)
+            sid = str(payload.get("session_id") or "")
+            bundle_job_manager.update(
+                db,
+                job.id,
+                stage=STAGE_IMPORTING,
+                stage_detail=f"importing session {idx}/{total} ({sid[:24]})",
+            )
+        elif stage == "session_end":
+            idx = int(payload.get("index") or 0)
+            total = int(payload.get("total") or 0)
+            if payload.get("ok"):
+                passed += 1
+            else:
+                failed += 1
+            bundle_job_manager.update(
+                db,
+                job.id,
+                sessions_processed=idx,
+                sessions_passed=passed,
+                sessions_failed=failed,
+                stage_detail=f"completed session {idx}/{total}",
+            )
+        # "cleanup" transitions are handled by the worker itself.
+
+    log_event(
+        db,
+        event_type="bundle.import.start",
+        message=f"bundle finalize: {filename} sha256={digest[:16]}\u2026",
+        outcome="INFO",
+    )
+    db.commit()
+
+    try:
+        results = import_bundle(
+            outer_path, process_inner=_process_inner, on_progress=_on_progress
+        )
+    except BundleImportError as exc:
+        log_event(
+            db,
+            event_type="bundle.import.reject",
+            message=f"{filename}: {exc}",
+            outcome="FAIL",
+        )
+        db.commit()
+        raise
+
+    summary = bundle_summarize(results)
+    log_event(
+        db,
+        event_type="bundle.import.complete",
+        message=(
+            f"{filename}: ok={summary['ok']} failed={summary['failed']} "
+            f"total={summary['total']}"
+        ),
+        outcome="PASS" if summary["failed"] == 0 else "PARTIAL",
+    )
+    db.commit()
+
+    return {
+        "bundle_filename": filename,
+        "bundle_sha256": digest,
+        "results": summary,
+        "old36_reference": compute_checkpoints(db)["old36_reference"],
+        "multipart_reassembly": {
+            "bundle_name": filename,
+            "bundle_size": job.bytes_total,
+            "bundle_sha256": digest,
+        },
+    }
+
+
+bundle_job_manager = BundleJobManager(
+    multipart_controller=multipart_controller,
+    import_runner=_bundle_import_runner,
+    max_workers=1,
 )
 
 
@@ -751,84 +890,108 @@ def bundles_multipart_status(
         raise HTTPException(status_code=exc.status, detail=exc.detail)
 
 
-@app.post("/api/bundles/multipart/{multipart_id}/assemble")
+@app.post(
+    "/api/bundles/multipart/{multipart_id}/assemble",
+    status_code=status.HTTP_202_ACCEPTED,
+)
 def bundles_multipart_assemble(
     multipart_id: str,
+    response: Response,
     db: OrmSession = Depends(get_db),
     _: str = Depends(require_auth),
 ) -> dict:
-    """Assemble the 5 uploaded parts, verify the SHA256, then dispatch
-    the resulting outer ZIP to the EXISTING bundle importer (single
-    authoritative implementation of QA + retention)."""
+    """Kick off the async multipart-bundle finalize job.
+
+    Returns 202 Accepted immediately with a ``job_id`` the client can
+    poll. Reassembly, SHA256 verification, outer-ZIP validation and
+    per-session ingestion all happen in a background worker so that
+    Cloudflare / browser disconnects cannot destroy in-flight work.
+    """
     try:
-        session, outer_path, digest = multipart_controller.assemble(multipart_id)
+        session = multipart_controller.get(multipart_id)
     except MultipartBundleError as exc:
-        log_event(
-            db,
-            event_type="bundle.multipart.reject",
-            message=f"multipart_id={multipart_id}: {exc.detail}",
-            outcome="FAIL",
-        )
-        db.commit()
         raise HTTPException(status_code=exc.status, detail=exc.detail)
 
-    # Wipe the 5 uploaded parts + workdir metadata BEFORE the QA
-    # pipeline runs. Move the assembled ZIP OUT of the multipart
-    # workdir first so ``consume`` (which rmtrees the workdir) does
-    # not delete the file we are about to hand to the importer.
-    workdir = session.workdir
-    handoff_dir = BUNDLE_UPLOAD_DIR / "multipart-handoff"
-    handoff_dir.mkdir(parents=True, exist_ok=True)
-    handoff_path = handoff_dir / f"{multipart_id}-{_mp_mod.EXPECTED_BUNDLE_NAME}"
-    os.replace(outer_path, handoff_path)
-    outer_path = handoff_path
-
-    # Drop the 5 child UploadSessions so their .part files are unlinked.
+    # Fast pre-check: every part must be fully uploaded before we
+    # accept the job. This is cheap (just filesystem sizes) and lets
+    # us reject early with 400 rather than surfacing the error through
+    # the background job.
+    parts_present = 0
     for slot in session.slots:
         try:
-            bundle_manager.abort(slot.upload_id)
-        except Exception:
-            pass
-    # Remove the multipart session bookkeeping + wipe the workdir (the
-    # assembled ZIP has already been moved out).
-    multipart_controller.consume(multipart_id)
+            us = bundle_manager.get(slot.upload_id)
+        except UploadError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"part {slot.part_name}: {exc.detail}",
+            )
+        if len(us.received) != us.total_chunks:
+            missing = us.total_chunks - len(us.received)
+            raise HTTPException(
+                status_code=400,
+                detail=f"part {slot.part_name}: {missing} chunk(s) missing",
+            )
+        parts_present += 1
 
+    job = bundle_job_manager.enqueue(
+        db=db,
+        multipart_id=multipart_id,
+        bundle_filename=_mp_mod.EXPECTED_BUNDLE_NAME,
+        expected_sha256=_mp_mod.EXPECTED_BUNDLE_SHA256,
+        bytes_total=_mp_mod.EXPECTED_BUNDLE_TOTAL_SIZE,
+        parts_present=parts_present,
+        sessions_total=len(OLD36_REFERENCE_SESSIONS),
+    )
     log_event(
         db,
-        event_type="bundle.multipart.assembled",
+        event_type="bundle.job.enqueued",
         message=(
-            f"reassembled {_mp_mod.EXPECTED_BUNDLE_NAME} sha256={digest[:16]}\u2026 "
-            f"({_mp_mod.EXPECTED_BUNDLE_TOTAL_SIZE} bytes) from 5 parts"
+            f"job {job.id} enqueued for multipart_id={multipart_id} "
+            f"({parts_present} parts present)"
         ),
         outcome="INFO",
+        payload={"job_id": job.id, "multipart_id": multipart_id},
     )
     db.commit()
+    response.headers["Location"] = f"/api/bundles/jobs/{job.id}"
+    return {"job_id": job.id, "status": job.status, "job": job_to_dict(job)}
 
-    # Hand the assembled outer ZIP to the shared bundle-import helper.
-    # It deletes the outer bundle unconditionally at the end.
+
+@app.get("/api/bundles/jobs/active")
+def bundles_jobs_active(
+    db: OrmSession = Depends(get_db),
+    _: str = Depends(require_auth),
+) -> dict:
+    """Return the most-recent non-terminal job, if any.
+
+    Used by the frontend to reattach to an in-flight multipart-bundle
+    finalize after a browser refresh or full page reload.
+    """
+    job = bundle_job_manager.latest_active(db)
+    if job is None:
+        return {"job": None}
+    return {"job": job_to_dict(job)}
+
+
+@app.get("/api/bundles/jobs/{job_id}")
+def bundles_jobs_get(
+    job_id: str,
+    db: OrmSession = Depends(get_db),
+    _: str = Depends(require_auth),
+) -> dict:
     try:
-        result = _run_bundle_import_from_path(
-            db, outer_path, _mp_mod.EXPECTED_BUNDLE_NAME, digest
-        )
-    finally:
-        # If the workdir still exists (assembler code writes only the
-        # reassembled file inside it, which we passed out), clean it.
-        try:
-            from multipart_bundle import _rmtree_safe  # local import
-            _rmtree_safe(workdir)
-        except Exception:
-            pass
+        job = bundle_job_manager.get(db, job_id)
+    except BundleJobError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail)
+    return {"job": job_to_dict(job)}
 
-    result["multipart_reassembly"] = {
-        "bundle_name": _mp_mod.EXPECTED_BUNDLE_NAME,
-        "bundle_size": _mp_mod.EXPECTED_BUNDLE_TOTAL_SIZE,
-        "bundle_sha256": digest,
-        "parts": [
-            {"part_index": s.part_index, "part_name": s.part_name, "size": s.expected_size}
-            for s in session.slots
-        ],
-    }
-    return result
+
+@app.post("/api/bundles/jobs/cleanup_stale")
+def bundles_jobs_cleanup_stale(
+    db: OrmSession = Depends(get_db),
+    _: str = Depends(require_auth),
+) -> dict:
+    return {"marked_failed": bundle_job_manager.sweep_stale(db)}
 
 
 @app.delete("/api/bundles/multipart/{multipart_id}")

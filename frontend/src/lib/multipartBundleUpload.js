@@ -123,17 +123,110 @@ export async function uploadMultipartBundle({
       });
     }
 
-    // 3. Assemble.
+    // 3. Enqueue async finalize job. Server returns 202 with job_id
+    //    almost immediately; the heavy reassembly + import happens in
+    //    a background worker that survives Cloudflare / browser
+    //    disconnects.
     onProgress({ phase: "assembling", uploaded: totalBytes, total: totalBytes });
-    const assemble = await api.post(
+    const assembleResp = await api.post(
       `/bundles/multipart/${multipartId}/assemble`,
       {},
-      { timeout: 900_000 },
+      { timeout: 60_000 },
     );
-    onProgress({ phase: "done", uploaded: totalBytes, total: totalBytes, result: assemble.data });
-    return assemble.data;
+    const jobId = assembleResp.data?.job_id;
+    if (!jobId) {
+      throw new Error("Server did not return a job id for the finalize job");
+    }
+    onProgress({
+      phase: "job_enqueued",
+      uploaded: totalBytes,
+      total: totalBytes,
+      jobId,
+      job: assembleResp.data?.job,
+    });
+
+    // 4. Poll job status until COMPLETE or FAILED. Each poll is a
+    //    lightweight GET that Cloudflare can serve in <100 ms, so
+    //    no long-lived request stays open.
+    const finalJob = await pollBundleJob({
+      jobId,
+      onUpdate: (job) =>
+        onProgress({
+          phase: "job_progress",
+          uploaded: totalBytes,
+          total: totalBytes,
+          jobId,
+          job,
+        }),
+      signal,
+    });
+    if (finalJob.status !== "COMPLETE") {
+      const detail =
+        finalJob.error_message || finalJob.stage_detail || "job failed";
+      const err = new Error(detail);
+      err.job = finalJob;
+      throw err;
+    }
+    onProgress({
+      phase: "done",
+      uploaded: totalBytes,
+      total: totalBytes,
+      jobId,
+      job: finalJob,
+      result: finalJob.result_summary,
+    });
+    return finalJob.result_summary || {};
   } catch (err) {
-    try { await api.delete(`/bundles/multipart/${multipartId}`); } catch (_) {}
+    // NOTE: on client-side errors (network, abort) we DO NOT delete
+    // the multipart session anymore. The parts survive Cloudflare
+    // timeouts + browser reloads and the async job on the server
+    // continues on its own. Local abort is user-explicit only.
     throw err;
+  }
+}
+
+const DEFAULT_POLL_INTERVAL_MS = 2500;
+const DEFAULT_POLL_TIMEOUT_MS = 60 * 60 * 1000; // 1h upper bound.
+
+export async function fetchBundleJob(jobId) {
+  const r = await api.get(`/bundles/jobs/${jobId}`);
+  return r.data?.job;
+}
+
+export async function fetchActiveBundleJob() {
+  const r = await api.get(`/bundles/jobs/active`);
+  return r.data?.job;
+}
+
+export async function pollBundleJob({
+  jobId,
+  onUpdate = () => {},
+  intervalMs = DEFAULT_POLL_INTERVAL_MS,
+  timeoutMs = DEFAULT_POLL_TIMEOUT_MS,
+  signal,
+} = {}) {
+  const start = Date.now();
+  while (true) {
+    if (signal?.aborted) throw new Error("aborted");
+    let job;
+    try {
+      job = await fetchBundleJob(jobId);
+    } catch (err) {
+      // Transient network / Cloudflare hiccup while polling: sleep
+      // and retry rather than surfacing as job failure.
+      await new Promise((res) => setTimeout(res, intervalMs));
+      if (Date.now() - start > timeoutMs) {
+        throw new Error(`Polling job ${jobId} timed out`);
+      }
+      continue;
+    }
+    onUpdate(job);
+    if (job.status === "COMPLETE" || job.status === "FAILED") {
+      return job;
+    }
+    if (Date.now() - start > timeoutMs) {
+      throw new Error(`Polling job ${jobId} timed out`);
+    }
+    await new Promise((res) => setTimeout(res, intervalMs));
   }
 }

@@ -1,22 +1,42 @@
 [
   {
-    "content": "Create multipart_bundle.py: 5-slot controller + streaming concatenation + SHA256 verify",
+    "content": "Inspect current server state and report (parts, jobs, imports)",
     "status": "completed"
   },
   {
-    "content": "Add /api/bundles/multipart/{init,assemble,abort,cleanup_stale,manifest} endpoints; hand off to existing import_bundle",
+    "content": "Create BundleJob SQLAlchemy model + migration for bundle_jobs table",
     "status": "completed"
   },
   {
-    "content": "Frontend: multipartBundleUpload.js + BundlePanel subtab",
+    "content": "Create bundle_job_worker.py with threaded worker + stage machine",
     "status": "completed"
   },
   {
-    "content": "Backend tests: reconstruction, missing/duplicate/wrong-size/wrong-order, SHA mismatch, resume, dedup, cleanup",
+    "content": "Refactor multipart_bundle.assemble so parts survive worker failure until COMPLETE/deterministic fail/TTL",
     "status": "completed"
   },
   {
-    "content": "Verify invariants (all pass 202/202)",
+    "content": "Rewrite server.py multipart/assemble endpoint to return 202 with job_id; add /api/bundles/jobs/{id} and /active endpoints",
+    "status": "completed"
+  },
+  {
+    "content": "Update frontend multipartBundleUpload.js to receive job_id and poll",
+    "status": "completed"
+  },
+  {
+    "content": "Update Upload.jsx MultipartBundlePanel to show live stage + support job recovery on refresh",
+    "status": "completed"
+  },
+  {
+    "content": "Add i18n stage labels (Italian + English)",
+    "status": "completed"
+  },
+  {
+    "content": "Add pytest coverage for async job worker, idempotency, disconnect safety, TTL cleanup",
+    "status": "completed"
+  },
+  {
+    "content": "Run full test suite and verify no regressions (NEW36 firewall, milestones, engine status)",
     "status": "completed"
   }
 ]

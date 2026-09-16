@@ -597,14 +597,50 @@ function MultipartBundlePanel({ t, fmtNumber }) {
   const [partProgress, setPartProgress] = React.useState([]);
   const [error, setError] = React.useState(null);
   const [result, setResult] = React.useState(null);
+  const [job, setJob] = React.useState(null);
   const inputRef = React.useRef(null);
   const [drag, setDrag] = React.useState(false);
   const [manifest, setManifest] = React.useState(null);
+  const pollingRef = React.useRef(false);
 
   React.useEffect(() => {
-    import("@/lib/multipartBundleUpload").then((m) =>
-      m.fetchMultipartManifest().then(setManifest).catch(() => {}),
-    );
+    let cancelled = false;
+    import("@/lib/multipartBundleUpload").then((m) => {
+      // 1. Manifest for the parts table.
+      m.fetchMultipartManifest().then((mf) => {
+        if (!cancelled) setManifest(mf);
+      }).catch(() => {});
+      // 2. Rejoin any already-running background job so a browser
+      //    refresh mid-import does not lose progress.
+      if (pollingRef.current) return;
+      m.fetchActiveBundleJob().then((activeJob) => {
+        if (cancelled || !activeJob) return;
+        pollingRef.current = true;
+        setJob(activeJob);
+        setState("VERIFYING");
+        setTotal(activeJob.bytes_total || 0);
+        setUploaded(activeJob.bytes_total || 0);
+        m.pollBundleJob({
+          jobId: activeJob.job_id,
+          onUpdate: (j) => setJob(j),
+        }).then((final) => {
+          pollingRef.current = false;
+          setJob(final);
+          if (final.status === "COMPLETE") {
+            setResult(final.result_summary);
+            setState("DONE");
+          } else {
+            setError(final.error_message || final.stage_detail || "job failed");
+            setState("ERROR");
+          }
+        }).catch((err) => {
+          pollingRef.current = false;
+          setError(err?.message || "polling failed");
+          setState("ERROR");
+        });
+      }).catch(() => {});
+    });
+    return () => { cancelled = true; };
   }, []);
 
   const onSelect = (list) => {
@@ -612,6 +648,7 @@ function MultipartBundlePanel({ t, fmtNumber }) {
     setFiles(arr);
     setResult(null);
     setError(null);
+    setJob(null);
     setState("IDLE");
   };
 
@@ -626,6 +663,7 @@ function MultipartBundlePanel({ t, fmtNumber }) {
     setState("UPLOADING");
     setError(null);
     setResult(null);
+    setJob(null);
     setUploaded(0);
     try {
       const { uploadMultipartBundle } = await import("@/lib/multipartBundleUpload");
@@ -636,8 +674,13 @@ function MultipartBundlePanel({ t, fmtNumber }) {
           if (p.uploaded != null) setUploaded(p.uploaded);
           if (p.partProgress) setPartProgress(p.partProgress);
           if (p.phase === "assembling") setState("VERIFYING");
-          else if (p.phase === "done") setState("DONE");
-          else if (p.phase === "uploading") setState("UPLOADING");
+          else if (p.phase === "job_enqueued" || p.phase === "job_progress") {
+            setState("VERIFYING");
+            if (p.job) setJob(p.job);
+          } else if (p.phase === "done") {
+            setState("DONE");
+            if (p.job) setJob(p.job);
+          } else if (p.phase === "uploading") setState("UPLOADING");
         },
       });
       setResult(res);
@@ -645,14 +688,34 @@ function MultipartBundlePanel({ t, fmtNumber }) {
     } catch (e) {
       setError(e?.response?.data?.detail || e?.message || "unknown error");
       setState("ERROR");
+      if (e?.job) setJob(e.job);
     }
   };
 
   const pct = total ? Math.min(100, (uploaded / total) * 100) : 0;
   const active = state === "UPLOADING" || state === "VERIFYING";
-  const summary = result?.results;
-  const ref = result?.old36_reference;
+  const summary = result?.results || job?.result_summary?.results;
+  const ref = result?.old36_reference || job?.result_summary?.old36_reference;
   const selectedCount = files.length;
+
+  // Server-side job stage: convert to a human label + a percentage
+  // that reflects reassembly (bytes) then per-session progress.
+  const stageKey = job?.current_stage || null;
+  const sessionsTotal = job?.sessions_total || 11;
+  const sessionsProcessed = job?.sessions_processed || 0;
+  const jobPct = (() => {
+    if (!job) return 0;
+    if (job.status === "COMPLETE") return 100;
+    if (stageKey === "IMPORTING" && sessionsTotal > 0) {
+      return 50 + (sessionsProcessed / sessionsTotal) * 50;
+    }
+    if (stageKey === "VERIFYING_ZIP") return 45;
+    if (stageKey === "VERIFYING_SHA256") return 40;
+    if (stageKey === "REASSEMBLING") return 20;
+    if (stageKey === "PREPARING") return 5;
+    if (stageKey === "CLEANUP") return 98;
+    return 0;
+  })();
 
   return (
     <Card>
@@ -775,6 +838,48 @@ function MultipartBundlePanel({ t, fmtNumber }) {
               </span>
             </div>
             <Progress value={pct} />
+          </div>
+        )}
+
+        {job && (
+          <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
+            <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-wider">
+              <span
+                data-testid="bundle-multipart-job-stage"
+                className="text-foreground"
+              >
+                {t(`bundle.job.stage.${job.current_stage}`) || job.current_stage}
+              </span>
+              <span
+                data-testid="bundle-multipart-job-status"
+                className="text-muted-foreground"
+              >
+                {t(`bundle.job.status.${job.status}`) || job.status}
+              </span>
+            </div>
+            {job.stage_detail && (
+              <div
+                data-testid="bundle-multipart-job-detail"
+                className="text-[11px] text-muted-foreground font-mono break-all"
+              >
+                {job.stage_detail}
+              </div>
+            )}
+            <Progress value={jobPct} />
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px] font-mono text-muted-foreground">
+              <div data-testid="bundle-multipart-job-id">
+                job: {job.job_id?.slice(0, 12)}
+              </div>
+              <div data-testid="bundle-multipart-job-sessions">
+                {t("bundle.job.sessions_progress")}: {job.sessions_processed} / {job.sessions_total || 11}
+              </div>
+              <div data-testid="bundle-multipart-job-passed">
+                {t("bundle.job.passed")}: {job.sessions_passed}
+              </div>
+              <div data-testid="bundle-multipart-job-failed">
+                {t("bundle.job.failed")}: {job.sessions_failed}
+              </div>
+            </div>
           </div>
         )}
 
