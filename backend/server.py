@@ -688,6 +688,243 @@ def bundles_cleanup_stale(_: str = Depends(require_auth)) -> dict:
     return {"removed": bundle_manager.cleanup_stale()}
 
 
+# ---------------------------------------------------------------------------
+# OLD36 multipart bundle import (5 raw binary parts \u2014 transport wrapper)
+# ---------------------------------------------------------------------------
+
+from multipart_bundle import (
+    MultipartBundleController,
+    MultipartBundleError,
+)
+import multipart_bundle as _mp_mod
+
+MULTIPART_WORK_DIR = DATA_DIR / "bundle_multipart"
+multipart_controller = MultipartBundleController(
+    upload_manager=bundle_manager,
+    base_dir=MULTIPART_WORK_DIR,
+)
+
+
+class MultipartPartDecl(BaseModel):
+    name: str
+    size: int
+
+
+class MultipartInitBody(BaseModel):
+    parts: list[MultipartPartDecl]
+
+
+@app.get("/api/bundles/multipart/manifest")
+def bundles_multipart_manifest(_: str = Depends(require_auth)) -> dict:
+    """Publish the frozen multipart manifest so the browser can
+    validate its file selection BEFORE calling init."""
+    return {
+        "bundle_name": _mp_mod.EXPECTED_BUNDLE_NAME,
+        "bundle_total_size": _mp_mod.EXPECTED_BUNDLE_TOTAL_SIZE,
+        "bundle_sha256": _mp_mod.EXPECTED_BUNDLE_SHA256,
+        "parts": [{"name": n, "size": s} for n, s in _mp_mod.EXPECTED_PARTS],
+    }
+
+
+@app.post("/api/bundles/multipart/init")
+def bundles_multipart_init(
+    body: MultipartInitBody, _: str = Depends(require_auth)
+) -> dict:
+    try:
+        session = multipart_controller.init(
+            [p.model_dump() for p in body.parts]
+        )
+    except MultipartBundleError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail)
+    except UploadError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail)
+    return session.to_dict()
+
+
+@app.get("/api/bundles/multipart/{multipart_id}")
+def bundles_multipart_status(
+    multipart_id: str, _: str = Depends(require_auth)
+) -> dict:
+    try:
+        return multipart_controller.status(multipart_id)
+    except MultipartBundleError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail)
+
+
+@app.post("/api/bundles/multipart/{multipart_id}/assemble")
+def bundles_multipart_assemble(
+    multipart_id: str,
+    db: OrmSession = Depends(get_db),
+    _: str = Depends(require_auth),
+) -> dict:
+    """Assemble the 5 uploaded parts, verify the SHA256, then dispatch
+    the resulting outer ZIP to the EXISTING bundle importer (single
+    authoritative implementation of QA + retention)."""
+    try:
+        session, outer_path, digest = multipart_controller.assemble(multipart_id)
+    except MultipartBundleError as exc:
+        log_event(
+            db,
+            event_type="bundle.multipart.reject",
+            message=f"multipart_id={multipart_id}: {exc.detail}",
+            outcome="FAIL",
+        )
+        db.commit()
+        raise HTTPException(status_code=exc.status, detail=exc.detail)
+
+    # Wipe the 5 uploaded parts + workdir metadata BEFORE the QA
+    # pipeline runs. Move the assembled ZIP OUT of the multipart
+    # workdir first so ``consume`` (which rmtrees the workdir) does
+    # not delete the file we are about to hand to the importer.
+    workdir = session.workdir
+    handoff_dir = BUNDLE_UPLOAD_DIR / "multipart-handoff"
+    handoff_dir.mkdir(parents=True, exist_ok=True)
+    handoff_path = handoff_dir / f"{multipart_id}-{_mp_mod.EXPECTED_BUNDLE_NAME}"
+    os.replace(outer_path, handoff_path)
+    outer_path = handoff_path
+
+    # Drop the 5 child UploadSessions so their .part files are unlinked.
+    for slot in session.slots:
+        try:
+            bundle_manager.abort(slot.upload_id)
+        except Exception:
+            pass
+    # Remove the multipart session bookkeeping + wipe the workdir (the
+    # assembled ZIP has already been moved out).
+    multipart_controller.consume(multipart_id)
+
+    log_event(
+        db,
+        event_type="bundle.multipart.assembled",
+        message=(
+            f"reassembled {_mp_mod.EXPECTED_BUNDLE_NAME} sha256={digest[:16]}\u2026 "
+            f"({_mp_mod.EXPECTED_BUNDLE_TOTAL_SIZE} bytes) from 5 parts"
+        ),
+        outcome="INFO",
+    )
+    db.commit()
+
+    # Hand the assembled outer ZIP to the shared bundle-import helper.
+    # It deletes the outer bundle unconditionally at the end.
+    try:
+        result = _run_bundle_import_from_path(
+            db, outer_path, _mp_mod.EXPECTED_BUNDLE_NAME, digest
+        )
+    finally:
+        # If the workdir still exists (assembler code writes only the
+        # reassembled file inside it, which we passed out), clean it.
+        try:
+            from multipart_bundle import _rmtree_safe  # local import
+            _rmtree_safe(workdir)
+        except Exception:
+            pass
+
+    result["multipart_reassembly"] = {
+        "bundle_name": _mp_mod.EXPECTED_BUNDLE_NAME,
+        "bundle_size": _mp_mod.EXPECTED_BUNDLE_TOTAL_SIZE,
+        "bundle_sha256": digest,
+        "parts": [
+            {"part_index": s.part_index, "part_name": s.part_name, "size": s.expected_size}
+            for s in session.slots
+        ],
+    }
+    return result
+
+
+@app.delete("/api/bundles/multipart/{multipart_id}")
+def bundles_multipart_abort(
+    multipart_id: str, _: str = Depends(require_auth)
+) -> dict:
+    multipart_controller.abort(multipart_id)
+    return {"multipart_id": multipart_id, "aborted": True}
+
+
+@app.post("/api/bundles/multipart/cleanup_stale")
+def bundles_multipart_cleanup_stale(_: str = Depends(require_auth)) -> dict:
+    return {"removed": multipart_controller.cleanup_stale()}
+
+
+def _run_bundle_import_from_path(
+    db: OrmSession,
+    outer_path: Path,
+    filename: str,
+    digest: str,
+) -> dict:
+    """Run inner-ZIP validation + per-session ingestion for an
+    already-assembled outer OLD36 bundle. Deletes the outer bytes at
+    the end regardless of outcome. Shared by the direct single-bundle
+    finalize path and the multipart-assemble path."""
+    from bundle_import import (
+        BundleImportError,
+        import_bundle,
+        summarize as bundle_summarize,
+    )
+
+    def _process_inner(inner_path, inner_name, checkpoint_hint):
+        item = _process_source(
+            db, inner_path, inner_name, True, checkpoint_hint
+        )
+        db.commit()
+        return item.model_dump()
+
+    log_event(
+        db,
+        event_type="bundle.import.start",
+        message=f"bundle finalize: {filename} sha256={digest[:16]}\u2026",
+        outcome="INFO",
+    )
+    db.commit()
+
+    try:
+        results = import_bundle(outer_path, process_inner=_process_inner)
+    except BundleImportError as exc:
+        log_event(
+            db, event_type="bundle.import.reject",
+            message=f"{filename}: {exc}", outcome="FAIL",
+        )
+        db.commit()
+        try:
+            outer_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.exception("Bundle import crashed for %s", filename)
+        log_event(
+            db, event_type="bundle.import.error",
+            message=f"{filename}: {exc}", outcome="FAIL",
+        )
+        db.commit()
+        try:
+            outer_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise HTTPException(status_code=500, detail=f"Bundle import failed: {exc}")
+
+    summary = bundle_summarize(results)
+    log_event(
+        db, event_type="bundle.import.complete",
+        message=(
+            f"{filename}: ok={summary['ok']} failed={summary['failed']} "
+            f"total={summary['total']}"
+        ),
+        outcome="PASS" if summary["failed"] == 0 else "PARTIAL",
+    )
+    db.commit()
+
+    try:
+        outer_path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+    return {
+        "bundle_filename": filename,
+        "bundle_sha256": digest,
+        "results": summary,
+        "old36_reference": compute_checkpoints(db)["old36_reference"],
+    }
+
+
 @app.post("/api/bundles/{upload_id}/complete")
 def bundles_complete(
     upload_id: str,
@@ -706,86 +943,7 @@ def bundles_complete(
     outer_path = session.part_path
     filename = session.filename
     bundle_manager.consume(upload_id)
-
-    from bundle_import import (
-        BundleImportError,
-        import_bundle,
-        summarize as bundle_summarize,
-    )
-
-    def _process_inner(inner_path, inner_name, checkpoint_hint):
-        # Reuse the exact single-session path so QA, retention,
-        # duplicate detection, audit and checkpoint tagging behave
-        # identically to a manual upload of the same file.
-        item = _process_source(
-            db, inner_path, inner_name, True, checkpoint_hint
-        )
-        db.commit()
-        return item.model_dump()
-
-    log_event(
-        db,
-        event_type="bundle.import.start",
-        message=f"bundle upload finalize: {filename} sha256={digest[:16]}\u2026",
-        outcome="INFO",
-    )
-    db.commit()
-
-    try:
-        results = import_bundle(outer_path, process_inner=_process_inner)
-    except BundleImportError as exc:
-        log_event(
-            db,
-            event_type="bundle.import.reject",
-            message=f"{filename}: {exc}",
-            outcome="FAIL",
-        )
-        db.commit()
-        # Always drop the outer transport bytes.
-        try:
-            outer_path.unlink(missing_ok=True)
-        except OSError:
-            pass
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
-        logger.exception("Bundle import crashed for %s", filename)
-        log_event(
-            db,
-            event_type="bundle.import.error",
-            message=f"{filename}: {exc}",
-            outcome="FAIL",
-        )
-        db.commit()
-        try:
-            outer_path.unlink(missing_ok=True)
-        except OSError:
-            pass
-        raise HTTPException(status_code=500, detail=f"Bundle import failed: {exc}")
-
-    summary = bundle_summarize(results)
-    log_event(
-        db,
-        event_type="bundle.import.complete",
-        message=(
-            f"{filename}: ok={summary['ok']} failed={summary['failed']} "
-            f"total={summary['total']}"
-        ),
-        outcome="PASS" if summary["failed"] == 0 else "PARTIAL",
-    )
-    db.commit()
-
-    # The outer archive is transport only. Drop it.
-    try:
-        outer_path.unlink(missing_ok=True)
-    except OSError:
-        pass
-
-    return {
-        "bundle_filename": filename,
-        "bundle_sha256": digest,
-        "results": summary,
-        "old36_reference": compute_checkpoints(db)["old36_reference"],
-    }
+    return _run_bundle_import_from_path(db, outer_path, filename, digest)
 
 
 # ---------------------------------------------------------------------------

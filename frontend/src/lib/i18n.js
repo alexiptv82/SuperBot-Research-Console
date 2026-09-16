@@ -131,6 +131,25 @@ const MESSAGES = {
     "bundle.table.duplicate": "Duplicato",
     "bundle.table.hours": "Ore convalidate",
     "bundle.table.detail": "Dettaglio",
+    "bundle.submode.single": "Bundle singolo",
+    "bundle.submode.multipart": "Bundle multipart",
+    "bundle.multipart.title": "Importa bundle multipart (5 parti)",
+    "bundle.multipart.subtitle":
+      "Carica le 5 parti binarie di OLD36_REFERENCE_BUNDLE.zip. Il server verifica ordine, dimensioni e SHA256 prima di ricostruire il bundle originale.",
+    "bundle.multipart.drop_hint": "Trascina le 5 parti qui o clicca per selezionarle",
+    "bundle.multipart.drop_note":
+      "Selezione multipla richiesta: part-00, part-01, part-02, part-03, part-04. L\u2019ordine \u00e8 imposto dal server.",
+    "bundle.multipart.required": "Parti richieste",
+    "bundle.multipart.selected": "Parti selezionate",
+    "bundle.multipart.expected_total": "Dimensione totale attesa",
+    "bundle.multipart.part_name": "Nome parte",
+    "bundle.multipart.expected_size": "Dimensione attesa",
+    "bundle.multipart.status": "Stato",
+    "bundle.multipart.awaiting": "in attesa",
+    "bundle.multipart.wrong_size": "dimensione errata",
+    "bundle.multipart.ready": "pronta",
+    "bundle.multipart.uploaded": "caricata",
+    "bundle.multipart.start": "Ricostruisci e importa",
 
     // Registry
     "registry.title": "Registro sessioni",
@@ -346,6 +365,25 @@ const MESSAGES = {
     "bundle.table.duplicate": "Duplicate",
     "bundle.table.hours": "Validated hours",
     "bundle.table.detail": "Detail",
+    "bundle.submode.single": "Single bundle",
+    "bundle.submode.multipart": "Multipart bundle",
+    "bundle.multipart.title": "Import multipart bundle (5 parts)",
+    "bundle.multipart.subtitle":
+      "Upload the 5 raw binary parts of OLD36_REFERENCE_BUNDLE.zip. The server enforces order, sizes and SHA256 before reassembling the original bundle.",
+    "bundle.multipart.drop_hint": "Drop the 5 parts here or click to browse",
+    "bundle.multipart.drop_note":
+      "Multi-select required: part-00, part-01, part-02, part-03, part-04. Order is enforced server-side.",
+    "bundle.multipart.required": "Parts required",
+    "bundle.multipart.selected": "Parts selected",
+    "bundle.multipart.expected_total": "Expected total size",
+    "bundle.multipart.part_name": "Part name",
+    "bundle.multipart.expected_size": "Expected size",
+    "bundle.multipart.status": "Status",
+    "bundle.multipart.awaiting": "awaiting",
+    "bundle.multipart.wrong_size": "wrong size",
+    "bundle.multipart.ready": "ready",
+    "bundle.multipart.uploaded": "uploaded",
+    "bundle.multipart.start": "Reassemble and import",
 
     "registry.title": "Session Registry",
     "registry.subtitle":

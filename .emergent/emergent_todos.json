@@ -1,42 +1,22 @@
 [
   {
-    "content": "Add OLD36_REFERENCE registry (11 sessions + per-session nominal hours)",
+    "content": "Create multipart_bundle.py: 5-slot controller + streaming concatenation + SHA256 verify",
     "status": "completed"
   },
   {
-    "content": "Wire historical import: auto-tag OLD36_REFERENCE on upload; keep OLD36 baseline math untouched",
+    "content": "Add /api/bundles/multipart/{init,assemble,abort,cleanup_stale,manifest} endpoints; hand off to existing import_bundle",
     "status": "completed"
   },
   {
-    "content": "Expose /api/reference/old36 + old36_reference section in /api/checkpoints",
+    "content": "Frontend: multipartBundleUpload.js + BundlePanel subtab",
     "status": "completed"
   },
   {
-    "content": "Copy CP24/CP36 golden CSVs into /app/backend/recovery/goldens/",
+    "content": "Backend tests: reconstruction, missing/duplicate/wrong-size/wrong-order, SHA mismatch, resume, dedup, cleanup",
     "status": "completed"
   },
   {
-    "content": "Build recovery sandbox: NEW36 firewall + OLD36-only raw access",
-    "status": "completed"
-  },
-  {
-    "content": "Build recovery rules + provenance catalog",
-    "status": "completed"
-  },
-  {
-    "content": "Build golden regression harness (skeleton)",
-    "status": "completed"
-  },
-  {
-    "content": "Add sandbox firewall + registry pytest coverage",
-    "status": "completed"
-  },
-  {
-    "content": "Generate initial recovery reports",
-    "status": "completed"
-  },
-  {
-    "content": "Verify: FrozenAnalysisEngine still NOT_CONFIGURED; NEW36 sealed; full test suite",
+    "content": "Verify invariants (all pass 202/202)",
     "status": "completed"
   }
 ]

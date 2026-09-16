@@ -324,6 +324,47 @@ function FileRow({ item, onRemove, t, fmtNumber }) {
 }
 
 function BundlePanel({ t, fmtNumber }) {
+  const [subMode, setSubMode] = React.useState("single");
+  return (
+    <div className="space-y-3">
+      <div className="inline-flex rounded-lg border bg-card p-1 gap-1" data-testid="bundle-submode-tabs">
+        <button
+          type="button"
+          data-testid="bundle-submode-single"
+          onClick={() => setSubMode("single")}
+          className={cn(
+            "px-3 py-1 text-[11px] font-medium rounded-md transition-colors",
+            subMode === "single"
+              ? "bg-[hsl(var(--focus))] text-white"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {t("bundle.submode.single")}
+        </button>
+        <button
+          type="button"
+          data-testid="bundle-submode-multipart"
+          onClick={() => setSubMode("multipart")}
+          className={cn(
+            "px-3 py-1 text-[11px] font-medium rounded-md transition-colors",
+            subMode === "multipart"
+              ? "bg-[hsl(var(--focus))] text-white"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {t("bundle.submode.multipart")}
+        </button>
+      </div>
+      {subMode === "single" ? (
+        <SingleBundlePanel t={t} fmtNumber={fmtNumber} />
+      ) : (
+        <MultipartBundlePanel t={t} fmtNumber={fmtNumber} />
+      )}
+    </div>
+  );
+}
+
+function SingleBundlePanel({ t, fmtNumber }) {
   const [file, setFile] = React.useState(null);
   const [state, setState] = React.useState("IDLE");
   const [uploadedBytes, setUploadedBytes] = React.useState(0);
@@ -547,4 +588,258 @@ function MetricTile({ label, value, testid }) {
     </div>
   );
 }
+
+function MultipartBundlePanel({ t, fmtNumber }) {
+  const [files, setFiles] = React.useState([]);
+  const [state, setState] = React.useState("IDLE");
+  const [uploaded, setUploaded] = React.useState(0);
+  const [total, setTotal] = React.useState(0);
+  const [partProgress, setPartProgress] = React.useState([]);
+  const [error, setError] = React.useState(null);
+  const [result, setResult] = React.useState(null);
+  const inputRef = React.useRef(null);
+  const [drag, setDrag] = React.useState(false);
+  const [manifest, setManifest] = React.useState(null);
+
+  React.useEffect(() => {
+    import("@/lib/multipartBundleUpload").then((m) =>
+      m.fetchMultipartManifest().then(setManifest).catch(() => {}),
+    );
+  }, []);
+
+  const onSelect = (list) => {
+    const arr = Array.from(list || []);
+    setFiles(arr);
+    setResult(null);
+    setError(null);
+    setState("IDLE");
+  };
+
+  const onDrop = (e) => {
+    e.preventDefault();
+    setDrag(false);
+    if (e.dataTransfer?.files?.length) onSelect(e.dataTransfer.files);
+  };
+
+  const start = async () => {
+    if (files.length !== 5) return;
+    setState("UPLOADING");
+    setError(null);
+    setResult(null);
+    setUploaded(0);
+    try {
+      const { uploadMultipartBundle } = await import("@/lib/multipartBundleUpload");
+      const res = await uploadMultipartBundle({
+        files,
+        onProgress: (p) => {
+          if (p.total) setTotal(p.total);
+          if (p.uploaded != null) setUploaded(p.uploaded);
+          if (p.partProgress) setPartProgress(p.partProgress);
+          if (p.phase === "assembling") setState("VERIFYING");
+          else if (p.phase === "done") setState("DONE");
+          else if (p.phase === "uploading") setState("UPLOADING");
+        },
+      });
+      setResult(res);
+      setState("DONE");
+    } catch (e) {
+      setError(e?.response?.data?.detail || e?.message || "unknown error");
+      setState("ERROR");
+    }
+  };
+
+  const pct = total ? Math.min(100, (uploaded / total) * 100) : 0;
+  const active = state === "UPLOADING" || state === "VERIFYING";
+  const summary = result?.results;
+  const ref = result?.old36_reference;
+  const selectedCount = files.length;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm font-semibold tracking-wide">{t("bundle.multipart.title")}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-xs text-muted-foreground">{t("bundle.multipart.subtitle")}</p>
+        <p className="text-[11px] text-muted-foreground italic">{t("bundle.baseline_note")}</p>
+
+        {manifest && (
+          <div className="text-[11px] font-mono text-muted-foreground">
+            <div>SHA256: {manifest.bundle_sha256}</div>
+            <div>{t("bundle.multipart.expected_total")}: {fmtBytes(manifest.bundle_total_size)}</div>
+          </div>
+        )}
+
+        <div
+          data-testid="bundle-multipart-dropzone"
+          onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
+          onDragLeave={() => setDrag(false)}
+          onDrop={onDrop}
+          onClick={() => inputRef.current?.click()}
+          className={cn(
+            "rounded-xl border border-dashed bg-card p-6 sm:p-8 transition-colors cursor-pointer flex flex-col items-center justify-center text-center",
+            drag
+              ? "border-[hsl(var(--focus))] bg-[hsl(var(--focus)/0.06)]"
+              : "border-border hover:border-[hsl(var(--focus))]",
+          )}
+        >
+          <Package className="h-8 w-8 text-muted-foreground" />
+          <div className="mt-3 text-sm font-medium">{t("bundle.multipart.drop_hint")}</div>
+          <div className="mt-1 text-xs text-muted-foreground">{t("bundle.multipart.drop_note")}</div>
+          <input
+            ref={inputRef}
+            data-testid="bundle-multipart-file-input"
+            type="file"
+            multiple
+            accept=".part-00,.part-01,.part-02,.part-03,.part-04"
+            className="hidden"
+            onChange={(e) => onSelect(e.target.files)}
+          />
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+          <MetricTile
+            label={t("bundle.multipart.required")}
+            value={manifest?.parts?.length ?? 5}
+            testid="bundle-multipart-required"
+          />
+          <MetricTile
+            label={t("bundle.multipart.selected")}
+            value={`${selectedCount} / 5`}
+            testid="bundle-multipart-selected"
+          />
+        </div>
+
+        {manifest && (
+          <div className="overflow-x-auto rounded-lg border">
+            <table className="min-w-full text-[11px]" data-testid="bundle-multipart-parts">
+              <thead className="bg-muted/40 text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium">#</th>
+                  <th className="px-3 py-2 text-left font-medium">{t("bundle.multipart.part_name")}</th>
+                  <th className="px-3 py-2 text-right font-medium">{t("bundle.multipart.expected_size")}</th>
+                  <th className="px-3 py-2 text-left font-medium">{t("bundle.multipart.status")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {manifest.parts.map((p, i) => {
+                  const sel = files.find((f) => f.name === p.name);
+                  const pp = partProgress[i];
+                  return (
+                    <tr key={p.name} className="border-t">
+                      <td className="px-3 py-2 font-mono">{i}</td>
+                      <td className="px-3 py-2 font-mono">{p.name}</td>
+                      <td className="px-3 py-2 text-right font-mono">{fmtBytes(p.size)}</td>
+                      <td className="px-3 py-2">
+                        {!sel ? (
+                          <span className="text-muted-foreground">{t("bundle.multipart.awaiting")}</span>
+                        ) : sel.size !== p.size ? (
+                          <span className="text-[hsl(var(--verdict-fail))]">{t("bundle.multipart.wrong_size")}</span>
+                        ) : pp?.uploadedBytes >= p.size ? (
+                          <span className="text-[hsl(var(--verdict-pass))]">{t("bundle.multipart.uploaded")}</span>
+                        ) : pp ? (
+                          <span className="font-mono">{fmtBytes(pp.uploadedBytes)} / {fmtBytes(p.size)}</span>
+                        ) : (
+                          <span className="text-foreground">{t("bundle.multipart.ready")}</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <div>
+          <Button
+            data-testid="bundle-multipart-start-button"
+            onClick={start}
+            disabled={selectedCount !== 5 || active}
+          >
+            {active && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            {t("bundle.multipart.start")}
+          </Button>
+        </div>
+
+        {state !== "IDLE" && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-[10px] text-muted-foreground font-mono">
+              <span
+                data-testid="bundle-multipart-status-label"
+                className="uppercase tracking-wider text-foreground"
+              >
+                {t(`bundle.state.${state}`)}
+              </span>
+              <span>
+                {fmtBytes(uploaded)} / {fmtBytes(total)} · {fmtNumber(pct, { maximumFractionDigits: 1 })}%
+              </span>
+            </div>
+            <Progress value={pct} />
+          </div>
+        )}
+
+        {error && (
+          <div
+            data-testid="bundle-multipart-error"
+            className="rounded-md border border-[hsl(var(--verdict-fail)/0.4)] bg-[hsl(var(--verdict-fail)/0.06)] px-3 py-2 text-xs text-[hsl(var(--verdict-fail))]"
+          >
+            {t("bundle.state.ERROR")}: {error}
+          </div>
+        )}
+
+        {summary && (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              <MetricTile label={t("bundle.sessions_found")} value={`${summary.total} / 11`} testid="bundle-mp-metric-found" />
+              <MetricTile label={t("bundle.summary_ok")} value={summary.ok} testid="bundle-mp-metric-ok" />
+              <MetricTile label={t("bundle.summary_failed")} value={summary.failed} testid="bundle-mp-metric-failed" />
+              {ref && (
+                <MetricTile
+                  label={t("bundle.old36_available")}
+                  value={`${ref.present_sessions} / ${ref.expected_sessions}`}
+                  testid="bundle-mp-metric-old36"
+                />
+              )}
+            </div>
+
+            <div className="overflow-x-auto rounded-lg border">
+              <table className="min-w-full text-xs">
+                <thead className="bg-muted/40 text-muted-foreground">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium">{t("bundle.table.session")}</th>
+                    <th className="px-3 py-2 text-left font-medium">{t("bundle.table.verdict")}</th>
+                    <th className="px-3 py-2 text-left font-medium">{t("bundle.table.duplicate")}</th>
+                    <th className="px-3 py-2 text-right font-medium">{t("bundle.table.hours")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {summary.sessions.map((s) => (
+                    <tr key={s.session_id} className="border-t">
+                      <td className="px-3 py-2 font-mono text-[11px]">{s.session_id}</td>
+                      <td className="px-3 py-2">
+                        {s.ok && s.result ? (
+                          <VerdictBadge verdict={s.result.verdict} size="sm" />
+                        ) : (
+                          <span className="text-[hsl(var(--verdict-fail))] font-mono">{s.error || "\u2014"}</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-[10px] uppercase tracking-wider text-muted-foreground">
+                        {s.result?.duplicate_status ? <DuplicateStateText state={s.result.duplicate_status} /> : "\u2014"}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono">
+                        {s.result?.validated_hours != null ? fmtNumber(s.result.validated_hours, { maximumFractionDigits: 4 }) : "\u2014"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 
