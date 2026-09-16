@@ -6,10 +6,11 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { VerdictBadge, DuplicateStateText } from "@/components/VerdictBadge";
-import { Upload as UploadIcon, X, FileArchive, Loader2 } from "lucide-react";
+import { Upload as UploadIcon, X, FileArchive, Loader2, Package } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Link } from "react-router-dom";
 import { uploadChunked } from "@/lib/chunkedUpload";
+import { uploadBundleChunked } from "@/lib/chunkedBundleUpload";
 
 const CHECKPOINTS = ["", "OLD36", "NEW12", "NEW36"];
 const STATES = {
@@ -35,6 +36,7 @@ function fmtBytes(n) {
 export default function UploadPage() {
   const t = useT();
   const { fmtNumber } = useLocale();
+  const [mode, setMode] = useState("single");
   const [files, setFiles] = useState([]);
   const [drag, setDrag] = useState(false);
   const [retainRaw, setRetainRaw] = useState(false);
@@ -132,6 +134,41 @@ export default function UploadPage() {
         <p className="text-sm text-muted-foreground">{t("upload.subtitle")}</p>
       </div>
 
+      <div className="inline-flex rounded-lg border bg-card p-1 gap-1" data-testid="upload-mode-tabs">
+        <button
+          type="button"
+          data-testid="upload-mode-single"
+          onClick={() => setMode("single")}
+          className={cn(
+            "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
+            mode === "single"
+              ? "bg-[hsl(var(--focus))] text-white"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <FileArchive className="inline h-3.5 w-3.5 mr-1.5 -mt-0.5" />
+          {t("upload.mode.single")}
+        </button>
+        <button
+          type="button"
+          data-testid="upload-mode-bundle"
+          onClick={() => setMode("bundle")}
+          className={cn(
+            "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
+            mode === "bundle"
+              ? "bg-[hsl(var(--focus))] text-white"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <Package className="inline h-3.5 w-3.5 mr-1.5 -mt-0.5" />
+          {t("upload.mode.bundle")}
+        </button>
+      </div>
+
+      {mode === "bundle" && <BundlePanel t={t} fmtNumber={fmtNumber} />}
+
+      {mode === "single" && (
+      <>
       <Card>
         <CardHeader>
           <CardTitle className="text-sm font-semibold tracking-wide">{t("upload.ingest")}</CardTitle>
@@ -206,6 +243,8 @@ export default function UploadPage() {
             ))}
           </CardContent>
         </Card>
+      )}
+      </>
       )}
     </div>
   );
@@ -283,3 +322,229 @@ function FileRow({ item, onRemove, t, fmtNumber }) {
     </div>
   );
 }
+
+function BundlePanel({ t, fmtNumber }) {
+  const [file, setFile] = React.useState(null);
+  const [state, setState] = React.useState("IDLE");
+  const [uploadedBytes, setUploadedBytes] = React.useState(0);
+  const [totalBytes, setTotalBytes] = React.useState(0);
+  const [error, setError] = React.useState(null);
+  const [result, setResult] = React.useState(null);
+  const inputRef = React.useRef(null);
+  const [drag, setDrag] = React.useState(false);
+
+  const onDrop = (e) => {
+    e.preventDefault();
+    setDrag(false);
+    const f = e.dataTransfer?.files?.[0];
+    if (f) { setFile(f); setResult(null); setError(null); setState("IDLE"); }
+  };
+
+  const start = async () => {
+    if (!file) return;
+    setState("PREPARING");
+    setError(null);
+    setResult(null);
+    setUploadedBytes(0);
+    setTotalBytes(file.size);
+    try {
+      const res = await uploadBundleChunked({
+        file,
+        onProgress: (p) => {
+          if (p.totalBytes) setTotalBytes(p.totalBytes);
+          if (p.uploadedBytes != null) setUploadedBytes(p.uploadedBytes);
+          if (p.phase === "prepare" || p.phase === "hashing") setState("PREPARING");
+          else if (p.phase === "uploading" || p.phase === "retry") setState("UPLOADING");
+          else if (p.phase === "assembling") setState("VERIFYING");
+          else if (p.phase === "verifying") setState("VERIFYING");
+          else if (p.phase === "done") setState("DONE");
+        },
+      });
+      setResult(res);
+      setState("DONE");
+    } catch (e) {
+      setError(e?.response?.data?.detail || e?.message || "unknown error");
+      setState("ERROR");
+    }
+  };
+
+  const pct = totalBytes ? Math.min(100, (uploadedBytes / totalBytes) * 100) : 0;
+  const activeStage = state === "PROCESSING" || state === "UPLOADING" || state === "VERIFYING" || state === "PREPARING";
+  const summary = result?.results;
+  const ref = result?.old36_reference;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm font-semibold tracking-wide">{t("bundle.title")}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-xs text-muted-foreground">{t("bundle.subtitle")}</p>
+        <p className="text-[11px] text-muted-foreground italic">{t("bundle.baseline_note")}</p>
+
+        <div
+          data-testid="bundle-dropzone"
+          onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
+          onDragLeave={() => setDrag(false)}
+          onDrop={onDrop}
+          onClick={() => inputRef.current?.click()}
+          className={cn(
+            "rounded-xl border border-dashed bg-card p-6 sm:p-10 transition-colors cursor-pointer flex flex-col items-center justify-center text-center",
+            drag
+              ? "border-[hsl(var(--focus))] bg-[hsl(var(--focus)/0.06)]"
+              : "border-border hover:border-[hsl(var(--focus))]",
+          )}
+        >
+          <Package className="h-8 w-8 text-muted-foreground" />
+          <div className="mt-3 text-sm font-medium">{t("bundle.drop_hint")}</div>
+          <div className="mt-1 text-xs text-muted-foreground">{t("bundle.drop_note")}</div>
+          <input
+            ref={inputRef}
+            data-testid="bundle-file-input"
+            type="file"
+            accept=".zip"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) { setFile(f); setResult(null); setError(null); setState("IDLE"); }
+            }}
+          />
+        </div>
+
+        {file && (
+          <div className="rounded-lg border bg-background/40 px-3 py-3 text-xs">
+            <div className="flex items-center gap-2">
+              <Package className="h-4 w-4 text-muted-foreground" />
+              <span className="font-medium">{t("bundle.selected")}:</span>
+              <span data-testid="bundle-file-name" className="truncate">{file.name}</span>
+            </div>
+            <div className="mt-1 text-[10px] text-muted-foreground font-mono">
+              {t("bundle.size")}: {fmtBytes(file.size)}
+            </div>
+          </div>
+        )}
+
+        <div>
+          <Button
+            data-testid="bundle-start-button"
+            onClick={start}
+            disabled={!file || activeStage}
+          >
+            {activeStage && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            {t("bundle.start")}
+          </Button>
+        </div>
+
+        {state !== "IDLE" && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-[10px] text-muted-foreground font-mono">
+              <span
+                data-testid="bundle-status-label"
+                className="uppercase tracking-wider text-foreground"
+              >
+                {t(`bundle.state.${state}`)}
+              </span>
+              <span>
+                {fmtBytes(uploadedBytes)} / {fmtBytes(totalBytes)} · {fmtNumber(pct, { maximumFractionDigits: 1 })}%
+              </span>
+            </div>
+            <Progress value={pct} />
+          </div>
+        )}
+
+        {error && (
+          <div
+            data-testid="bundle-error"
+            className="rounded-md border border-[hsl(var(--verdict-fail)/0.4)] bg-[hsl(var(--verdict-fail)/0.06)] px-3 py-2 text-xs text-[hsl(var(--verdict-fail))]"
+          >
+            {t("bundle.state.ERROR")}: {error}
+          </div>
+        )}
+
+        {summary && (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              <MetricTile label={t("bundle.sessions_found")} value={`${summary.total} / 11`} testid="bundle-metric-found" />
+              <MetricTile label={t("bundle.summary_ok")} value={summary.ok} testid="bundle-metric-ok" />
+              <MetricTile label={t("bundle.summary_failed")} value={summary.failed} testid="bundle-metric-failed" />
+              {ref && (
+                <MetricTile
+                  label={t("bundle.old36_available")}
+                  value={`${ref.present_sessions} / ${ref.expected_sessions}`}
+                  testid="bundle-metric-old36-available"
+                />
+              )}
+              {ref && (
+                <MetricTile
+                  label={t("bundle.old36_hours")}
+                  value={`${ref.present_nominal_hours} / ${ref.expected_nominal_hours} h`}
+                  testid="bundle-metric-old36-hours"
+                />
+              )}
+            </div>
+
+            <div className="overflow-x-auto rounded-lg border">
+              <table className="min-w-full text-xs" data-testid="bundle-summary-table">
+                <thead className="bg-muted/40 text-muted-foreground">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium">{t("bundle.table.session")}</th>
+                    <th className="px-3 py-2 text-left font-medium">{t("bundle.table.verdict")}</th>
+                    <th className="px-3 py-2 text-left font-medium">{t("bundle.table.duplicate")}</th>
+                    <th className="px-3 py-2 text-right font-medium">{t("bundle.table.hours")}</th>
+                    <th className="px-3 py-2 text-right font-medium">{t("bundle.table.detail")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {summary.sessions.map((s) => (
+                    <tr key={s.session_id} data-testid={`bundle-row-${s.session_id}`} className="border-t">
+                      <td className="px-3 py-2 font-mono text-[11px]">{s.session_id}</td>
+                      <td className="px-3 py-2">
+                        {s.ok && s.result ? (
+                          <VerdictBadge verdict={s.result.verdict} size="sm" />
+                        ) : (
+                          <span className="text-[hsl(var(--verdict-fail))] font-mono">
+                            {s.error || "\u2014"}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-[10px] uppercase tracking-wider text-muted-foreground">
+                        {s.result?.duplicate_status ? (
+                          <DuplicateStateText state={s.result.duplicate_status} />
+                        ) : "\u2014"}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono">
+                        {s.result?.validated_hours != null
+                          ? fmtNumber(s.result.validated_hours, { maximumFractionDigits: 4 })
+                          : "\u2014"}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {s.ok && s.result?.session_id ? (
+                          <Link
+                            to={`/session/${encodeURIComponent(s.result.session_id)}`}
+                            className="text-[hsl(var(--focus))] hover:underline"
+                          >
+                            {t("upload.file_view")}
+                          </Link>
+                        ) : "\u2014"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function MetricTile({ label, value, testid }) {
+  return (
+    <div className="rounded-lg border bg-background/40 px-3 py-2" data-testid={testid}>
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
+      <div className="mt-1 text-sm font-semibold font-mono">{value}</div>
+    </div>
+  );
+}
+

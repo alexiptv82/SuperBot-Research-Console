@@ -83,9 +83,17 @@ class UploadSession:
 
 
 class UploadManager:
-    def __init__(self, base_dir: str | os.PathLike):
+    def __init__(
+        self,
+        base_dir: str | os.PathLike,
+        *,
+        max_upload_bytes: int = MAX_UPLOAD_BYTES,
+        label: str = "single",
+    ):
         self.base_dir = Path(base_dir)
         self.base_dir.mkdir(parents=True, exist_ok=True)
+        self.max_upload_bytes = int(max_upload_bytes)
+        self.label = label
         self._sessions: dict[str, UploadSession] = {}
         self._lock = threading.Lock()
 
@@ -104,9 +112,11 @@ class UploadManager:
     ) -> UploadSession:
         if total_size <= 0:
             raise UploadError(400, "total_size must be > 0")
-        if total_size > MAX_UPLOAD_BYTES:
+        if total_size > self.max_upload_bytes:
             raise UploadError(
-                413, f"File exceeds max upload size ({MAX_UPLOAD_BYTES} bytes)"
+                413,
+                f"File exceeds max {self.label} upload size "
+                f"({self.max_upload_bytes} bytes)",
             )
         if chunk_size <= 0 or chunk_size > MAX_CHUNK_BYTES:
             raise UploadError(

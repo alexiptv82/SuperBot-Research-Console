@@ -42,6 +42,8 @@ from auth import (
     verify_session,
 )
 from checkpoint_registry import (
+    CHECKPOINT_OLD36_REFERENCE,
+    OLD36_REFERENCE_SESSIONS,
     CHECKPOINT_UNASSIGNED,
     checkpoint_batch_for,
 )
@@ -88,8 +90,18 @@ DATA_DIR = Path(os.environ.get("SUPERBOT_DATA_DIR", "/app/backend/data"))
 RAW_DIR = DATA_DIR / "raw_zips"
 RAW_DIR.mkdir(parents=True, exist_ok=True)
 UPLOAD_DIR = DATA_DIR / "uploads"
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+BUNDLE_UPLOAD_DIR = DATA_DIR / "bundle_uploads"
+
+# 3 GiB ceiling for the outer OLD36 bundle (real bundle is ~2.3 GiB).
+# Single-session upload cap is untouched (SUPERBOT_MAX_UPLOAD_MB).
+BUNDLE_MAX_BYTES = 3 * 1024 * 1024 * 1024
+
 upload_manager = UploadManager(UPLOAD_DIR)
+bundle_manager = UploadManager(
+    BUNDLE_UPLOAD_DIR,
+    max_upload_bytes=BUNDLE_MAX_BYTES,
+    label="bundle",
+)
 
 
 @app.on_event("startup")
@@ -594,6 +606,186 @@ def uploads_abort(upload_id: str, _: str = Depends(require_auth)) -> dict:
 @app.post("/api/uploads/cleanup_stale")
 def uploads_cleanup_stale(_: str = Depends(require_auth)) -> dict:
     return {"removed": upload_manager.cleanup_stale()}
+
+
+# ---------------------------------------------------------------------------
+# OLD36 bundle import (usability wrapper over single-session ingestion)
+# ---------------------------------------------------------------------------
+
+
+class BundleInitBody(BaseModel):
+    filename: str
+    total_size: int
+    chunk_size: int | None = None
+
+
+class BundleCompleteBody(BaseModel):
+    sha256: str | None = None
+
+
+@app.get("/api/bundles/limits")
+def bundles_limits(_: str = Depends(require_auth)) -> dict:
+    return {
+        "max_bundle_bytes": BUNDLE_MAX_BYTES,
+        "recommended_chunk_size": DEFAULT_CHUNK_SIZE,
+        "expected_inner_sessions": len(OLD36_REFERENCE_SESSIONS),
+    }
+
+
+@app.post("/api/bundles/init")
+def bundles_init(body: BundleInitBody, _: str = Depends(require_auth)) -> dict:
+    try:
+        session = bundle_manager.init(
+            filename=body.filename,
+            total_size=body.total_size,
+            chunk_size=body.chunk_size or DEFAULT_CHUNK_SIZE,
+            retain_raw=False,
+            checkpoint_hint=CHECKPOINT_OLD36_REFERENCE,
+        )
+    except UploadError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail)
+    return session.to_dict()
+
+
+@app.get("/api/bundles/{upload_id}")
+def bundles_status(upload_id: str, _: str = Depends(require_auth)) -> dict:
+    try:
+        session = bundle_manager.get(upload_id)
+    except UploadError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail)
+    return session.to_dict()
+
+
+@app.post("/api/bundles/{upload_id}/chunk/{index}")
+async def bundles_chunk(
+    upload_id: str,
+    index: int,
+    request: Request,
+    _: str = Depends(require_auth),
+) -> dict:
+    data = await request.body()
+    try:
+        session = bundle_manager.write_chunk(upload_id, index, data)
+    except UploadError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail)
+    return {
+        "upload_id": session.id,
+        "index": index,
+        "received_count": len(session.received),
+        "total_chunks": session.total_chunks,
+        "progress": len(session.received) / session.total_chunks,
+    }
+
+
+@app.delete("/api/bundles/{upload_id}")
+def bundles_abort(upload_id: str, _: str = Depends(require_auth)) -> dict:
+    bundle_manager.abort(upload_id)
+    return {"upload_id": upload_id, "aborted": True}
+
+
+@app.post("/api/bundles/cleanup_stale")
+def bundles_cleanup_stale(_: str = Depends(require_auth)) -> dict:
+    return {"removed": bundle_manager.cleanup_stale()}
+
+
+@app.post("/api/bundles/{upload_id}/complete")
+def bundles_complete(
+    upload_id: str,
+    body: BundleCompleteBody,
+    db: OrmSession = Depends(get_db),
+    _: str = Depends(require_auth),
+) -> dict:
+    """Finalize the outer bundle upload, then validate + dispatch its
+    inner session ZIPs through the existing single-session ingestion
+    pipeline. The outer archive is transport only; it is unlinked
+    after the response is built regardless of success or failure."""
+    try:
+        session, digest = bundle_manager.finalize(upload_id, body.sha256)
+    except UploadError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail)
+    outer_path = session.part_path
+    filename = session.filename
+    bundle_manager.consume(upload_id)
+
+    from bundle_import import (
+        BundleImportError,
+        import_bundle,
+        summarize as bundle_summarize,
+    )
+
+    def _process_inner(inner_path, inner_name, checkpoint_hint):
+        # Reuse the exact single-session path so QA, retention,
+        # duplicate detection, audit and checkpoint tagging behave
+        # identically to a manual upload of the same file.
+        item = _process_source(
+            db, inner_path, inner_name, True, checkpoint_hint
+        )
+        db.commit()
+        return item.model_dump()
+
+    log_event(
+        db,
+        event_type="bundle.import.start",
+        message=f"bundle upload finalize: {filename} sha256={digest[:16]}\u2026",
+        outcome="INFO",
+    )
+    db.commit()
+
+    try:
+        results = import_bundle(outer_path, process_inner=_process_inner)
+    except BundleImportError as exc:
+        log_event(
+            db,
+            event_type="bundle.import.reject",
+            message=f"{filename}: {exc}",
+            outcome="FAIL",
+        )
+        db.commit()
+        # Always drop the outer transport bytes.
+        try:
+            outer_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.exception("Bundle import crashed for %s", filename)
+        log_event(
+            db,
+            event_type="bundle.import.error",
+            message=f"{filename}: {exc}",
+            outcome="FAIL",
+        )
+        db.commit()
+        try:
+            outer_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise HTTPException(status_code=500, detail=f"Bundle import failed: {exc}")
+
+    summary = bundle_summarize(results)
+    log_event(
+        db,
+        event_type="bundle.import.complete",
+        message=(
+            f"{filename}: ok={summary['ok']} failed={summary['failed']} "
+            f"total={summary['total']}"
+        ),
+        outcome="PASS" if summary["failed"] == 0 else "PARTIAL",
+    )
+    db.commit()
+
+    # The outer archive is transport only. Drop it.
+    try:
+        outer_path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+    return {
+        "bundle_filename": filename,
+        "bundle_sha256": digest,
+        "results": summary,
+        "old36_reference": compute_checkpoints(db)["old36_reference"],
+    }
 
 
 # ---------------------------------------------------------------------------
