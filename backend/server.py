@@ -7,6 +7,7 @@ platform ingress requirements.
 from __future__ import annotations
 
 import logging
+import shutil
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -89,6 +90,38 @@ app.add_middleware(
 DATA_DIR = Path(os.environ.get("SUPERBOT_DATA_DIR", "/app/backend/data"))
 RAW_DIR = DATA_DIR / "raw_zips"
 RAW_DIR.mkdir(parents=True, exist_ok=True)
+
+# Hard runtime free-space reserve. Protects SQLite/audit/import writes
+# from the ENOSPC failure class that silently lost 9/11 OLD36 raws
+# during the 2.14 GiB bundle finalize. Default 768 MiB, tunable via
+# SUPERBOT_MIN_FREE_RESERVE_MB. Consumed by both the retained-upload
+# preflight (/api/uploads/init) and the pre-retention recheck inside
+# _process_source.
+MIN_FREE_RESERVE_BYTES = int(
+    os.environ.get("SUPERBOT_MIN_FREE_RESERVE_MB", "768")
+) * 1024 * 1024
+
+
+def _data_disk_snapshot(required_upload_bytes: int = 0) -> dict:
+    """Return an authoritative free-space snapshot for the runtime
+    data volume plus the derived headroom required by the caller.
+
+    Always inspects ``DATA_DIR`` (never ``/tmp``) because raw retention,
+    SQLite and audit logs all live under ``DATA_DIR``. If the runtime
+    ever splits these onto separate filesystems, this helper is the
+    single place to widen.
+    """
+    usage = shutil.disk_usage(DATA_DIR)
+    required = int(required_upload_bytes) + MIN_FREE_RESERVE_BYTES
+    return {
+        "total_bytes": int(usage.total),
+        "used_bytes": int(usage.used),
+        "free_bytes": int(usage.free),
+        "min_free_reserve_bytes": int(MIN_FREE_RESERVE_BYTES),
+        "required_bytes": int(required),
+        "safe": int(usage.free) >= required,
+        "limiting_path": str(DATA_DIR),
+    }
 UPLOAD_DIR = DATA_DIR / "uploads"
 BUNDLE_UPLOAD_DIR = DATA_DIR / "bundle_uploads"
 
@@ -302,6 +335,47 @@ def _process_source(
     # 1. Run QA (streams from disk if source is a path).
     report = run_qa(str(source) if is_path else source, filename)
 
+    # 1a. OLD36 server-side identity enforcement.
+    #
+    # When the caller explicitly requests the OLD36_REFERENCE recovery
+    # mode via ``checkpoint_hint_override``, the AUTHORITATIVE session
+    # identity is the QA-derived ``report.session_id`` — never the ZIP
+    # filename. A file whose derived id is not in the frozen registry
+    # must be refused BEFORE the DB is mutated so it cannot pollute
+    # OLD36 metadata via a mislabelled filename.
+    #
+    # This gate is intentionally scoped: it only fires when the caller
+    # opts into OLD36_REFERENCE mode. NEW12/NEW36/generic ingestion is
+    # unaffected.
+    if checkpoint_hint_override == CHECKPOINT_OLD36_REFERENCE:
+        actual_id = report.session_id
+        if actual_id not in OLD36_REFERENCE_SESSIONS:
+            log_event(
+                db,
+                event_type="old36.identity.reject",
+                message=(
+                    f"OLD36_REFERENCE identity guard rejected {filename!r}: "
+                    f"actual_session_id={actual_id!r} is not in the frozen "
+                    "OLD36 reference registry"
+                ),
+                outcome="FAIL",
+                payload={
+                    "filename": filename,
+                    "actual_session_id": actual_id,
+                    "requested_mode": CHECKPOINT_OLD36_REFERENCE,
+                    "expected_registry_size": len(OLD36_REFERENCE_SESSIONS),
+                },
+            )
+            db.commit()
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"OLD36_IDENTITY_REJECTED: derived session_id "
+                    f"{actual_id!r} is not one of the 11 frozen OLD36 "
+                    "reference sessions; filename is UX only"
+                ),
+            )
+
     # 2. Duplicate detection uses session_id + file SHA256 (\u00a712.4)
     dup_status = classify_upload(db, report.session_id, report.file_sha256)
 
@@ -389,6 +463,53 @@ def _process_source(
     # 6. Retention policy per \u00a712.7
     should_retain = retain_raw or report.verdict not in (VERDICT_PASS, VERDICT_PASS_WITH_WARNING)
     if should_retain:
+        # 6a. Second disk-space check: another concurrent process may
+        # have consumed space between the upload preflight and now.
+        # If the canonical blob does not already exist AND writing it
+        # would breach the runtime reserve, refuse cleanly. Duplicate
+        # canonical retentions never write bytes (see raw_storage) so
+        # they are exempt from this recheck.
+        canonical_path_for_dup_check = RAW_DIR / f"{report.file_sha256}.zip"
+        needs_new_write = not canonical_path_for_dup_check.exists()
+        if needs_new_write:
+            source_size = 0
+            try:
+                if is_path:
+                    source_size = int(Path(source).stat().st_size)
+                elif isinstance(source, (bytes, bytearray)):
+                    source_size = len(source)
+            except OSError:
+                source_size = 0
+            disk = _data_disk_snapshot(source_size)
+            if not disk["safe"]:
+                log_event(
+                    db,
+                    event_type="raw.retention.blocked_disk",
+                    message=(
+                        f"BLOCKED_DISK_SPACE at retention recheck for "
+                        f"{filename!r} sha={report.file_sha256[:12]} "
+                        f"free={disk['free_bytes']} required={disk['required_bytes']}"
+                    ),
+                    outcome="FAIL",
+                    payload={
+                        "filename": filename,
+                        "session_id": report.session_id,
+                        "file_sha256": report.file_sha256,
+                        "source_size": source_size,
+                        **{k: v for k, v in disk.items() if k != "used_bytes"},
+                    },
+                )
+                db.commit()
+                raise HTTPException(
+                    status_code=507,
+                    detail=(
+                        f"BLOCKED_DISK_SPACE: retention recheck failed for "
+                        f"session {report.session_id!r}; free={disk['free_bytes']} "
+                        f"required={disk['required_bytes']} reserve="
+                        f"{disk['min_free_reserve_bytes']} "
+                        f"limiting_path={disk['limiting_path']}"
+                    ),
+                )
         if is_path:
             stored = _persist_raw_path(source, report.file_sha256)
         else:
@@ -530,11 +651,29 @@ def uploads_limits(_: str = Depends(require_auth)) -> dict:
     return {
         "max_upload_bytes": MAX_UPLOAD_BYTES,
         "recommended_chunk_size": DEFAULT_CHUNK_SIZE,
+        "disk": _data_disk_snapshot(),
     }
 
 
 @app.post("/api/uploads/init")
 def uploads_init(body: UploadInitBody, _: str = Depends(require_auth)) -> dict:
+    # A retained upload consumes its full byte size on disk before the
+    # canonical rename runs, so we must refuse to accept it if doing so
+    # would breach the SUPERBOT_MIN_FREE_RESERVE_MB reserve. This is the
+    # first of two guards against the ENOSPC failure class that stranded
+    # 9/11 OLD36 raws during the 2.14 GiB bundle finalize.
+    if body.retain_raw:
+        disk = _data_disk_snapshot(body.total_size)
+        if not disk["safe"]:
+            raise HTTPException(
+                status_code=507,
+                detail=(
+                    "BLOCKED_DISK_SPACE: retained upload would breach the "
+                    f"runtime reserve; free={disk['free_bytes']} required="
+                    f"{disk['required_bytes']} reserve={disk['min_free_reserve_bytes']} "
+                    f"limiting_path={DATA_DIR}"
+                ),
+            )
     try:
         session = upload_manager.init(
             filename=body.filename,
@@ -545,7 +684,9 @@ def uploads_init(body: UploadInitBody, _: str = Depends(require_auth)) -> dict:
         )
     except UploadError as exc:
         raise HTTPException(status_code=exc.status, detail=exc.detail)
-    return session.to_dict()
+    payload = session.to_dict()
+    payload["disk"] = _data_disk_snapshot()
+    return payload
 
 
 @app.get("/api/uploads/{upload_id}")

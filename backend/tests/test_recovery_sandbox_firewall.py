@@ -66,8 +66,16 @@ class TestFirewall:
         assert issubclass(NEW36QuantitativeFirewallError, PermissionError)
 
     @pytest.mark.parametrize("sid", OLD36_REFERENCE_SESSIONS)
-    def test_old36_id_allowed_but_missing_raises_file_not_found(self, sid):
-        # Allowed identity, but no raw ZIP imported into the test DB.
+    def test_old36_id_allowed_but_missing_raises_file_not_found(
+        self, sid, monkeypatch
+    ):
+        # Allowed identity, but the raw ZIP is intentionally absent.
+        # Isolate from the live runtime (which may already have some
+        # OLD36 raws retained) by forcing ``_resolve_stored_path`` to
+        # report "not imported" for this test only.
+        import recovery.sandbox as sb
+
+        monkeypatch.setattr(sb, "_resolve_stored_path", lambda _sid: None)
         assert_recovery_allowed(sid)  # must NOT raise
         with pytest.raises(FileNotFoundError):
             open_reference_zip(sid)

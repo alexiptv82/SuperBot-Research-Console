@@ -107,6 +107,53 @@ def _summarize_registered(db: OrmSession, ids: tuple[str, ...]) -> dict:
     }
 
 
+def _verify_physical_raw(rf, session_id: str) -> tuple[bool, str | None]:
+    """Return ``(ok, reason)`` for a candidate ``RawFile`` row.
+
+    A retained raw only counts for OLD36 quantitative recovery when
+    every one of these deterministic checks passes:
+
+    * DB flag ``retained`` is True
+    * ``stored_path`` is non-null and is a string
+    * the source file SHA256 is available on the joined QA row (a
+      guarantee that the canonical hash used for retention is known)
+    * the physical path is a regular file whose size is > 0
+    * the file can be opened for reading
+    * a small 4 KiB read probe succeeds
+    * (caller-supplied) the session identity is a frozen OLD36
+      reference id — enforced outside this helper
+
+    No SHA256 is recomputed here: an integrity roundtrip over every
+    ~250 MiB retained blob on every ``/api/reference/old36`` call
+    would be materially wasteful. The ingest-time SHA is authoritative.
+    """
+    from pathlib import Path
+
+    if not rf.retained:
+        return False, "retained flag is False"
+    if not rf.stored_path or not isinstance(rf.stored_path, str):
+        return False, "stored_path missing"
+    p = Path(rf.stored_path)
+    if not p.exists():
+        return False, "physical path does not exist"
+    if not p.is_file():
+        return False, "physical path is not a regular file"
+    try:
+        size = p.stat().st_size
+    except OSError as exc:
+        return False, f"stat failed: {exc}"
+    if size <= 0:
+        return False, "physical file is zero-size"
+    try:
+        with open(p, "rb") as fh:
+            probe = fh.read(4096)
+    except OSError as exc:
+        return False, f"probe read failed: {exc}"
+    if not probe:
+        return False, "probe read returned no bytes"
+    return True, None
+
+
 def _summarize_old36_reference(db: OrmSession) -> dict:
     """Report which of the 11 historical raw-reference sessions are
     present in SuperBot storage AND whether the canonical raw
@@ -150,6 +197,7 @@ def _summarize_old36_reference(db: OrmSession) -> dict:
         # is still counted as recoverable.
         raw_path: str | None = None
         raw_retained = False
+        raw_reject_reason: str | None = None
         if row is not None:
             raw_rows = db.execute(
                 select(RawFile, QARun)
@@ -158,10 +206,14 @@ def _summarize_old36_reference(db: OrmSession) -> dict:
                 .where(RawFile.retained == True)  # noqa: E712
             ).all()
             for rf, _qa in raw_rows:
-                if rf.stored_path and Path(rf.stored_path).exists():
+                ok, why = _verify_physical_raw(rf, sid)
+                if ok:
                     raw_path = rf.stored_path
                     raw_retained = True
+                    raw_reject_reason = None
                     break
+                # keep the last rejection reason for debuggability
+                raw_reject_reason = why
         nominal = OLD36_REFERENCE_NOMINAL_HOURS[sid]
         is_present = row is not None
         if is_present:
@@ -177,6 +229,7 @@ def _summarize_old36_reference(db: OrmSession) -> dict:
                 "present": is_present,
                 "raw_retained": raw_retained,
                 "raw_path": raw_path,
+                "raw_reject_reason": raw_reject_reason,
                 "latest_verdict": (
                     latest_run.operational_status if latest_run is not None else None
                 ),
