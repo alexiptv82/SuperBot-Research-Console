@@ -75,9 +75,13 @@ STATUS_QUEUED = "QUEUED"
 STATUS_RUNNING = "RUNNING"
 STATUS_COMPLETE = "COMPLETE"
 STATUS_FAILED = "FAILED"
+STATUS_RECOVERABLE = "RECOVERABLE"
 
 TERMINAL_STATUSES = frozenset({STATUS_COMPLETE, STATUS_FAILED})
 ACTIVE_STATUSES = frozenset({STATUS_QUEUED, STATUS_RUNNING})
+RESUMABLE_STATUSES = frozenset(
+    {STATUS_QUEUED, STATUS_RUNNING, STATUS_RECOVERABLE, STATUS_FAILED}
+)
 
 STAGE_QUEUED = "QUEUED"
 STAGE_PREPARING = "PREPARING"
@@ -127,6 +131,7 @@ def job_to_dict(job: BundleJob) -> dict:
         "updated_at": job.updated_at,
         "started_at": job.started_at,
         "finished_at": job.finished_at,
+        "parts_map": job.parts_map,
     }
 
 
@@ -188,6 +193,7 @@ class BundleJobManager:
         bytes_total: int,
         parts_present: int,
         sessions_total: int,
+        parts_map: list[dict] | None = None,
     ) -> BundleJob:
         """Create + submit a job for the given multipart session.
 
@@ -195,6 +201,13 @@ class BundleJobManager:
         ``multipart_id`` it is returned as-is. If a terminal job
         exists, it is also returned (client sees COMPLETE / FAILED
         and can choose next action).
+
+        ``parts_map`` (optional but strongly recommended) is a list
+        of ``{part_index, upload_id, part_name, expected_size}`` dicts.
+        Persisting it lets the manager rebuild the in-memory multipart
+        session after a process restart from the 5 .part files that
+        survived on disk, so a browser refresh + backend restart no
+        longer strands 2.14 GiB of upload.
         """
         existing = self._latest_job_for_multipart(db, multipart_id)
         if existing is not None and existing.status in ACTIVE_STATUSES:
@@ -211,6 +224,7 @@ class BundleJobManager:
             status=STATUS_QUEUED,
             current_stage=STAGE_QUEUED,
             stage_detail="job queued",
+            parts_map=parts_map,
         )
         db.add(job)
         db.commit()
@@ -337,9 +351,31 @@ class BundleJobManager:
                 stage=STAGE_REASSEMBLING,
                 stage_detail="concatenating 5 parts",
             )
+            self.update(
+                db,
+                job_id,
+                stage=STAGE_REASSEMBLING,
+                stage_detail="concatenating 5 parts",
+                bytes_processed=0,
+            )
+
+            def _on_reassemble_progress(bytes_written: int) -> None:
+                # Persist a heartbeat every ~64 MiB so the frontend
+                # can distinguish a slow disk from a dead worker.
+                try:
+                    self.update(
+                        db,
+                        job_id,
+                        bytes_processed=int(bytes_written),
+                    )
+                except Exception:  # noqa: BLE001
+                    # A failed heartbeat must never abort assembly
+                    # (e.g. transient DB lock).
+                    pass
+
             try:
                 session, outer_path, digest = self.multipart_controller.assemble(
-                    multipart_id
+                    multipart_id, on_progress=_on_reassemble_progress
                 )
             except Exception as exc:  # MultipartBundleError or unexpected
                 self._fail(
@@ -487,6 +523,178 @@ class BundleJobManager:
         # Same directory the sync flow uses for consistency.
         return Path(self.multipart_controller.base_dir).parent / "bundle_jobs_handoff"
 
+    def is_alive(self, job_id: str) -> bool:
+        """Return True if a worker future for ``job_id`` is currently
+        executing in this process.
+
+        Used to distinguish a slow-but-live job from an orphaned
+        RUNNING row (worker thread crashed, or process was recycled).
+        """
+        with self._lock:
+            fut = self._futures.get(job_id)
+        if fut is None:
+            return False
+        return not fut.done()
+
+    def startup_recover_orphans(self, db: OrmSession) -> list[str]:
+        """On backend startup / manager re-init, every persisted job
+        in ``QUEUED`` or ``RUNNING`` is by definition orphaned: no
+        in-memory worker survived the restart. Flip them to
+        ``RECOVERABLE`` with a stable error code so the frontend can
+        surface a "Riprendi" button instead of an eternal spinner.
+
+        Called at FastAPI startup. Idempotent.
+        """
+        rows = db.execute(
+            select(BundleJob).where(BundleJob.status.in_(list(ACTIVE_STATUSES)))
+        ).scalars().all()
+        recovered: list[str] = []
+        for row in rows:
+            # Never rewrite a job that IS attached to a live worker
+            # (e.g. very fast startup path where the executor already
+            # has a fresh future). Belt-and-suspenders check.
+            if self.is_alive(row.id):
+                continue
+            self.update(
+                db,
+                row.id,
+                status=STATUS_RECOVERABLE,
+                stage=row.current_stage,  # keep stage; only the status flips
+                stage_detail="worker lost (process restart); safe to resume",
+                error_code="WORKER_LOST",
+            )
+            recovered.append(row.id)
+            try:
+                log_event(
+                    db,
+                    event_type="bundle.job.recoverable",
+                    message=(
+                        f"job {row.id}: marked RECOVERABLE at startup "
+                        f"(previous status={row.status}, stage={row.current_stage})"
+                    ),
+                    outcome="INFO",
+                    payload={"job_id": row.id, "prev_status": row.status},
+                )
+            except Exception:  # noqa: BLE001
+                pass
+        try:
+            db.commit()
+        except Exception:  # noqa: BLE001
+            pass
+        return recovered
+
+    def resume(self, db: OrmSession, job_id: str) -> BundleJob:
+        """Re-submit an orphaned job to the worker executor.
+
+        Allowed for jobs in ``RECOVERABLE``, ``FAILED`` (after a
+        transient error such as ENOSPC that has since been resolved),
+        or ``RUNNING`` where ``is_alive`` proves the worker is dead.
+
+        Idempotent: if a live worker is already attached to this job,
+        the existing future is preserved and the current row is
+        returned unchanged.
+        """
+        job = self.get(db, job_id)
+        if self.is_alive(job_id):
+            return job
+        if job.status == STATUS_COMPLETE:
+            return job
+        if job.status not in RESUMABLE_STATUSES:
+            raise BundleJobError(
+                409,
+                f"job {job_id} status={job.status} is not resumable",
+            )
+        if not job.multipart_id:
+            raise BundleJobError(409, "job has no multipart_id, cannot resume")
+
+        # Verify the multipart session still owns 5 fully-uploaded
+        # parts so a resume never silently reruns against a partial
+        # upload. If the multipart controller lost the in-memory
+        # session (backend restart), rebuild it from the persisted
+        # parts_map + the .part files still on disk.
+        try:
+            mp_session = self.multipart_controller.get(job.multipart_id)
+        except Exception:
+            mp_session = None
+        if mp_session is None:
+            if not job.parts_map:
+                raise BundleJobError(
+                    409,
+                    f"multipart session {job.multipart_id} not in memory and "
+                    "job has no persisted parts_map to rebuild from",
+                )
+            try:
+                mp_session = self.multipart_controller.rebuild_from_parts_map(
+                    multipart_id=job.multipart_id,
+                    expected_sha256=job.expected_sha256,
+                    expected_total_size=job.bytes_total,
+                    parts_map=job.parts_map,
+                )
+            except Exception as exc:  # noqa: BLE001
+                raise BundleJobError(
+                    409,
+                    f"failed to rebuild multipart session {job.multipart_id}: {exc}",
+                ) from exc
+
+        # If the assembly already succeeded once (assembled=True) but
+        # the import phase died, we must NOT re-run assemble (it would
+        # raise 409). We forbid this path for now and surface a clear
+        # message; the FAILED row's handoff_path can be inspected by
+        # an operator.
+        if mp_session.assembled:
+            raise BundleJobError(
+                409,
+                "reassembly already completed; resume of the import phase is "
+                "not supported yet - the handoff bundle remains on disk under "
+                "bundle_jobs_handoff/ for manual replay",
+            )
+
+        # Wipe any partial reassembled file so the worker starts clean.
+        for name in ("part-reassembled",):
+            stub = mp_session.workdir / f"OLD36_REFERENCE_BUNDLE.zip.{name}"
+            try:
+                stub.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError:
+                pass
+
+        # Reset progress counters + status. Keep the SAME row id so
+        # polling / recovery keeps pointing at the same job.
+        self.update(
+            db,
+            job_id,
+            status=STATUS_QUEUED,
+            stage=STAGE_QUEUED,
+            stage_detail="job re-queued for resume",
+            bytes_processed=0,
+            actual_sha256=None,
+            sessions_processed=0,
+            sessions_passed=0,
+            sessions_failed=0,
+            error_code=None,
+            error_message=None,
+            result_summary=None,
+            started_at=None,
+            finished_at=None,
+        )
+        try:
+            log_event(
+                db,
+                event_type="bundle.job.resume",
+                message=f"job {job_id}: resume requested",
+                outcome="INFO",
+                payload={"job_id": job_id, "multipart_id": job.multipart_id},
+            )
+            db.commit()
+        except Exception:  # noqa: BLE001
+            pass
+
+        fut = self._executor.submit(self._run_job, job_id)
+        with self._lock:
+            self._futures[job_id] = fut
+        return self.get(db, job_id)
+
     def sweep_stale(self, db: OrmSession) -> int:
         """Mark abandoned jobs FAILED after JOB_STALE_TTL_SECONDS."""
         now = time.time()
@@ -517,11 +725,13 @@ class BundleJobManager:
 
 __all__ = [
     "ACTIVE_STATUSES",
+    "RESUMABLE_STATUSES",
     "TERMINAL_STATUSES",
     "STATUS_QUEUED",
     "STATUS_RUNNING",
     "STATUS_COMPLETE",
     "STATUS_FAILED",
+    "STATUS_RECOVERABLE",
     "STAGE_QUEUED",
     "STAGE_PREPARING",
     "STAGE_REASSEMBLING",

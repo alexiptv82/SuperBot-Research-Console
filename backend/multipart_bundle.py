@@ -238,6 +238,84 @@ class MultipartBundleController:
             self._sessions[mp_id] = session
         return session
 
+    def rebuild_from_parts_map(
+        self,
+        *,
+        multipart_id: str,
+        expected_sha256: str,
+        expected_total_size: int,
+        parts_map: list[dict],
+    ) -> MultipartSession:
+        """Re-hydrate an in-memory :class:`MultipartSession` from a
+        persisted ``parts_map`` after a backend restart wiped the
+        controller's registry.
+
+        The 5 ``.part`` files must still exist on disk with the
+        original sizes. Returns the re-registered session. Idempotent
+        under a stable ``multipart_id``.
+        """
+        with self._lock:
+            existing = self._sessions.get(multipart_id)
+        if existing is not None:
+            return existing
+        if not isinstance(parts_map, list) or len(parts_map) != len(EXPECTED_PARTS):
+            raise MultipartBundleError(
+                400,
+                f"parts_map must contain {len(EXPECTED_PARTS)} entries, "
+                f"got {len(parts_map) if isinstance(parts_map, list) else 'n/a'}",
+            )
+        # Sort by part_index so we walk in canonical order regardless
+        # of how the caller serialized the list.
+        entries = sorted(parts_map, key=lambda e: int(e.get("part_index", 0)))
+        slots: list[MultipartSlot] = []
+        for idx, entry in enumerate(entries):
+            exp_name, exp_size = EXPECTED_PARTS[idx]
+            if entry.get("part_name") != exp_name:
+                raise MultipartBundleError(
+                    400,
+                    f"parts_map[{idx}] name {entry.get('part_name')!r} != "
+                    f"expected {exp_name!r}",
+                )
+            if int(entry.get("expected_size") or 0) != exp_size:
+                raise MultipartBundleError(
+                    400,
+                    f"parts_map[{idx}] expected_size {entry.get('expected_size')} != "
+                    f"expected {exp_size}",
+                )
+            upload_id = entry.get("upload_id")
+            if not upload_id:
+                raise MultipartBundleError(
+                    400, f"parts_map[{idx}] missing upload_id"
+                )
+            us = self.upload_manager.attach_completed(
+                upload_id=upload_id,
+                filename=exp_name,
+                total_size=exp_size,
+            )
+            slots.append(
+                MultipartSlot(
+                    part_index=idx,
+                    part_name=exp_name,
+                    expected_size=exp_size,
+                    upload_id=us.id,
+                    chunk_size=us.chunk_size,
+                    total_chunks=us.total_chunks,
+                )
+            )
+        workdir = self.base_dir / multipart_id
+        workdir.mkdir(parents=True, exist_ok=True)
+        session = MultipartSession(
+            id=multipart_id,
+            workdir=workdir,
+            reassembled_path=workdir / f"{EXPECTED_BUNDLE_NAME}.part-reassembled",
+            slots=slots,
+            expected_total_size=expected_total_size,
+            expected_sha256=expected_sha256,
+        )
+        with self._lock:
+            self._sessions[multipart_id] = session
+        return session
+
     def get(self, mp_id: str) -> MultipartSession:
         with self._lock:
             s = self._sessions.get(mp_id)
@@ -321,11 +399,23 @@ class MultipartBundleController:
             "parts": detail,
         }
 
-    def assemble(self, mp_id: str) -> tuple[MultipartSession, Path, str]:
+    def assemble(
+        self,
+        mp_id: str,
+        *,
+        on_progress: "callable[[int], None] | None" = None,
+        heartbeat_bytes: int = 64 * 1024 * 1024,
+    ) -> tuple[MultipartSession, Path, str]:
         """Verify every part is fully received, concatenate them in
         order, verify total size + SHA256, and return the reassembled
         path. On any failure the reassembled file is deleted and
         :class:`MultipartBundleError` is raised.
+
+        ``on_progress(bytes_written)`` (optional) is invoked every
+        ``heartbeat_bytes`` written and once more when the assembly
+        completes. It lets an async job worker persist a live progress
+        heartbeat so an idle process is distinguishable from a dead
+        one (e.g. a Cloudflare 502 that never shipped a response).
         """
         s = self.get(mp_id)
         with s.lock:
@@ -369,6 +459,7 @@ class MultipartBundleController:
                 0o644,
             )
             try:
+                next_heartbeat = heartbeat_bytes if on_progress is not None else None
                 for slot in s.slots:
                     us = self.upload_manager.get(slot.upload_id)
                     part_size = 0
@@ -383,6 +474,19 @@ class MultipartBundleController:
                             while offset < len(chunk):
                                 offset += os.write(fd, chunk[offset:])
                             part_size += len(chunk)
+                            written += len(chunk)
+                            if (
+                                on_progress is not None
+                                and next_heartbeat is not None
+                                and written >= next_heartbeat
+                            ):
+                                try:
+                                    on_progress(written)
+                                except Exception:  # noqa: BLE001
+                                    # A misbehaving heartbeat callback must
+                                    # never abort the reassembly.
+                                    pass
+                                next_heartbeat = written + heartbeat_bytes
                     finally:
                         os.close(src_fd)
                     if part_size != slot.expected_size:
@@ -391,9 +495,16 @@ class MultipartBundleController:
                             f"part {slot.part_name}: read {part_size} bytes, "
                             f"expected {slot.expected_size}",
                         )
-                    written += part_size
             finally:
                 os.close(fd)
+
+            # Final heartbeat with the fully-written byte count so
+            # the last update is not delayed to the next tick.
+            if on_progress is not None:
+                try:
+                    on_progress(written)
+                except Exception:  # noqa: BLE001
+                    pass
 
             if written != s.expected_total_size:
                 _unlink_safe(reassembled_tmp)

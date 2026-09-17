@@ -160,6 +160,57 @@ class UploadManager:
         except OSError:
             pass
 
+    def attach_completed(
+        self,
+        *,
+        upload_id: str,
+        filename: str,
+        total_size: int,
+        chunk_size: int = DEFAULT_CHUNK_SIZE,
+        retain_raw: bool = False,
+    ) -> UploadSession:
+        """Recreate an ``UploadSession`` whose bytes already sit on
+        disk under ``base_dir/{upload_id}.part``.
+
+        Used exclusively by the multipart-bundle recovery path when a
+        backend restart drops the in-memory ``UploadManager._sessions``
+        map. The caller MUST have already validated (via the persisted
+        parts_map) that:
+
+        - ``base_dir/{upload_id}.part`` exists and is exactly
+          ``total_size`` bytes long;
+        - the caller trusts these bytes are the same ones that were
+          uploaded (i.e. no adversarial rewrites since the process
+          restart).
+        """
+        part_path = self.base_dir / f"{upload_id}.part"
+        if not part_path.exists():
+            raise UploadError(
+                404,
+                f"cannot attach: {part_path} missing on disk",
+            )
+        actual = part_path.stat().st_size
+        if actual != total_size:
+            raise UploadError(
+                400,
+                f"cannot attach: {part_path} size {actual} != expected {total_size}",
+            )
+        total_chunks = (total_size + chunk_size - 1) // chunk_size
+        session = UploadSession(
+            id=upload_id,
+            filename=_sanitize_filename(filename),
+            total_size=total_size,
+            chunk_size=chunk_size,
+            total_chunks=total_chunks,
+            part_path=part_path,
+            retain_raw=retain_raw,
+            received=set(range(total_chunks)),
+            completed=True,
+        )
+        with self._lock:
+            self._sessions[upload_id] = session
+        return session
+
     # ------------------------------------------------------------------
     # Chunk write
     # ------------------------------------------------------------------

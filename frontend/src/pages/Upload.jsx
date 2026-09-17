@@ -880,6 +880,38 @@ function MultipartBundlePanel({ t, fmtNumber }) {
                 {t("bundle.job.failed")}: {job.sessions_failed}
               </div>
             </div>
+            {job.status === "RECOVERABLE" && (
+              <Button
+                data-testid="bundle-multipart-resume-button"
+                onClick={async () => {
+                  try {
+                    const m = await import("@/lib/multipartBundleUpload");
+                    const resumed = await m.resumeBundleJob(job.job_id);
+                    setJob(resumed);
+                    setState("VERIFYING");
+                    setError(null);
+                    m.pollBundleJob({
+                      jobId: job.job_id,
+                      onUpdate: (j) => setJob(j),
+                    }).then((final) => {
+                      setJob(final);
+                      if (final.status === "COMPLETE") {
+                        setResult(final.result_summary);
+                        setState("DONE");
+                      } else {
+                        setError(final.error_message || final.stage_detail || "job failed");
+                        setState("ERROR");
+                      }
+                    });
+                  } catch (e) {
+                    setError(e?.response?.data?.detail || e?.message || "resume failed");
+                    setState("ERROR");
+                  }
+                }}
+              >
+                {t("bundle.job.resume") || "Riprendi"}
+              </Button>
+            )}
           </div>
         )}
 

@@ -193,6 +193,10 @@ class BundleJob(Base):
     error_code: Mapped[str | None] = mapped_column(String, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     result_summary: Mapped[Any] = mapped_column(JSON, nullable=True)
+    # Persisted mapping of part_index -> {upload_id, part_name,
+    # expected_size} so a backend restart can rebuild the in-memory
+    # multipart session from the 5 .part files that survived on disk.
+    parts_map: Mapped[Any] = mapped_column(JSON, nullable=True)
     created_at: Mapped[str] = mapped_column(String, default=_utcnow_iso, index=True)
     updated_at: Mapped[str] = mapped_column(String, default=_utcnow_iso, index=True)
     started_at: Mapped[str | None] = mapped_column(String, nullable=True)

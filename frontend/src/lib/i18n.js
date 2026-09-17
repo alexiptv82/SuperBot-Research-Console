@@ -156,6 +156,7 @@ const MESSAGES = {
     "bundle.job.status.RUNNING": "IN ESECUZIONE",
     "bundle.job.status.COMPLETE": "COMPLETATO",
     "bundle.job.status.FAILED": "FALLITO",
+    "bundle.job.status.RECOVERABLE": "RIPRISTINABILE",
     "bundle.job.stage.QUEUED": "In coda",
     "bundle.job.stage.PREPARING": "Preparazione",
     "bundle.job.stage.REASSEMBLING": "Ricostruzione bundle",
@@ -168,6 +169,7 @@ const MESSAGES = {
     "bundle.job.sessions_progress": "sessioni",
     "bundle.job.passed": "PASS",
     "bundle.job.failed": "FAIL",
+    "bundle.job.resume": "Riprendi",
 
     // Registry
     "registry.title": "Registro sessioni",
@@ -408,6 +410,7 @@ const MESSAGES = {
     "bundle.job.status.RUNNING": "RUNNING",
     "bundle.job.status.COMPLETE": "COMPLETE",
     "bundle.job.status.FAILED": "FAILED",
+    "bundle.job.status.RECOVERABLE": "RECOVERABLE",
     "bundle.job.stage.QUEUED": "Queued",
     "bundle.job.stage.PREPARING": "Preparing",
     "bundle.job.stage.REASSEMBLING": "Reassembling bundle",
@@ -420,6 +423,7 @@ const MESSAGES = {
     "bundle.job.sessions_progress": "sessions",
     "bundle.job.passed": "PASS",
     "bundle.job.failed": "FAIL",
+    "bundle.job.resume": "Resume",
 
     "registry.title": "Session Registry",
     "registry.subtitle":

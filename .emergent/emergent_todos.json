@@ -1,42 +1,38 @@
 [
   {
-    "content": "Inspect current server state and report (parts, jobs, imports)",
+    "content": "Diagnose stuck job cb87152f (ENOSPC + orphaned worker)",
     "status": "completed"
   },
   {
-    "content": "Create BundleJob SQLAlchemy model + migration for bundle_jobs table",
+    "content": "Free disk space (delete 12 stale parts from earlier aborted uploads)",
     "status": "completed"
   },
   {
-    "content": "Create bundle_job_worker.py with threaded worker + stage machine",
+    "content": "Add heartbeat to multipart_bundle.assemble (bytes_processed every ~64 MiB)",
     "status": "completed"
   },
   {
-    "content": "Refactor multipart_bundle.assemble so parts survive worker failure until COMPLETE/deterministic fail/TTL",
+    "content": "Add RECOVERABLE status + orphan detection + resume endpoint in bundle_job_worker.py + server.py",
     "status": "completed"
   },
   {
-    "content": "Rewrite server.py multipart/assemble endpoint to return 202 with job_id; add /api/bundles/jobs/{id} and /active endpoints",
+    "content": "Add startup recovery hook (mark orphaned RUNNING jobs)",
     "status": "completed"
   },
   {
-    "content": "Update frontend multipartBundleUpload.js to receive job_id and poll",
+    "content": "Update frontend to show Riprendi button on RECOVERABLE + i18n",
     "status": "completed"
   },
   {
-    "content": "Update Upload.jsx MultipartBundlePanel to show live stage + support job recovery on refresh",
+    "content": "Trigger resume for real job cb87152f-3ecd-4ca6-8d6e-9b280b1b9619",
     "status": "completed"
   },
   {
-    "content": "Add i18n stage labels (Italian + English)",
+    "content": "Add regression tests for heartbeat + orphan recovery + resume",
     "status": "completed"
   },
   {
-    "content": "Add pytest coverage for async job worker, idempotency, disconnect safety, TTL cleanup",
-    "status": "completed"
-  },
-  {
-    "content": "Run full test suite and verify no regressions (NEW36 firewall, milestones, engine status)",
+    "content": "Run full test suite + confirm invariants",
     "status": "completed"
   }
 ]

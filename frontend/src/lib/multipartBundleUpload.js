@@ -193,6 +193,11 @@ export async function fetchBundleJob(jobId) {
   return r.data?.job;
 }
 
+export async function resumeBundleJob(jobId) {
+  const r = await api.post(`/bundles/jobs/${jobId}/resume`, {});
+  return r.data?.job;
+}
+
 export async function fetchActiveBundleJob() {
   const r = await api.get(`/bundles/jobs/active`);
   return r.data?.job;

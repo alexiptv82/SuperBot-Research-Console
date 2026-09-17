@@ -108,6 +108,26 @@ bundle_manager = UploadManager(
 def _startup() -> None:
     init_db()
     logger.info("SuperBot Research Console V1 ready. DB=%s", os.environ.get("SUPERBOT_DB_PATH"))
+    # Any bundle job persisted as RUNNING/QUEUED across a process
+    # restart is by definition orphaned (its worker thread does not
+    # survive uvicorn reload). Flip to RECOVERABLE so the frontend
+    # shows a "Riprendi" button instead of an eternal spinner.
+    try:
+        from database import SessionLocal as _SL
+        _db = _SL()
+        try:
+            recovered = bundle_job_manager.startup_recover_orphans(_db)
+            if recovered:
+                logger.warning(
+                    "startup: %d bundle job(s) marked RECOVERABLE after "
+                    "process restart: %s",
+                    len(recovered),
+                    ", ".join(recovered),
+                )
+        finally:
+            _db.close()
+    except Exception:  # noqa: BLE001
+        logger.exception("startup: bundle job orphan recovery failed")
 
 
 @app.on_event("shutdown")
@@ -941,6 +961,15 @@ def bundles_multipart_assemble(
         bytes_total=_mp_mod.EXPECTED_BUNDLE_TOTAL_SIZE,
         parts_present=parts_present,
         sessions_total=len(OLD36_REFERENCE_SESSIONS),
+        parts_map=[
+            {
+                "part_index": slot.part_index,
+                "part_name": slot.part_name,
+                "expected_size": slot.expected_size,
+                "upload_id": slot.upload_id,
+            }
+            for slot in session.slots
+        ],
     )
     log_event(
         db,
@@ -984,6 +1013,26 @@ def bundles_jobs_get(
     except BundleJobError as exc:
         raise HTTPException(status_code=exc.status, detail=exc.detail)
     return {"job": job_to_dict(job)}
+
+
+@app.post("/api/bundles/jobs/{job_id}/resume")
+def bundles_jobs_resume(
+    job_id: str,
+    db: OrmSession = Depends(get_db),
+    _: str = Depends(require_auth),
+) -> dict:
+    """Resume an orphaned or previously failed multipart bundle job.
+
+    The 5 uploaded parts and the persisted job row remain untouched;
+    this endpoint only re-attaches a worker to the SAME ``job_id``
+    and re-runs the pipeline. Idempotent: if a live worker is
+    already attached, the existing job is returned unchanged.
+    """
+    try:
+        job = bundle_job_manager.resume(db, job_id)
+    except BundleJobError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail)
+    return {"job_id": job.id, "status": job.status, "job": job_to_dict(job)}
 
 
 @app.post("/api/bundles/jobs/cleanup_stale")
