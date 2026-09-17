@@ -109,16 +109,30 @@ def _summarize_registered(db: OrmSession, ids: tuple[str, ...]) -> dict:
 
 def _summarize_old36_reference(db: OrmSession) -> dict:
     """Report which of the 11 historical raw-reference sessions are
-    present in SuperBot storage.
+    present in SuperBot storage AND whether the canonical raw
+    payload actually exists on disk.
 
     IMPORTANT: this NEVER affects milestone totals. OLD36 baseline
     stays locked at ``OLD36_VALIDATED_HOURS``. These figures are
     purely raw-availability telemetry used to gate the validator
     recovery workflow.
+
+    The distinction between ``present`` (session row exists in
+    metadata) and ``raw_retained`` (canonical SHA-addressed ZIP is
+    both marked ``retained=True`` and readable on disk) is critical:
+    a session can be metadata-present with the raw payload silently
+    lost by an EXDEV / ENOSPC bug in a previous import. Quantitative
+    recovery requires ``raw_retained``, not ``present``.
     """
+    from pathlib import Path
+
+    from models import RawFile  # local import to avoid cycles
+
     details: list[dict] = []
     present = 0
+    raw_retained_count = 0
     hours_present = 0.0
+    hours_raw_retained = 0.0
     for sid in OLD36_REFERENCE_SESSIONS:
         row = _session_row(db, sid)
         latest_run = None
@@ -128,16 +142,41 @@ def _summarize_old36_reference(db: OrmSession) -> dict:
                 .where(QARun.session_id == sid)
                 .order_by(QARun.uploaded_at.desc())
             ).scalars().first()
+        # A session's raw payload is only truly usable for the
+        # recovery pipeline when SOME qa_run for this session has a
+        # ``RawFile(retained=True)`` whose stored_path resolves on
+        # disk. We iterate ALL qa_runs (not just the latest) so a
+        # partial import that landed retention on an earlier attempt
+        # is still counted as recoverable.
+        raw_path: str | None = None
+        raw_retained = False
+        if row is not None:
+            raw_rows = db.execute(
+                select(RawFile, QARun)
+                .join(QARun, QARun.id == RawFile.qa_run_id)
+                .where(QARun.session_id == sid)
+                .where(RawFile.retained == True)  # noqa: E712
+            ).all()
+            for rf, _qa in raw_rows:
+                if rf.stored_path and Path(rf.stored_path).exists():
+                    raw_path = rf.stored_path
+                    raw_retained = True
+                    break
         nominal = OLD36_REFERENCE_NOMINAL_HOURS[sid]
         is_present = row is not None
         if is_present:
             present += 1
             hours_present += nominal
+        if raw_retained:
+            raw_retained_count += 1
+            hours_raw_retained += nominal
         details.append(
             {
                 "session_id": sid,
                 "nominal_hours": nominal,
                 "present": is_present,
+                "raw_retained": raw_retained,
+                "raw_path": raw_path,
                 "latest_verdict": (
                     latest_run.operational_status if latest_run is not None else None
                 ),
@@ -147,14 +186,19 @@ def _summarize_old36_reference(db: OrmSession) -> dict:
     return {
         "expected_sessions": len(OLD36_REFERENCE_SESSIONS),
         "present_sessions": present,
+        "raw_retained_sessions": raw_retained_count,
         "expected_nominal_hours": OLD36_VALIDATED_HOURS,
         "present_nominal_hours": round(hours_present, 4),
+        "raw_retained_nominal_hours": round(hours_raw_retained, 4),
+        "raw_ready": raw_retained_count == len(OLD36_REFERENCE_SESSIONS),
         "milestone_impact_hours": 0.0,
         "note": (
             "OLD36 baseline stays fixed at OLD36_VALIDATED_HOURS (36.0h) "
             "regardless of how many raw-reference sessions are physically "
-            "imported. This block reports raw availability only, for "
-            "validator-recovery gating."
+            "imported. `present_sessions` counts session metadata; "
+            "`raw_retained_sessions` counts sessions whose canonical raw "
+            "ZIP actually exists on disk. Only `raw_retained_sessions` is "
+            "usable for validator-recovery."
         ),
         "sessions": details,
     }

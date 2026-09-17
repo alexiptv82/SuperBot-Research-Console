@@ -844,6 +844,26 @@ def _bundle_import_runner(
     )
     db.commit()
 
+    # Any inner-session failure MUST fail the whole job. Previous
+    # behaviour marked the job COMPLETE on partial success, which
+    # silently hid an ENOSPC-driven loss of 9/11 raw retentions
+    # behind a green ok=2 count. The bundle contract is atomic:
+    # either all 11 OLD36 sessions retain, or the job fails.
+    if summary["failed"] > 0:
+        # Preserve the summary + list of failed inner names for the
+        # operator to inspect before re-running.
+        failed_names = [
+            e.get("inner_name") or e.get("session_id")
+            for e in summary.get("sessions", [])
+            if not e.get("ok")
+        ]
+        raise BundleImportError(
+            f"bundle finalize partial: ok={summary['ok']} failed={summary['failed']} "
+            f"total={summary['total']}; failed inners: "
+            + ", ".join(str(n) for n in failed_names[:5])
+            + (" ..." if len(failed_names) > 5 else "")
+        )
+
     return {
         "bundle_filename": filename,
         "bundle_sha256": digest,
