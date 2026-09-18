@@ -6,11 +6,12 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { VerdictBadge, DuplicateStateText } from "@/components/VerdictBadge";
-import { Upload as UploadIcon, X, FileArchive, Loader2, Package } from "lucide-react";
+import { Upload as UploadIcon, X, FileArchive, Loader2, Package, Wrench } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Link } from "react-router-dom";
 import { uploadChunked } from "@/lib/chunkedUpload";
 import { uploadBundleChunked } from "@/lib/chunkedBundleUpload";
+import Old36MissingRawPanel from "@/pages/Old36MissingRawPanel";
 
 const CHECKPOINTS = ["", "OLD36", "NEW12", "NEW36"];
 const STATES = {
@@ -163,9 +164,25 @@ export default function UploadPage() {
           <Package className="inline h-3.5 w-3.5 mr-1.5 -mt-0.5" />
           {t("upload.mode.bundle")}
         </button>
+        <button
+          type="button"
+          data-testid="upload-mode-old36"
+          onClick={() => setMode("old36")}
+          className={cn(
+            "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
+            mode === "old36"
+              ? "bg-[hsl(var(--focus))] text-white"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <Wrench className="inline h-3.5 w-3.5 mr-1.5 -mt-0.5" />
+          {t("upload.mode.old36")}
+        </button>
       </div>
 
       {mode === "bundle" && <BundlePanel t={t} fmtNumber={fmtNumber} />}
+
+      {mode === "old36" && <Old36MissingRawPanel t={t} fmtNumber={fmtNumber} />}
 
       {mode === "single" && (
       <>
