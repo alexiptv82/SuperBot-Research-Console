@@ -54,10 +54,13 @@ from recovery.harness import (
     METADATA_ONLY_FILES,
     PENDING,
     STRUCTURAL_INVALID,
+    BlockDataUnavailableError,
     GoldenSourceHashMismatchError,
     _block_cache,
+    _get_block_summary,
     _instances_per_source_row,
     _iter_aggregate_row_views,
+    _load_grid_for_block,
     _load_recovered_metadata,
     _verify_golden_source_hashes,
     reproduce_row,
@@ -659,3 +662,193 @@ class TestT24UnroutedAggregateHardFails:
             failure_rows = [r for r in csv.DictReader(fh) if r["source_file"] == target_rel]
         assert failure_rows
         assert all(r["metric"] == AGGREGATE_ROUTING_MISSING for r in failure_rows)
+
+
+# ===========================================================================
+# FINAL4 PATCH FINDING 1 — block-level PENDING leak.
+#
+# _get_block_summary()/_load_grid_for_block() can return None for
+# several DIFFERENT underlying reasons:
+#   A. session RAW ZIP genuinely not imported yet          -> PENDING
+#   B. ZIP opened, but no sync_grid_100ms parquet entry
+#      at all for the expected asset                       -> FAILED
+#   C. ZIP opened, parts collected, but the concat list
+#      ends up empty (defensive guard; with the current
+#      loop structure this is unreachable through any
+#      real data shape — every non-empty grid_names always
+#      appends at least one, possibly zero-row, DataFrame —
+#      so it collapses onto the exact same code branch as D
+#      and is exercised together with it below)             -> FAILED
+#   D. ZIP opened, parts loaded, but the grid filters to
+#      zero rows after asset selection                      -> FAILED
+#
+# Only A may ever be PENDING. B/C/D now raise
+# BlockDataUnavailableError from _load_grid_for_block, caught by
+# _get_block_summary() and converted into an explicit
+# BlockSummary(valid=False, invalid_reason=...), which reproduce_row()
+# already classifies as FAILED/STRUCTURAL_INVALID (pre-existing path,
+# unchanged).
+# ===========================================================================
+class TestT25BlockLevelPendingLeak:
+    TARGET_SESSION = "20260905T073818Z_e44d99bd"  # real OLD36_REFERENCE id
+    TARGET_ASSET = "BTC"
+
+    @staticmethod
+    def _empty_zip():
+        """Case B: a RAW ZIP that opened successfully but contains no
+        sync_grid_100ms parquet entry at all."""
+        import io
+        import zipfile
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("manifest.json", "{}")
+        buf.seek(0)
+        return zipfile.ZipFile(buf, "r")
+
+    @staticmethod
+    def _zip_with_unmatched_asset_rows(n_parts: int = 1):
+        """Case C/D: a RAW ZIP that opened successfully, has
+        sync_grid_100ms parquet part(s), but every row belongs to a
+        DIFFERENT asset — the grid filters to zero rows for the
+        requested asset."""
+        import io
+        import zipfile
+
+        import pandas as pd
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            for i in range(n_parts):
+                df = pd.DataFrame({"asset": ["ETH"], "ts_ms": [i], "mid": [1.0]})
+                part_buf = io.BytesIO()
+                df.to_parquet(part_buf)
+                zf.writestr(f"sync_grid_100ms_part{i}.parquet", part_buf.getvalue())
+        buf.seek(0)
+        return zipfile.ZipFile(buf, "r")
+
+    def test_1_missing_session_raw_zip_is_pending(self, monkeypatch):
+        import recovery.sandbox as sandbox_mod
+
+        def _not_imported(session_id):
+            raise FileNotFoundError(f"{session_id} not yet imported")
+
+        monkeypatch.setattr(sandbox_mod, "open_reference_zip", _not_imported)
+
+        summary = _get_block_summary(self.TARGET_SESSION, self.TARGET_ASSET)
+        assert summary is None
+
+        result = reproduce_row({"session_id": self.TARGET_SESSION, "asset": self.TARGET_ASSET,
+                                 "feature": "bitget_ofi", "horizon_ms": "100", "q": "0.8"})
+        assert result["status"] == PENDING
+
+    def test_2_zip_present_but_no_matching_parquet_entry_is_failed(self, monkeypatch):
+        import recovery.harness as harness_mod
+        import recovery.sandbox as sandbox_mod
+
+        monkeypatch.setattr(harness_mod, "_validate_sync_grid_part_coverage", lambda sid: (True, None))
+        monkeypatch.setattr(sandbox_mod, "open_reference_zip", lambda sid: self._empty_zip())
+
+        with pytest.raises(BlockDataUnavailableError):
+            _load_grid_for_block(self.TARGET_SESSION, self.TARGET_ASSET)
+
+        summary = _get_block_summary(self.TARGET_SESSION, self.TARGET_ASSET)
+        assert summary is not None
+        assert summary.valid is False
+
+        result = reproduce_row({"session_id": self.TARGET_SESSION, "asset": self.TARGET_ASSET,
+                                 "feature": "bitget_ofi", "horizon_ms": "100", "q": "0.8"})
+        assert result["status"] == FAILED
+        assert result["reason_code"] == STRUCTURAL_INVALID
+
+    def test_3_zip_present_but_concat_filters_to_empty_is_failed(self, monkeypatch):
+        """Cases C and D collapse onto the same `len(combined) == 0`
+        branch given the current loop structure (see class docstring)
+        — exercised here with a single unmatched-asset part."""
+        import recovery.harness as harness_mod
+        import recovery.sandbox as sandbox_mod
+
+        monkeypatch.setattr(harness_mod, "_validate_sync_grid_part_coverage", lambda sid: (True, None))
+        monkeypatch.setattr(
+            sandbox_mod, "open_reference_zip",
+            lambda sid: self._zip_with_unmatched_asset_rows(n_parts=1),
+        )
+
+        with pytest.raises(BlockDataUnavailableError):
+            _load_grid_for_block(self.TARGET_SESSION, self.TARGET_ASSET)
+
+        summary = _get_block_summary(self.TARGET_SESSION, self.TARGET_ASSET)
+        assert summary is not None
+        assert summary.valid is False
+
+        result = reproduce_row({"session_id": self.TARGET_SESSION, "asset": self.TARGET_ASSET,
+                                 "feature": "bitget_ofi", "horizon_ms": "100", "q": "0.8"})
+        assert result["status"] == FAILED
+        assert result["reason_code"] == STRUCTURAL_INVALID
+
+    def test_4_zip_present_but_asset_filtered_grid_empty_multi_part_is_failed(self, monkeypatch):
+        """Case D with multiple parquet parts, all filtering to zero
+        rows for the requested asset."""
+        import recovery.harness as harness_mod
+        import recovery.sandbox as sandbox_mod
+
+        monkeypatch.setattr(harness_mod, "_validate_sync_grid_part_coverage", lambda sid: (True, None))
+        monkeypatch.setattr(
+            sandbox_mod, "open_reference_zip",
+            lambda sid: self._zip_with_unmatched_asset_rows(n_parts=3),
+        )
+
+        with pytest.raises(BlockDataUnavailableError):
+            _load_grid_for_block(self.TARGET_SESSION, self.TARGET_ASSET)
+
+        summary = _get_block_summary(self.TARGET_SESSION, self.TARGET_ASSET)
+        assert summary is not None
+        assert summary.valid is False
+
+        result = reproduce_row({"session_id": self.TARGET_SESSION, "asset": self.TARGET_ASSET,
+                                 "feature": "bitget_ofi", "horizon_ms": "100", "q": "0.8"})
+        assert result["status"] == FAILED
+        assert result["reason_code"] == STRUCTURAL_INVALID
+
+    @staticmethod
+    def _raw_ready_availability():
+        return {
+            "present_sessions": 11, "expected_sessions": 11,
+            "present_nominal_hours": 36.0, "expected_nominal_hours": 36.0,
+            "missing_sessions": [],
+        }
+
+    def test_5_raw_ready_plus_unavailable_block_data_yields_zero_pending(self, monkeypatch, tmp_path):
+        import recovery.harness as harness_mod
+        import recovery.sandbox as sandbox_mod
+
+        monkeypatch.setattr(harness_mod, "REPORTS_DIR", tmp_path)
+        monkeypatch.setattr(harness_mod, "availability_snapshot", self._raw_ready_availability)
+        monkeypatch.setattr(harness_mod, "_validate_sync_grid_part_coverage", lambda sid: (True, None))
+        # Every session's ZIP "opens" successfully but has zero
+        # sync_grid_100ms entries -> case B for every block, and every
+        # aggregate scope's underlying blocks too.
+        monkeypatch.setattr(sandbox_mod, "open_reference_zip", lambda sid: self._empty_zip())
+
+        out = harness_mod.run_regression()
+        assert out["raw_ready"] is True
+
+        for row in out["outcomes"]:
+            assert row["pending"] == 0, (
+                f"{row['source_file']}: expected zero pending once raw_ready=True, "
+                f"got {row['pending']}"
+            )
+
+    def test_6_matched_failed_pending_sums_to_comparison_instances(self, monkeypatch, tmp_path):
+        import recovery.harness as harness_mod
+        import recovery.sandbox as sandbox_mod
+
+        monkeypatch.setattr(harness_mod, "REPORTS_DIR", tmp_path)
+        monkeypatch.setattr(harness_mod, "availability_snapshot", self._raw_ready_availability)
+        monkeypatch.setattr(harness_mod, "_validate_sync_grid_part_coverage", lambda sid: (True, None))
+        monkeypatch.setattr(sandbox_mod, "open_reference_zip", lambda sid: self._empty_zip())
+
+        out = harness_mod.run_regression()
+        for row in out["outcomes"]:
+            total = row["matched"] + row["failed"] + row["pending"] + row["skipped_aggregate_scope"]
+            assert total == row["total_instances"], row["source_file"]

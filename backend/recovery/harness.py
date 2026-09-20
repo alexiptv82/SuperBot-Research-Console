@@ -327,11 +327,31 @@ def _validate_sync_grid_part_coverage(session_id: str) -> tuple[bool, str | None
     return result
 
 
-def _load_grid_for_block(session_id: str, asset: str) -> pd.DataFrame | None:
+class BlockDataUnavailableError(Exception):
+    """Raised by _load_grid_for_block when the session RAW ZIP opened
+    successfully but the expected (session_id, asset) block data is
+    absent, empty, or filters to zero rows (FINDING 1, FINAL4 patch —
+    cases B/C/D). Distinct from the ZIP genuinely not having been
+    imported yet (FileNotFoundError from open_reference_zip, propagated
+    unchanged — case A, the ONLY legitimate PENDING condition).
+    Callers MUST classify this exception as a structural failure
+    (FAILED / STRUCTURAL_INVALID), never PENDING."""
+
+
+def _load_grid_for_block(session_id: str, asset: str) -> pd.DataFrame:
     """Load and concatenate the parquet grid parts for one (session_id, asset).
 
-    Returns None if the session has not been imported yet.
-    Raises NEW36QuantitativeFirewallError for non-allowlisted ids.
+    Raises:
+    - FileNotFoundError (propagated, uncaught, from
+      open_reference_zip): the session RAW ZIP has not been imported
+      yet — case A, the ONLY genuinely PENDING condition. Callers must
+      NOT catch this as a structural failure.
+    - BlockDataUnavailableError: the ZIP opened successfully but no
+      matching sync_grid_100ms parquet entry exists for the expected
+      asset (case B), the loaded part list is empty (case C), or the
+      grid filters to zero rows after asset selection (case D). Every
+      one of these is a structural failure once the ZIP is open —
+      never PENDING.
 
     Part concatenation order: filename_ascending (spec: part_concat_order).
     Part coverage policy: caller (harness) detects missing parts by
@@ -339,12 +359,10 @@ def _load_grid_for_block(session_id: str, asset: str) -> pd.DataFrame | None:
     """
     from .sandbox import open_reference_zip
     import io
-    import zipfile
 
-    try:
-        zf = open_reference_zip(session_id)
-    except FileNotFoundError:
-        return None
+    # Case A: FileNotFoundError propagates UNCAUGHT here — the caller
+    # (_get_block_summary) is the one place that maps it to PENDING.
+    zf = open_reference_zip(session_id)
 
     # Collect and sort grid parquet parts by filename (ascending)
     with zf:
@@ -360,7 +378,12 @@ def _load_grid_for_block(session_id: str, asset: str) -> pd.DataFrame | None:
                 if "sync_grid_100ms" in n and n.endswith(".parquet")
             )
         if not grid_names:
-            return None
+            # Case B: ZIP opened successfully, no parquet entry at all
+            # for the expected asset/sync_grid_100ms.
+            raise BlockDataUnavailableError(
+                f"session {session_id!r} asset {asset!r}: RAW ZIP opened but no "
+                f"sync_grid_100ms parquet entry found (case B)"
+            )
 
         dfs = []
         for name in grid_names:
@@ -373,10 +396,22 @@ def _load_grid_for_block(session_id: str, asset: str) -> pd.DataFrame | None:
             dfs.append(df)
 
     if not dfs:
-        return None
+        # Case C: RAW ZIP opened, parts collected, but the concat list
+        # ended up empty.
+        raise BlockDataUnavailableError(
+            f"session {session_id!r} asset {asset!r}: RAW ZIP opened but the "
+            f"parquet part concat list is empty (case C)"
+        )
 
     combined = pd.concat(dfs, ignore_index=True)
-    return combined if len(combined) > 0 else None
+    if len(combined) == 0:
+        # Case D: RAW ZIP opened, parts loaded, but the grid filters
+        # to zero rows for this asset.
+        raise BlockDataUnavailableError(
+            f"session {session_id!r} asset {asset!r}: RAW ZIP opened but the grid "
+            f"filters to zero rows after asset selection (case D)"
+        )
+    return combined
 
 
 def _get_block_summary(session_id: str, asset: str) -> "object | None":
@@ -405,10 +440,26 @@ def _get_block_summary(session_id: str, asset: str) -> "object | None":
         _block_cache[key] = summary
         return summary
 
-    df = _load_grid_for_block(session_id, asset)
-    if df is None:
+    # FINDING 1 (FINAL4 patch): _load_grid_for_block now distinguishes
+    # "RAW ZIP genuinely not imported yet" (FileNotFoundError, case A
+    # -> the ONLY legitimate PENDING condition, cached as None) from
+    # "RAW ZIP opened but the expected block data is absent/empty"
+    # (BlockDataUnavailableError, cases B/C/D -> a structural failure,
+    # cached as an explicit invalid BlockSummary — never PENDING).
+    try:
+        df = _load_grid_for_block(session_id, asset)
+    except FileNotFoundError:
         _block_cache[key] = None
         return None
+    except BlockDataUnavailableError as exc:
+        summary = BlockSummary(
+            session_id=session_id,
+            asset=asset,
+            valid=False,
+            invalid_reason=str(exc),
+        )
+        _block_cache[key] = summary
+        return summary
 
     summary = reconstruct_block(session_id, asset, df)
     _block_cache[key] = summary
@@ -1297,5 +1348,6 @@ __all__ = [
     "AGGREGATE_ROUTING_MISSING",
     "METADATA_ONLY_FILES",
     "GoldenSourceHashMismatchError",
+    "BlockDataUnavailableError",
     "reproduce_row",
 ]
