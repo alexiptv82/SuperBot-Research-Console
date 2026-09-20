@@ -47,6 +47,7 @@ from recovery import GOLDENS_DIR
 from recovery.engine import BlockMetrics, BlockSummary
 from recovery.goldens import list_cp24_csvs, list_cp36_csvs
 from recovery.harness import (
+    AGGREGATE_ROUTING_MISSING,
     DISPERSION_STATE_MISSING,
     EXPECTED_METRIC_MISSING,
     FAILED,
@@ -113,6 +114,16 @@ class TestRunRegressionInstanceAccounting:
             conn.execute(text("DELETE FROM qa_runs"))
             conn.execute(text("DELETE FROM sessions"))
         yield
+
+    @pytest.fixture(autouse=True)
+    def _redirect_reports_dir(self, monkeypatch, tmp_path):
+        # FINAL2 AUDIT ISSUE 3: run_regression() must NEVER write into
+        # the real tracked backend/recovery/reports/ directory from a
+        # test — redirect harness.REPORTS_DIR to a private tmp_path
+        # for every test in this class.
+        import recovery.harness as harness_mod
+
+        monkeypatch.setattr(harness_mod, "REPORTS_DIR", tmp_path)
 
     def _summary_rows(self) -> dict[str, dict]:
         # NOTE: intentionally reads the in-memory ``out["outcomes"]``
@@ -274,12 +285,13 @@ class TestT20PackedPositiveBlocksParsing:
         assert sub["positive_blocks"] == "14/14"
         assert "total_blocks" not in sub
 
-    def test_run_regression_treats_packed_parse_error_as_failed_not_crash(self, monkeypatch):
+    def test_run_regression_treats_packed_parse_error_as_failed_not_crash(self, monkeypatch, tmp_path):
         """A malformed packed value must be a HARD FAIL of that row's
         instances (counted into `failed`), never a crash of the whole
         harness and never silently PENDING."""
         import recovery.harness as harness_mod
 
+        monkeypatch.setattr(harness_mod, "REPORTS_DIR", tmp_path)
         monkeypatch.setattr(harness_mod, "_get_block_summary", lambda *a, **k: None)
         monkeypatch.setattr(
             harness_mod, "availability_snapshot",
@@ -387,12 +399,14 @@ class TestT21FailedVsPendingDistinction:
         assert result["status"] == "MATCHED"
         assert result["N"] == 10
 
-    def test_run_regression_counts_structural_invalid_as_failed_not_pending(self, monkeypatch):
+    def test_run_regression_counts_structural_invalid_as_failed_not_pending(self, monkeypatch, tmp_path):
         """End-to-end (still zero real numeric golden comparison —
         every block is forced structurally invalid): proves
         run_regression() routes a STRUCTURAL_INVALID reproduce_row()
         result into `failed`, never into `pending`."""
         import recovery.harness as harness_mod
+
+        monkeypatch.setattr(harness_mod, "REPORTS_DIR", tmp_path)
 
         def _always_invalid(session_id, asset):
             return BlockSummary(session_id=session_id, asset=asset, valid=False,
@@ -470,12 +484,14 @@ class TestT22GoldenSourceHashPreflight:
             harness_mod._verify_golden_source_hashes()
         assert "GOLDEN_SOURCE_HASH_MISMATCH" in str(exc.value)
 
-    def test_run_regression_stops_before_availability_check_on_hash_mismatch(self, monkeypatch):
+    def test_run_regression_stops_before_availability_check_on_hash_mismatch(self, monkeypatch, tmp_path):
         """ADJUSTMENT #2: the preflight MUST run before any candidate
         RAW is opened or any quantitative comparison is attempted —
         proven here by making availability_snapshot() explode if it
         is ever reached."""
         import recovery.harness as harness_mod
+
+        monkeypatch.setattr(harness_mod, "REPORTS_DIR", tmp_path)
 
         real_meta = harness_mod._load_recovered_metadata()
         tampered = dict(real_meta)
@@ -495,3 +511,151 @@ class TestT22GoldenSourceHashPreflight:
 
         with pytest.raises(GoldenSourceHashMismatchError):
             harness_mod.run_regression()
+
+
+# ===========================================================================
+# FINAL2 AUDIT ISSUE 1 — a missing aggregate candidate while raw_ready
+# is True must be FAILED (EXPECTED_METRIC_MISSING /
+# DISPERSION_STATE_MISSING), never PENDING. PENDING remains valid
+# ONLY when raw is genuinely unavailable.
+# ===========================================================================
+class TestT23AggregateMissingCandidateFailsNotPending:
+    @staticmethod
+    def _raw_ready_availability():
+        return {
+            "present_sessions": 11, "expected_sessions": 11,
+            "present_nominal_hours": 36.0, "expected_nominal_hours": 36.0,
+            "missing_sessions": [],
+        }
+
+    def test_1_missing_normal_aggregate_is_failed_not_pending(self, monkeypatch, tmp_path):
+        import recovery.harness as harness_mod
+
+        monkeypatch.setattr(harness_mod, "REPORTS_DIR", tmp_path)
+        monkeypatch.setattr(harness_mod, "availability_snapshot", self._raw_ready_availability)
+        monkeypatch.setattr(harness_mod, "_get_block_summary", lambda *a, **k: None)
+        # Every scope's aggregate lookup returns NO candidates at all
+        # -> every non-dispersion aggregate row's `cand` is None.
+        monkeypatch.setattr(harness_mod, "_scope_aggregate_lookup", lambda scope: ([], []))
+
+        out = harness_mod.run_regression()
+        assert out["raw_ready"] is True
+
+        rel = "CP24/simple_aggregates_24h.csv"  # narrow, "feature" schema (non-dispersion)
+        row = next(o for o in out["outcomes"] if o["source_file"] == rel)
+        assert row["pending"] == 0
+        assert row["failed"] == row["total_instances"] > 0
+        assert row["matched"] == 0
+
+        with open(harness_mod.REPORTS_DIR / "golden_regression_failures.csv",
+                  newline="", encoding="utf-8") as fh:
+            failure_rows = [r for r in csv.DictReader(fh) if r["source_file"] == rel]
+        assert failure_rows, "expected failures recorded for the missing-candidate rows"
+        assert all(r["metric"] == EXPECTED_METRIC_MISSING for r in failure_rows)
+
+    def test_2_missing_dispersion_aggregate_is_failed_not_pending(self, monkeypatch, tmp_path):
+        import recovery.harness as harness_mod
+
+        monkeypatch.setattr(harness_mod, "REPORTS_DIR", tmp_path)
+        monkeypatch.setattr(harness_mod, "availability_snapshot", self._raw_ready_availability)
+        monkeypatch.setattr(harness_mod, "_get_block_summary", lambda *a, **k: None)
+        monkeypatch.setattr(harness_mod, "_scope_aggregate_lookup", lambda scope: ([], []))
+
+        out = harness_mod.run_regression()
+        assert out["raw_ready"] is True
+
+        rel = "CP24/fair_gap_dispersion_aggregates_24h.csv"  # "state" schema (dispersion)
+        row = next(o for o in out["outcomes"] if o["source_file"] == rel)
+        assert row["pending"] == 0
+        assert row["failed"] == row["total_instances"] > 0
+        assert row["matched"] == 0
+
+        with open(harness_mod.REPORTS_DIR / "golden_regression_failures.csv",
+                  newline="", encoding="utf-8") as fh:
+            failure_rows = [r for r in csv.DictReader(fh) if r["source_file"] == rel]
+        assert failure_rows, "expected failures recorded for the missing-candidate rows"
+        assert all(r["metric"] == DISPERSION_STATE_MISSING for r in failure_rows)
+
+    def test_3_raw_genuinely_unavailable_still_pending(self, monkeypatch, tmp_path):
+        """PENDING remains the correct, valid classification when raw
+        is genuinely NOT ready — this must not be broken by fixing
+        Issue 1."""
+        import recovery.harness as harness_mod
+
+        monkeypatch.setattr(harness_mod, "REPORTS_DIR", tmp_path)
+        monkeypatch.setattr(
+            harness_mod, "availability_snapshot",
+            lambda: {
+                "present_sessions": 0, "expected_sessions": 11,
+                "present_nominal_hours": 0.0, "expected_nominal_hours": 36.0,
+                "missing_sessions": ["all"],
+            },
+        )
+
+        out = harness_mod.run_regression()
+        assert out["raw_ready"] is False
+
+        rel = "CP24/simple_aggregates_24h.csv"
+        row = next(o for o in out["outcomes"] if o["source_file"] == rel)
+        assert row["pending"] == row["total_instances"] > 0
+        assert row["failed"] == 0
+        assert row["matched"] == 0
+
+    def test_4_matched_plus_failed_plus_pending_equals_comparison_instances(self, monkeypatch, tmp_path):
+        """Invariant across the WHOLE corpus under the missing-
+        candidate scenario: matched + failed + pending (+ the always-
+        zero skipped_aggregate_scope) sums to comparison_instances for
+        every non-metadata file."""
+        import recovery.harness as harness_mod
+
+        monkeypatch.setattr(harness_mod, "REPORTS_DIR", tmp_path)
+        monkeypatch.setattr(harness_mod, "availability_snapshot", self._raw_ready_availability)
+        monkeypatch.setattr(harness_mod, "_get_block_summary", lambda *a, **k: None)
+        monkeypatch.setattr(harness_mod, "_scope_aggregate_lookup", lambda scope: ([], []))
+
+        out = harness_mod.run_regression()
+        for row in out["outcomes"]:
+            total = row["matched"] + row["failed"] + row["pending"] + row["skipped_aggregate_scope"]
+            assert total == row["total_instances"], row["source_file"]
+
+
+# ===========================================================================
+# FINAL2 AUDIT ISSUE 2 — an unrouted quantitative aggregate golden file
+# must be a HARD FAIL (AGGREGATE_ROUTING_MISSING), never SKIPPED or
+# PENDING. Existing routing metadata is never modified — a synthetic
+# routing gap is injected only for this one test.
+# ===========================================================================
+class TestT24UnroutedAggregateHardFails:
+    def test_unrouted_aggregate_file_is_failed_not_skipped(self, monkeypatch, tmp_path):
+        import recovery.harness as harness_mod
+
+        monkeypatch.setattr(harness_mod, "REPORTS_DIR", tmp_path)
+        monkeypatch.setattr(
+            harness_mod, "availability_snapshot",
+            lambda: {
+                "present_sessions": 11, "expected_sessions": 11,
+                "present_nominal_hours": 36.0, "expected_nominal_hours": 36.0,
+                "missing_sessions": [],
+            },
+        )
+        monkeypatch.setattr(harness_mod, "_get_block_summary", lambda *a, **k: None)
+
+        real_routing = harness_mod._aggregate_scope_routing()
+        target_rel = "CP24/simple_aggregates_24h.csv"
+        assert target_rel in real_routing  # sanity: routed today, unmodified on disk
+        synthetic_routing = dict(real_routing)
+        del synthetic_routing[target_rel]
+        monkeypatch.setattr(harness_mod, "_aggregate_scope_routing", lambda: synthetic_routing)
+
+        out = harness_mod.run_regression()
+        row = next(o for o in out["outcomes"] if o["source_file"] == target_rel)
+        assert row["skipped_aggregate_scope"] == 0
+        assert row["pending"] == 0
+        assert row["failed"] == row["total_instances"] > 0
+        assert row["matched"] == 0
+
+        with open(harness_mod.REPORTS_DIR / "golden_regression_failures.csv",
+                  newline="", encoding="utf-8") as fh:
+            failure_rows = [r for r in csv.DictReader(fh) if r["source_file"] == target_rel]
+        assert failure_rows
+        assert all(r["metric"] == AGGREGATE_ROUTING_MISSING for r in failure_rows)

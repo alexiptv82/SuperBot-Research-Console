@@ -22,14 +22,13 @@ from checkpoint_registry import (
 )
 from database import engine
 from frozen_engine import current_status
-from recovery import GOLDENS_DIR, REPORTS_DIR
+from recovery import GOLDENS_DIR
 from recovery.allowlist import (
     NEW36QuantitativeFirewallError,
     allowed_session_ids,
     assert_recovery_allowed,
 )
 from recovery.goldens import counts as golden_counts
-from recovery.harness import run_regression
 from recovery.rules import RULES, RuleStatus, status_summary
 from recovery.sandbox import (
     availability_snapshot,
@@ -128,14 +127,20 @@ class TestFrozenEngineUnchanged:
 
 
 class TestReportsGenerated:
-    def test_run_regression_produces_all_five_files(self):
+    def test_run_regression_produces_all_five_files(self, monkeypatch, tmp_path):
+        import recovery.harness as harness_mod
+
+        # FINAL2 AUDIT ISSUE 3: never let a test write into the real
+        # tracked backend/recovery/reports/ directory.
+        monkeypatch.setattr(harness_mod, "REPORTS_DIR", tmp_path)
+
         # Ensure DB is empty of OLD36 rows for a stable pending count.
         with engine.begin() as conn:
             conn.execute(text("DELETE FROM raw_files"))
             conn.execute(text("UPDATE sessions SET current_qa_run_id = NULL"))
             conn.execute(text("DELETE FROM qa_runs"))
             conn.execute(text("DELETE FROM sessions"))
-        out = run_regression()
+        out = harness_mod.run_regression()
         for k in (
             "summary_path",
             "failures_path",
@@ -156,7 +161,7 @@ class TestReportsGenerated:
 
             assert Path(out[k]).exists(), f"missing {out[k]}"
         # Rules JSON parses.
-        rules_data = json.loads((REPORTS_DIR / "recovery_rules.json").read_text())
+        rules_data = json.loads((tmp_path / "recovery_rules.json").read_text())
         assert isinstance(rules_data["rules"], list)
         assert len(rules_data["rules"]) == len(RULES)
 

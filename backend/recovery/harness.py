@@ -68,6 +68,10 @@ FAILED  = "FAILED"
 STRUCTURAL_INVALID = "STRUCTURAL_INVALID"
 EXPECTED_METRIC_MISSING = "EXPECTED_METRIC_MISSING"
 DISPERSION_STATE_MISSING = "DISPERSION_STATE_MISSING"
+# FINAL2 AUDIT ISSUE 2: a quantitative aggregate golden file with NO
+# aggregate_scope_file_routing entry at all is a HARD FAIL of every
+# row it contains — never a silent SKIPPED_AGGREGATE_SCOPE bucket.
+AGGREGATE_ROUTING_MISSING = "AGGREGATE_ROUTING_MISSING"
 
 # Exact allowlist (ISSUE 1, Message 222) of golden CSVs that are
 # collector/QA session metadata only (grid/book/trade file counts,
@@ -528,6 +532,13 @@ class RegressionOutcome:
     failed: int
     pending: int
     skipped_aggregate_scope: int = 0
+    # FINAL2 AUDIT (Message: FINAL HARNESS CORRECTION): this counter is
+    # now ALWAYS 0 for real runs — both of its former sources (an
+    # unrouted aggregate file, and a raw_ready-but-missing aggregate
+    # candidate) are hard FAILED (AGGREGATE_ROUTING_MISSING /
+    # EXPECTED_METRIC_MISSING / DISPERSION_STATE_MISSING) instead of
+    # silently skipped/pending. The field/column is kept for CSV
+    # schema stability and as a permanent invariant-accounting slot.
     # ISSUE 2 (Message 222): file_kind/total_instances distinguish the
     # SOURCE CSV row count (total_rows) from the number of individual
     # quantitative comparison instances that count actually expands
@@ -949,7 +960,22 @@ def run_regression() -> dict:
 
                 # Aggregate-schema row (no session/asset column).
                 if rel not in _aggregate_scope_routing():
-                    skipped_agg += 1
+                    # FINAL2 AUDIT ISSUE 2: an unrouted quantitative
+                    # aggregate file is a HARD FAIL, never a silent
+                    # skip. Count the full instances_per_row for this
+                    # row so the per-file instance invariant still
+                    # sums to total_instances exactly (this never
+                    # happens for any of the 24 frozen golden files
+                    # today — only reachable via a test-injected
+                    # synthetic routing gap).
+                    failed += instances_per_row
+                    failures.append({
+                        "source_file": rel, "session": "", "asset": "",
+                        "feature": "", "horizon_ms": "", "q": "",
+                        "metric": AGGREGATE_ROUTING_MISSING,
+                        "golden": f"{rel!r} has no aggregate_scope_file_routing entry",
+                        "reproduced": "", "difference": "",
+                    })
                     continue
 
                 try:
@@ -997,7 +1023,27 @@ def run_regression() -> dict:
                             None,
                         )
                     if cand is None:
-                        pending += 1
+                        # FINAL2 AUDIT ISSUE 1: this branch is ONLY
+                        # reached when raw_ready is True (it lives
+                        # inside the `else:` of `if not raw_ready:` —
+                        # see above). PENDING is reserved EXCLUSIVELY
+                        # for "raw genuinely unavailable" (handled by
+                        # the `if not raw_ready:` branch and by
+                        # reproduce_row()'s summary-is-None case for
+                        # block-level rows). An expected aggregate
+                        # candidate that cannot be found while raw IS
+                        # available is a HARD FAIL, never PENDING.
+                        failed += 1
+                        reason_code = (
+                            DISPERSION_STATE_MISSING if is_disp else EXPECTED_METRIC_MISSING
+                        )
+                        failures.append({
+                            "source_file": rel, "session": "", "asset": "",
+                            "feature": feat_or_state, "horizon_ms": horizon_ms, "q": q,
+                            "metric": reason_code,
+                            "golden": _fmt_row_fields(sub_golden, list(sub_golden.keys())),
+                            "reproduced": "", "difference": "",
+                        })
                         continue
 
                     # Expected min_block/max_block identity comes ONLY
@@ -1248,6 +1294,7 @@ __all__ = [
     "STRUCTURAL_INVALID",
     "EXPECTED_METRIC_MISSING",
     "DISPERSION_STATE_MISSING",
+    "AGGREGATE_ROUTING_MISSING",
     "METADATA_ONLY_FILES",
     "GoldenSourceHashMismatchError",
     "reproduce_row",
