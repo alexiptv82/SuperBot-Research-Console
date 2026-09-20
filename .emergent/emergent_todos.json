@@ -1,38 +1,6 @@
 [
   {
-    "content": "Diagnose stuck job cb87152f (ENOSPC + orphaned worker)",
-    "status": "completed"
-  },
-  {
-    "content": "Free disk space (delete 12 stale parts from earlier aborted uploads)",
-    "status": "completed"
-  },
-  {
-    "content": "Add heartbeat to multipart_bundle.assemble (bytes_processed every ~64 MiB)",
-    "status": "completed"
-  },
-  {
-    "content": "Add RECOVERABLE status + orphan detection + resume endpoint in bundle_job_worker.py + server.py",
-    "status": "completed"
-  },
-  {
-    "content": "Add startup recovery hook (mark orphaned RUNNING jobs)",
-    "status": "completed"
-  },
-  {
-    "content": "Update frontend to show Riprendi button on RECOVERABLE + i18n",
-    "status": "completed"
-  },
-  {
-    "content": "Trigger resume for real job cb87152f-3ecd-4ca6-8d6e-9b280b1b9619",
-    "status": "completed"
-  },
-  {
-    "content": "Add regression tests for heartbeat + orphan recovery + resume",
-    "status": "completed"
-  },
-  {
-    "content": "Run full test suite + confirm invariants",
+    "content": "STEP 8: Report post-commit verification",
     "status": "completed"
   }
 ]
