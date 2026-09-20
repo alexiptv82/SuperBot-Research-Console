@@ -1217,18 +1217,41 @@ def aggregate_blocks(summaries: Sequence[BlockSummary]) -> list[AggregateMetrics
                 positive_blocks_count / n_gt_0_count if n_gt_0_count > 0 else None
             )
 
-            # min/max with ascending lexical (session_id, asset) tie-break
-            sorted_n_gt_0 = sorted(
-                n_gt_0,
-                key=lambda m: (m.mean_signed_bps if m.mean_signed_bps is not None else 0.0,
-                               m.session_id, m.asset),
-            )
-            min_m = sorted_n_gt_0[0]
-            max_m = sorted_n_gt_0[-1]
-            min_block = (min_m.session_id, min_m.asset)
-            max_block = (max_m.session_id, max_m.asset)
-            min_block_mean = min_m.mean_signed_bps
-            max_block_mean = max_m.mean_signed_bps
+            # min/max: find the extreme numeric mean FIRST, then among
+            # blocks exactly tied at that extreme value choose the
+            # lexicographically SMALLEST (session_id, asset).
+            #
+            # ISSUE 4 FIX: the previous implementation sorted ascending
+            # on (mean, session_id, asset) and took sorted[-1] for
+            # max_block. On an exact tie at the maximum mean, that
+            # selects the lexicographically LARGEST tied block (the
+            # last element of an ascending sort), which directly
+            # violates tie_break=ascending_lexical(session_id,asset).
+            # Both min and max must independently pick the extreme
+            # value first, then break ties by ascending lexical order.
+            means_present = [m for m in n_gt_0 if m.mean_signed_bps is not None]
+            if means_present:
+                min_val = min(m.mean_signed_bps for m in means_present)
+                max_val = max(m.mean_signed_bps for m in means_present)
+                min_tied = sorted(
+                    (m for m in means_present if m.mean_signed_bps == min_val),
+                    key=lambda m: (m.session_id, m.asset),
+                )
+                max_tied = sorted(
+                    (m for m in means_present if m.mean_signed_bps == max_val),
+                    key=lambda m: (m.session_id, m.asset),
+                )
+                min_m = min_tied[0]
+                max_m = max_tied[0]
+                min_block = (min_m.session_id, min_m.asset)
+                max_block = (max_m.session_id, max_m.asset)
+                min_block_mean = min_val
+                max_block_mean = max_val
+            else:
+                min_block = None
+                max_block = None
+                min_block_mean = None
+                max_block_mean = None
 
         results.append(AggregateMetrics(
             feature=feat,
@@ -1251,6 +1274,174 @@ def aggregate_blocks(summaries: Sequence[BlockSummary]) -> list[AggregateMetrics
 
 
 # ---------------------------------------------------------------------------
+# ISSUE 3 FIX: dispersion sub-state aggregation
+# ---------------------------------------------------------------------------
+#
+# Spec: dispersion_aggregation=identical_rules_as_main_metrics_applied_
+#       independently_per_state
+#
+# Each dispersion state (low/mid/high) of fair_gap_reversion is
+# aggregated with EXACTLY the same rules as aggregate_blocks() above,
+# computed independently per state — states are never pooled.
+
+DISPERSION_STATES: tuple[str, ...] = ("low", "mid", "high")
+
+
+@dataclass
+class DispersionAggregateMetrics:
+    """fair_gap_reversion dispersion-state aggregate.
+
+    One instance per (horizon_ms, q, state). Fields mirror
+    AggregateMetrics exactly, applied independently per state.
+    """
+    feature: str          # always "fair_gap_reversion"
+    horizon_ms: int
+    q: float
+    state: str             # "low" | "mid" | "high"
+    total_blocks: int
+    aggregate_N: int
+    n_gt_0_blocks: int
+    feature_mean: float | None
+    avg_hit_rate: float | None
+    positive_blocks_count: int
+    positive_share: float | None
+    min_block: tuple[str, str] | None
+    max_block: tuple[str, str] | None
+    min_block_mean: float | None
+    max_block_mean: float | None
+
+
+def aggregate_dispersion_states(
+    summaries: Sequence[BlockSummary],
+) -> list[DispersionAggregateMetrics]:
+    """Aggregate fair_gap_reversion dispersion sub-metrics independently
+    per state (low/mid/high).
+
+    A block counts toward ``total_blocks`` for a given (horizon_ms, q,
+    state) whenever the block is structurally VALID and reached
+    PhaseB for fair_gap_reversion at that (horizon_ms, q) — identical
+    population to the base fair_gap_reversion AggregateMetrics
+    total_blocks (spec: a block missing only one feature/sub-state is
+    still VALID and still counted). If the block's dispersion_states
+    list has no entry for a state (because the base block's N was 0 or
+    the dispersion tertile boundaries were undefined), that state is
+    treated as N=0/undefined for that block — it is NOT excluded from
+    total_blocks, exactly mirroring how a missing feature column still
+    counts a block as VALID with N=0 for that feature.
+
+    States are aggregated INDEPENDENTLY: n_gt_0_blocks, feature_mean,
+    avg_hit_rate, positive_blocks_count, positive_share, min_block and
+    max_block are all computed separately per state — never pooled.
+    """
+    from collections import defaultdict
+
+    # key: (horizon_ms, q) -> list of (session_id, asset, BlockMetrics)
+    by_hq: dict[tuple, list[tuple[str, str, BlockMetrics]]] = defaultdict(list)
+
+    for s in summaries:
+        if not s.valid:
+            continue
+        for m in s.metrics:
+            if m.feature != "fair_gap_reversion":
+                continue
+            by_hq[(m.horizon_ms, m.q)].append((s.session_id, s.asset, m))
+
+    results: list[DispersionAggregateMetrics] = []
+
+    for (H, q), block_metric_list in by_hq.items():
+        for state in DISPERSION_STATES:
+            # Per-block (session_id, asset, N, mean_signed_bps, hit_rate)
+            # for this state, defaulting to N=0/undefined when the base
+            # block never populated dispersion_states.
+            entries: list[tuple[str, str, int, float | None, float | None]] = []
+            for sid, asset, m in block_metric_list:
+                state_entry = next(
+                    (d for d in m.dispersion_states if d.get("state") == state),
+                    None,
+                )
+                if state_entry is None:
+                    entries.append((sid, asset, 0, None, None))
+                else:
+                    entries.append((
+                        sid, asset,
+                        int(state_entry["N"]),
+                        state_entry["mean_signed_bps"],
+                        state_entry["hit_rate"],
+                    ))
+
+            total_blocks = len(entries)
+            aggregate_N = sum(e[2] for e in entries)
+            n_gt_0 = [e for e in entries if e[2] > 0]
+            n_gt_0_count = len(n_gt_0)
+
+            if n_gt_0_count == 0:
+                feature_mean = None
+                avg_hit_rate = None
+                positive_blocks_count = 0
+                positive_share = None
+                min_block = None
+                max_block = None
+                min_block_mean = None
+                max_block_mean = None
+            else:
+                means_present = [e for e in n_gt_0 if e[3] is not None]
+                hit_rates = [e[4] for e in n_gt_0 if e[4] is not None]
+                feature_mean = (
+                    float(np.mean([e[3] for e in means_present]))
+                    if means_present else None
+                )
+                avg_hit_rate = float(np.mean(hit_rates)) if hit_rates else None
+                positive_blocks_count = sum(
+                    1 for e in means_present if e[3] > 0
+                )
+                positive_share = positive_blocks_count / n_gt_0_count
+
+                if means_present:
+                    min_val = min(e[3] for e in means_present)
+                    max_val = max(e[3] for e in means_present)
+                    # extreme-value-first, then ascending lexical
+                    # (session_id, asset) tie-break — same rule fix
+                    # as aggregate_blocks() (ISSUE 4).
+                    min_tied = sorted(
+                        (e for e in means_present if e[3] == min_val),
+                        key=lambda e: (e[0], e[1]),
+                    )
+                    max_tied = sorted(
+                        (e for e in means_present if e[3] == max_val),
+                        key=lambda e: (e[0], e[1]),
+                    )
+                    min_block = (min_tied[0][0], min_tied[0][1])
+                    max_block = (max_tied[0][0], max_tied[0][1])
+                    min_block_mean = min_val
+                    max_block_mean = max_val
+                else:
+                    min_block = None
+                    max_block = None
+                    min_block_mean = None
+                    max_block_mean = None
+
+            results.append(DispersionAggregateMetrics(
+                feature="fair_gap_reversion",
+                horizon_ms=H,
+                q=q,
+                state=state,
+                total_blocks=total_blocks,
+                aggregate_N=aggregate_N,
+                n_gt_0_blocks=n_gt_0_count,
+                feature_mean=feature_mean,
+                avg_hit_rate=avg_hit_rate,
+                positive_blocks_count=positive_blocks_count,
+                positive_share=positive_share,
+                min_block=min_block,
+                max_block=max_block,
+                min_block_mean=min_block_mean,
+                max_block_mean=max_block_mean,
+            ))
+
+    return results
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -1267,9 +1458,12 @@ __all__ = [
     "BlockMetrics",
     "BlockSummary",
     "AggregateMetrics",
+    "DispersionAggregateMetrics",
+    "DISPERSION_STATES",
     "build_canonical_grid",
     "reconstruct_block",
     "aggregate_blocks",
+    "aggregate_dispersion_states",
     # Lower-level helpers exposed for testing
     "_quality_admissible_mask",
     "_rank_signed_uniform",
