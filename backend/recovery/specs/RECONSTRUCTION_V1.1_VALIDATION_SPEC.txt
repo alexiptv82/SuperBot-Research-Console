@@ -1,0 +1,96 @@
+RECONSTRUCTION_V1.1_VALIDATION_SPEC
+version=1.1-final
+comparison_key=(source_file,session_id,asset,feature,horizon_ms,q[,dispersion_state])
+preregistered_before_any_OLD36_candidate_comparison=true
+derived_from_observed_mismatch=false
+
+field=N
+comparison=exact_integer_equality
+tolerance=0
+fail_condition=candidate_N != golden_N
+
+field=threshold
+comparison=absolute_difference
+tolerance=1e-8
+fail_condition=abs(candidate_threshold - golden_threshold) > 1e-8
+
+field=mean_signed_bps
+comparison=absolute_difference
+tolerance=1e-6
+fail_condition=abs(candidate_mean_signed_bps - golden_mean_signed_bps) > 1e-6
+applies_only_if=golden_N>0_AND_candidate_N>0
+mismatch_if_definedness_differs=true
+
+field=median_signed_bps
+comparison=absolute_difference
+tolerance=1e-6
+fail_condition=abs(candidate_median_signed_bps - golden_median_signed_bps) > 1e-6
+applies_only_if=golden_N>0_AND_candidate_N>0;simple_features_only
+mismatch_if_definedness_differs=true
+
+field=mean_abs_move
+comparison=absolute_difference
+tolerance=1e-6
+fail_condition=abs(candidate_mean_abs_move - golden_mean_abs_move) > 1e-6
+applies_only_if=simple_features_only
+
+field=hit_rate
+comparison=absolute_difference
+tolerance=1e-12
+fail_condition=abs(candidate_hit_rate - golden_hit_rate) > 1e-12
+applies_only_if=golden_N>0_AND_candidate_N>0
+mismatch_if_definedness_differs=true
+
+field=disp_lo
+comparison=absolute_difference
+tolerance=1e-8
+fail_condition=abs(candidate_disp_lo - golden_disp_lo) > 1e-8
+applies_only_if=fair_gap_reversion_feature_only
+
+field=disp_hi
+comparison=absolute_difference
+tolerance=1e-8
+fail_condition=abs(candidate_disp_hi - golden_disp_hi) > 1e-8
+applies_only_if=fair_gap_reversion_feature_only
+
+field=positive_blocks
+comparison=exact_integer_equality
+tolerance=0
+fail_condition=candidate_positive_blocks != golden_positive_blocks
+scope=aggregate_level_only
+
+field=positive_share
+comparison=absolute_difference
+tolerance=1e-12
+fail_condition=abs(candidate_positive_share - golden_positive_share) > 1e-12
+scope=aggregate_level_only
+
+field=feature_mean
+comparison=absolute_difference
+tolerance=1e-6
+fail_condition=abs(candidate_feature_mean - golden_feature_mean) > 1e-6
+scope=aggregate_level_only
+
+field=total_blocks
+comparison=exact_integer_equality
+tolerance=0
+fail_condition=candidate_total_blocks != golden_total_blocks
+scope=aggregate_level_only
+
+field=min_block
+comparison=exact_identity_match
+tolerance=0
+fail_condition=candidate_min_block_(session_id,asset) != golden_min_block_(session_id,asset)
+scope=aggregate_level_only
+
+field=max_block
+comparison=exact_identity_match
+tolerance=0
+fail_condition=candidate_max_block_(session_id,asset) != golden_max_block_(session_id,asset)
+scope=aggregate_level_only
+
+row_level_fail_rule=any_single_field_fail_marks_the_row_a_FAIL_in_the_match_rate_denominator
+N_mismatch_overrides_all_other_fields_on_that_row=true
+output_artifacts=golden_regression_failures.csv,golden_regression_summary.csv
+no_tuning_on_mismatch=true
+END_RECONSTRUCTION_V1.1_VALIDATION_SPEC

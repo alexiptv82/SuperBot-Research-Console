@@ -1,0 +1,31 @@
+{
+  "spec_version": "RECONSTRUCTION_V1.1",
+  "status": "FROZEN_PREREGISTERED",
+  "scope": "OLD36",
+  "freeze_timestamp_utc": "2026-09-20T07:40:07Z",
+  "methodology_file": "backend/recovery/specs/RECONSTRUCTION_V1.1_SPEC.txt",
+  "methodology_sha256": "02ecaf121ed9ef5f90f30b9db203889ecda114f8547d83244f5f0f7c27453875",
+  "methodology_bytes": 8509,
+  "methodology_lines": 104,
+  "validation_file": "backend/recovery/specs/RECONSTRUCTION_V1.1_VALIDATION_SPEC.txt",
+  "validation_sha256": "30aea96229dbd96f1c98419ecd76105db171d79dc16bba29338b9650a9558d29",
+  "validation_bytes": 2983,
+  "validation_lines": 96,
+  "provenance_counts": {
+    "EXPLICIT_EVIDENCE": 12,
+    "MATH_UNIQUE": 2,
+    "NEW_ASSUMPTION": 17,
+    "TOTAL": 31
+  },
+  "new36_quantitative_status": "SEALED",
+  "frozen_analysis_engine": "NOT_CONFIGURED",
+  "accepts_input": false,
+  "old36_golden_comparison_performed_after_freeze": false,
+  "runtime_environment": {
+    "python": "3.11.16",
+    "numpy": "2.4.6",
+    "pandas": "3.0.5",
+    "pyarrow": "17.0.0",
+    "note": "These versions are metadata only; they do not alter either specification hash."
+  }
+}

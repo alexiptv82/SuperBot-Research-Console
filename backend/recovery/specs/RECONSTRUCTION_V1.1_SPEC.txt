@@ -1,0 +1,104 @@
+RECONSTRUCTION_V1.1_SPEC
+version=1.1-final
+scope=OLD36
+grid_ms=100
+horizons_simple_ms=[100,200,500,1000,2000,5000,10000,30000]
+horizons_composite_ms=[1000,2000,5000,10000,30000]
+quantiles=[0.80,0.90,0.95]
+quantile_method=linear_type7
+block_key=(session_id,asset)
+row_sort_primary=local_ts_ms_asc
+row_sort_secondary=sample_monotonic_ns_asc
+row_sort_algorithm=stable
+row_sort_tie_on_both_keys=CORRUPT_GRID_HARD_FAIL
+duplicate_key_policy=CORRUPT_GRID_HARD_FAIL_on(local_ts_ms,sample_monotonic_ns)_exact_duplicate
+duplicate_timestamp_different_monotonic_ns=VALID_NOT_A_VIOLATION
+part_concat_order=filename_ascending
+part_coverage_policy=HARD_FAIL_if_any_expected_part_missing_or_truncated
+grid_pos_assignment=once_immediately_after_stable_sort;range=0..L-1;immutable;preserved_through_all_filters
+grid_pos_reuse_rule=all_t_and_t+k_references_resolve_against_canonical_grid_pos_array_never_a_filtered_subset
+last_index=L-1_on_canonical_grid
+quality_gate=(adjusted_fair_venue_count>=2)AND(bitget_book_age_recv_ms<=1000)AND(bitget_mid finite)AND(bitget_mid>0)
+quality_gate_scope=base_row_only;NOT_reapplied_at_forward_endpoint
+target=ln(canonical_mid[grid_pos+H/100]/canonical_mid[grid_pos])*10000
+forward_endpoint_validity_rule=canonical_mid[grid_pos+k]finite_AND_gt_0_only;full_gate_not_reapplied;NEW_ASSUMPTION
+feature_map={bitget_ofi:bitget_ofi_norm_l1,bitget_trade_flow:bitget_trade_imbalance_window,depth_imbalance_l1:bitget_depth_imbalance_l1,depth_imbalance_l5:bitget_depth_imbalance_l5,external_ofi:external_ofi_consensus_l1,external_trade_flow:external_trade_imbalance_consensus,fair_accel_100ms:fair_accel_100ms_bps,fair_gap_reversion:bitget_gap_to_fair_bps,leader_gap_100ms:leader_gap_100ms_bps,leader_gap_200ms:leader_gap_200ms_bps,leader_gap_500ms:leader_gap_500ms_bps,leader_gap_1000ms:leader_gap_1000ms_bps}
+missing_feature_column_policy=that_feature_N=0_for_block;block_remains_VALID_for_other_features
+sign_simple=+sign(signal); sign_fair_gap_reversion=-sign(gap)
+nan_policy=listwise_drop_at_use;no_imputation;order=gate(PhaseA)->signal_or_composite_domain(PhaseA)->forward_return(PhaseB)->session_end(PhaseB)->threshold/zero(PhaseB)
+
+# ---- ISSUE 1: per-feature-class finite-domain definitions ----
+simple_domain=quality_admissible AND finite(signal)
+derived_domain=quality_admissible AND finite(component_1) AND finite(component_2)   # depthBoth, depthL1_extOFI; equivalently finite(D)
+gap_threshold_domain=quality_admissible AND finite(gap)   # == fair_gap_reversion's own simple_domain; preserves historical threshold equality
+gap_event_domain=gap_threshold_domain AND finite(confirmation_component)   # confirmation_component per-composite, see gap_second_component and gap_localOFI/localTrade note below
+leader_threshold_domain=quality_admissible AND finite(leader_gap_1000ms)   # == leader_gap_1000ms's own simple_domain; preserves historical threshold equality
+leader_event_domain=leader_threshold_domain AND finite(external_ofi)
+gap_localOFI_confirmation_component=bitget_fair_ofi_alignment_flag_column   # finiteness = flag present/non-null, not the raw normalized component
+gap_localTrade_confirmation_component=bitget_fair_trade_alignment_flag_column
+
+quality_gate_scope=base_row_only;NOT_reapplied_at_forward_endpoint
+forward_return=discrete_k_step;k=H/100;canonical_index_space;drop_if_endpoint_nonfinite_or_nonpositive
+session_end=drop_if(grid_pos+k>last_index);per_horizon_independent;canonical_last_index
+threshold_computation_domain_simple=simple_domain;PhaseA;horizon_independent
+threshold_computation_domain_derived=derived_domain;PhaseA;horizon_independent
+threshold_computation_domain_gap_star=gap_threshold_domain;PhaseA;horizon_independent
+threshold_computation_domain_leader1000_extOFI=leader_threshold_domain;PhaseA;horizon_independent
+event_mask_domain_simple=simple_domain
+event_mask_domain_derived=derived_domain
+event_mask_domain_gap_star=gap_event_domain
+event_mask_domain_leader1000_extOFI=leader_event_domain
+event_series_simple=abs(signal)
+event_series_standalone_derived=abs(D)
+event_series_gap_family=abs(gap)
+event_series_leader1000_extOFI=abs(leader_gap_1000ms)
+threshold=quantile(event_series,q,linear_type7)_over_the_relevant_threshold_computation_domain_above;PhaseA;frozen_before_PhaseB
+threshold_undefined_if_fewer_than_2_finite_values_in_relevant_domain=>N=0;block_remains_VALID
+event_rule=within_relevant_event_mask_domain AND gate_series!=0 AND abs(gate_series)>=threshold   # inclusive boundary, exclusive zero
+component_normalization=per_block_rank_signed_uniform: n=count(finite(component)_among_quality_admissible_rows); z=2*(rank_avgties/(n+1))-1; computed_per_component_independently_of_derived/gap/leader_domains_above
+rank_tie_definition=each_of_m_tied_values_receives_arithmetic_mean_of_the_m_integer_ranks_they_jointly_occupy
+composite_weights=equal(1.0 each);arithmetic_mean
+standalone_derived={depthBoth:mean(z(depth_imbalance_l1),z(depth_imbalance_l5)),depthL1_extOFI:mean(z(depth_imbalance_l1),z(external_ofi))};dir=+sign(D);threshold=quantile(abs(D),q)_over_derived_domain
+depthL1_extOFI_provenance=NEW_ASSUMPTION_no_independent_historical_threshold_citation;analogy_to_depthBoth_only
+gap_gated_threshold=quantile(abs(bitget_gap_to_fair_bps),q)_over_gap_threshold_domain;dir=-sign(gap)
+leader_gated_threshold=quantile(abs(leader_gap_1000ms_bps),q)_over_leader_threshold_domain;dir=+sign(leader_gap_1000ms_bps)
+alignment=1 iff sign(component_oriented)==sign(dir) with finite nonzero else 0;evaluated_over_gap_event_domain_or_leader_event_domain
+gap_localOFI_alignment=bitget_fair_ofi_alignment==+1
+gap_localTrade_alignment=bitget_fair_trade_alignment==+1
+gap_second_component={gap_depthBoth:D_depthBoth,gap_depthL1:depth_imbalance_l1,gap_depth_extOFI:mean(z(depth_imbalance_l1),z(external_ofi)),gap_extOFI:external_ofi,gap_leader1000:leader_gap_1000ms,gap_localOFI:bitget_ofi_norm_l1,gap_localTrade:bitget_trade_imbalance_window}
+leader1000_extOFI_confirm=sign(external_ofi)==sign(leader_gap_1000ms)
+overlap_ordering=greedy_earliest_first;iteration_order=ascending_canonical_grid_pos
+overlap_spacing_steps=max(10,k)   # inclusive gap>=spacing
+signed_return=dir(t)*r_H(t)
+N=count(accepted_events)
+block_metrics_undefined_if_N=0=mean_signed_bps,hit_rate,median_signed_bps
+mean_signed_bps=mean(signed_return)_if_N>0_else_UNDEFINED
+hit_rate=mean(signed_return>0)_if_N>0_else_UNDEFINED   # zero=miss
+median_signed_bps=median(signed_return)_if_N>0_else_UNDEFINED   # simple only
+
+# ---- ISSUE 3: mean_abs_move domain, own provenance ----
+mean_abs_move_eligible_rows=quality_admissible AND session_end_eligible(H) AND forward_endpoint_valid(H)   # regardless of any feature threshold crossing
+mean_abs_move_requires_feature_signal_finite=false
+mean_abs_move=mean(abs(r_H)_over_mean_abs_move_eligible_rows)   # simple only; identical across all simple features sharing the same (block,horizon)
+mean_abs_move_domain_provenance=NEW_ASSUMPTION
+
+dispersion_signal=external_perp_dispersion_bps
+dispersion_n=count(finite_among_quality_admissible_rows)
+dispersion_tertiles=per_block_quantile([1/3,2/3])_on_dispersion_n_domain;PhaseA;low:<disp_lo;high:>=disp_hi;mid:else
+dispersion_aggregation=identical_rules_as_main_metrics_applied_independently_per_state
+positive_block=N>0_AND_mean_signed_bps>0
+invalid_block_conditions=[missing_or_truncated_parquet_part,duplicate_sort_key_exact,duplicate_full_row]   # ONLY these three; missing/all-NaN feature column is NEVER a block-invalidating condition (ISSUE 2)
+invalid_block_effect=zero_rows_emitted_for_the_affected_block;excluded_from_total_blocks_and_all_aggregation
+total_blocks=count_of_structurally_VALID_blocks_reaching_PhaseB;a_block_missing_only_one_feature_column_is_still_VALID_and_still_counted_here_for_every_OTHER_feature   # ISSUE 2 fix
+n_gt_0_blocks=subset_of_total_blocks_with_N>0
+aggregate_N=sum(N)_over_total_blocks
+feature_mean=unweighted_mean(mean_signed_bps)_over_n_gt_0_blocks_only
+avg_hit_rate=unweighted_mean(hit_rate)_over_n_gt_0_blocks_only
+positive_blocks_count=count(n_gt_0_blocks_where_mean_signed_bps>0)
+positive_share=positive_blocks_count/count(n_gt_0_blocks)
+min_block=argmin(mean_signed_bps)_over_n_gt_0_blocks;tie_break=ascending_lexical(session_id,asset)
+max_block=argmax(mean_signed_bps)_over_n_gt_0_blocks;tie_break=ascending_lexical(session_id,asset)
+btc_eth=independent_blocks;no_cross_asset_weighting
+timezone_conversion=none_performed_anywhere_in_methodology
+interpolation=none_performed_anywhere_unless_explicitly_defined_in_this_spec
+END_RECONSTRUCTION_V1.1_SPEC
