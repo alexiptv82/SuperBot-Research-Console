@@ -1,0 +1,15 @@
+target_commit=fcf288773decff1263f6817ff8d08c0e3dfd3440
+freeze_commit=bc670709318468e44a1eaa6ff42760474d5ce716
+methodology_sha256=02ecaf121ed9ef5f90f30b9db203889ecda114f8547d83244f5f0f7c27453875
+validation_sha256=30aea96229dbd96f1c98419ecd76105db171d79dc16bba29338b9650a9558d29
+bundle_sha256=d11748e7848e603be8b7689684680e4f1041d58f2c2d8c12681127f9923da6b4
+bundle_bytes=1019203
+created_utc=2026-09-20T09:55:18Z
+
+git_bundle_verify_result:
+/app/SuperBot_RECONSTRUCTION_V1.1_AUDIT.bundle is okay
+The bundle contains this ref:
+fcf288773decff1263f6817ff8d08c0e3dfd3440 refs/tags/_audit_target_v1.1
+The bundle records a complete history.
+The bundle uses this hash algorithm: sha1
+
