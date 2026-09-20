@@ -35,6 +35,7 @@ import csv
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Iterator
 
@@ -64,22 +65,82 @@ SKIPPED = "SKIPPED"
 # min_block, max_block at aggregate level).
 
 # ---------------------------------------------------------------------------
-# Aggregate-schema golden CSVs whose scope is UNAMBIGUOUSLY the full
-# OLD36_REFERENCE block set (all 11 sessions x {BTC, ETH} = 22 blocks —
-# "all36"). checkpoint_registry.py registers ONLY this population; it
-# does not register which subset of sessions constitutes "ALL24",
-# "WEEKEND12", "WEEKDAY12", or the NEW12-only CP36 aggregates. Since
-# inventing such a membership rule would violate "no_tuning_on_mismatch"
-# / "do not invent new rules", every OTHER aggregate-schema CSV is
-# reported as SKIPPED_AGGREGATE_SCOPE (never silently ignored, never
-# guessed).
-_ALL36_AGGREGATE_FILES: frozenset[str] = frozenset({
-    "CP36/simple_horizon_profile_all36_q90.csv",
-    "CP36/composite_horizon_profile_all36_q90.csv",
-    "CP36/simple_sensitivity_all36_30s.csv",
-    "CP36/composite_sensitivity_all36_30s.csv",
-    "CP36/fair_gap_dispersion_all36.csv",
-})
+# Recovered validation metadata (AUDIT_BLOCKER_BLOCK_IDENTITY /
+# AUDIT_BLOCKER_AGGREGATE_SCOPE closure)
+# ---------------------------------------------------------------------------
+#
+# ALL scope membership (ALL36/OLD24/ALL24/NEW12/WEEKEND12/WEEKDAY12) and
+# ALL min_block/max_block (session_id,asset) identities are read from a
+# STATIC, pre-generated JSON artifact:
+#
+#     recovery/specs/RECONSTRUCTION_V1.1_RECOVERED_METADATA.json
+#
+# generated ONE TIME by recovery/tools/generate_recovered_metadata.py
+# from golden-vs-golden evidence only (session_audit_*.csv, block-level
+# golden CSVs, checkpoint_registry.OLD36_REFERENCE_SESSIONS). The
+# harness NEVER recomputes scope membership or identity from a golden
+# numeric extreme at runtime, and NEVER derives a candidate identity
+# from a golden value — it only looks up the pre-recovered EXPECTED
+# identity to compare against whatever identity the engine's own
+# aggregate_blocks()/aggregate_dispersion_states() independently
+# computed from the candidate block population.
+_RECOVERED_METADATA_PATH = (
+    Path(__file__).resolve().parent / "specs" / "RECONSTRUCTION_V1.1_RECOVERED_METADATA.json"
+)
+
+
+class UnknownScopeError(Exception):
+    """Raised when an aggregate golden row references a scope label
+    that is NOT present in the static recovered-metadata registry.
+
+    This is a HARD FAIL by design (spec: never silently skip or guess
+    membership for an unrecognized scope)."""
+
+
+@lru_cache(maxsize=1)
+def _load_recovered_metadata() -> dict:
+    with open(_RECOVERED_METADATA_PATH, "r", encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def _resolve_scope_session_ids(scope_name: str) -> tuple[str, ...]:
+    """Look up a scope's session_id membership from the static
+    recovered-metadata artifact. Raises UnknownScopeError for any
+    scope label not present there — never guesses."""
+    meta = _load_recovered_metadata()
+    scopes = meta.get("scopes", {})
+    entry = scopes.get(scope_name)
+    if entry is None:
+        for candidate in scopes.values():
+            if scope_name in candidate.get("aliases", []):
+                entry = candidate
+                break
+    if entry is None:
+        raise UnknownScopeError(
+            f"Unknown aggregate scope {scope_name!r} is not present in "
+            f"RECONSTRUCTION_V1.1_RECOVERED_METADATA.json — refusing to "
+            f"guess session membership."
+        )
+    return tuple(entry["session_ids"])
+
+
+def _expected_block_identity(source_file: str, row_index: int, scope: str) -> dict | None:
+    """Look up the pre-recovered EXPECTED (session_id, asset) identity
+    for a given aggregate golden row's min_block/max_block, purely
+    from the static metadata artifact. Returns None if this exact
+    (source_file, row_index, scope) was not recovered (e.g. the file
+    carries no min_block/max_block columns at all)."""
+    meta = _load_recovered_metadata()
+    for entry in meta.get("block_identities", {}).get(source_file, []):
+        if entry.get("row_index") == row_index and entry.get("scope") == scope:
+            return entry
+    return None
+
+
+def _aggregate_scope_routing() -> dict:
+    """Per-file scope routing rules — resolved from the SAME recovered
+    metadata artifact (aggregate_scope_file_routing section)."""
+    return _load_recovered_metadata().get("aggregate_scope_file_routing", {})
 
 # ---------------------------------------------------------------------------
 # Block cache — reuse computed BlockSummary within one regression run
@@ -444,71 +505,122 @@ def _fmt_row_diff(golden: dict, candidate: dict, fields: list[str]) -> str:
     return "; ".join(parts)
 
 
-def _all36_block_summaries() -> list:
-    """Materialize BlockSummary objects for every (session_id, asset) in
-    the frozen OLD36_REFERENCE registry x {BTC, ETH} (22 blocks) — the
-    ONLY aggregate scope this project's registry unambiguously
-    defines. Session-to-period membership for ALL24 / WEEKEND12 /
-    WEEKDAY12 / new12-only subsets is NOT registered anywhere in this
-    codebase and is therefore never inferred here (see
-    _ALL36_AGGREGATE_FILES / SKIPPED_AGGREGATE_SCOPE).
-    """
-    from checkpoint_registry import OLD36_REFERENCE_SESSIONS
+_scope_block_cache: dict[str, list] = {}
 
+
+def _scope_block_summaries(scope_name: str) -> list:
+    """Materialize BlockSummary objects for every (session_id, asset) in
+    the given scope's RECOVERED session_id membership x {BTC, ETH}.
+
+    Scope membership comes exclusively from the static
+    RECONSTRUCTION_V1.1_RECOVERED_METADATA.json artifact (see
+    _resolve_scope_session_ids) — never guessed, never derived from a
+    candidate value.
+    """
+    if scope_name in _scope_block_cache:
+        return _scope_block_cache[scope_name]
+    session_ids = _resolve_scope_session_ids(scope_name)
     out = []
-    for sid in OLD36_REFERENCE_SESSIONS:
+    for sid in session_ids:
         for asset in ("BTC", "ETH"):
             summary = _get_block_summary(sid, asset)
             if summary is not None:
                 out.append(summary)
+    _scope_block_cache[scope_name] = out
     return out
 
 
-_aggregate_cache: dict[str, list] = {}
+_scope_aggregate_cache: dict[str, tuple] = {}
 
 
-def _all36_aggregate_lookup() -> tuple[list, list]:
-    """Compute (main_aggregates, dispersion_aggregates) over the full
-    all36 block population once per run and memoize."""
-    if "main" not in _aggregate_cache:
+def _scope_aggregate_lookup(scope_name: str) -> tuple[list, list]:
+    """Compute (main_aggregates, dispersion_aggregates) for one scope's
+    block population and memoize per scope for this run."""
+    if scope_name not in _scope_aggregate_cache:
         from .engine import aggregate_blocks, aggregate_dispersion_states
 
-        summaries = _all36_block_summaries()
-        _aggregate_cache["main"] = aggregate_blocks(summaries)
-        _aggregate_cache["dispersion"] = aggregate_dispersion_states(summaries)
-    return _aggregate_cache["main"], _aggregate_cache["dispersion"]
+        summaries = _scope_block_summaries(scope_name)
+        main = aggregate_blocks(summaries)
+        disp = aggregate_dispersion_states(summaries)
+        _scope_aggregate_cache[scope_name] = (main, disp)
+    return _scope_aggregate_cache[scope_name]
 
 
-def _aggregate_row_key(rel: str, golden: dict) -> tuple[str, int, float, bool]:
-    """Resolve (feature_or_state, horizon_ms, q, is_dispersion) for an
-    aggregate-schema golden row.
-
-    horizon_ms/q are read from the row's own columns when present;
-    otherwise from the filename convention used consistently across
-    every CP36 aggregate artifact in this repository (a ``*_q90``
-    file's rows are all q=0.90; a ``*_30s`` file's rows are all
-    horizon_ms=30000). Nothing here is a new methodology rule — it
-    only resolves which (feature,horizon_ms,q) key a given aggregate
-    CSV's row refers to.
+def _aggregate_row_key(
+    golden: dict, horizon_default: int | None, q_default: float | None,
+) -> tuple[str, int | None, float | None, bool]:
+    """Resolve (feature_or_state, horizon_ms, q, is_dispersion) for one
+    narrow-schema aggregate golden row. horizon_default/q_default come
+    from the recovered-metadata file-routing rules (filename-implied
+    conventions already documented in
+    aggregate_scope_file_routing) — never invented ad hoc here.
     """
     is_dispersion = "state" in golden and "feature" not in golden
     feature_or_state = golden.get("feature") or golden.get("state") or ""
-
-    if golden.get("horizon_ms") not in (None, ""):
-        horizon_ms = int(golden["horizon_ms"])
-    elif "_30s" in rel:
-        horizon_ms = 30000
-    else:
-        horizon_ms = 0
-
-    if golden.get("q") not in (None, ""):
-        q = float(golden["q"])
-    elif "_q90" in rel:
-        q = 0.90
-    else:
-        q = 0.90
-
+    horizon_ms = (
+        int(golden["horizon_ms"]) if golden.get("horizon_ms") not in (None, "") else horizon_default
+    )
+    q = float(golden["q"]) if golden.get("q") not in (None, "") else q_default
     return feature_or_state, horizon_ms, q, is_dispersion
+
+
+def _iter_aggregate_row_views(rel: str, golden: dict):
+    """Yield (scope, feature_or_state, horizon_ms, q, golden_subview,
+    is_dispersion) for every scope embedded in one aggregate golden
+    row, per the recovered aggregate_scope_file_routing rules.
+
+    Narrow-schema files (one scope per row, via a ``period`` column or
+    filename convention) yield exactly one view. Wide multi-scope
+    files (weekend_vs_weekday_selected_30s.csv,
+    selected_q90_30s_comparison_24h_new12_all36.csv) yield one view
+    per embedded scope column-group.
+
+    Raises UnknownScopeError if ``rel`` has no routing entry at all —
+    callers must treat that as a structural (file-level) condition,
+    distinct from a per-row unrecognized scope VALUE (also
+    UnknownScopeError, raised later by _resolve_scope_session_ids).
+    """
+    routing = _aggregate_scope_routing().get(rel)
+    if routing is None:
+        raise UnknownScopeError(f"{rel!r} has no aggregate_scope_file_routing entry")
+
+    source = routing["scope_source"]
+
+    if source == "wide_columns":
+        feature_or_state = golden.get("feature") or golden.get("state") or ""
+        is_disp = "state" in golden and "feature" not in golden
+        for scope in routing["scopes"]:
+            sub = {
+                "mean_signed_bps": golden.get(f"{scope}_mean_signed_bps"),
+                "positive_blocks": golden.get(f"{scope}_positive_blocks"),
+                "blocks":          golden.get(f"{scope}_blocks"),
+                "min_block":       golden.get(f"{scope}_min_block"),
+                "max_block":       golden.get(f"{scope}_max_block"),
+            }
+            yield scope, feature_or_state, 30000, 0.90, sub, is_disp
+        return
+
+    if source == "wide_columns_prefixed":
+        feature_or_state = golden.get("feature") or ""
+        for prefix, scope in routing["scope_prefix_map"].items():
+            sub = {
+                "mean_signed_bps": golden.get(f"{prefix}_mean_bps"),
+                "positive_blocks": golden.get(f"{prefix}_positive_blocks"),
+            }
+            yield scope, feature_or_state, 30000, 0.90, sub, False
+        return
+
+    if source == "period_column":
+        scope = golden.get("period")
+    elif source == "filename":
+        scope = routing["scope"]
+    else:
+        raise UnknownScopeError(f"{rel!r}: unrecognized scope_source {source!r}")
+
+    horizon_default = 30000 if rel.endswith("_30s.csv") else None
+    q_default = 0.90 if "_q90" in rel else None
+    feat_or_state, horizon_ms, q, is_disp = _aggregate_row_key(golden, horizon_default, q_default)
+    yield scope, feat_or_state, horizon_ms, q, golden, is_disp
 
 
 def run_regression() -> dict:
@@ -524,10 +636,17 @@ def run_regression() -> dict:
     mean_signed_bps, median_signed_bps, mean_abs_move, hit_rate,
     disp_lo, disp_hi — including dispersion_state rows). Aggregate-
     level comparisons (positive_blocks, positive_share, feature_mean,
-    total_blocks, min_block, max_block) are attempted ONLY for the
-    all36 scope the frozen registry unambiguously defines; every other
-    aggregate-schema CSV is reported SKIPPED_AGGREGATE_SCOPE rather
-    than silently guessed.
+    total_blocks, min_block, max_block) are attempted for EVERY known
+    scope recovered in RECONSTRUCTION_V1.1_RECOVERED_METADATA.json
+    (ALL36, OLD24/ALL24, NEW12, WEEKEND12, WEEKDAY12, and the wide
+    multi-scope comparison files) — no known frozen golden scope is
+    reported SKIPPED_AGGREGATE_SCOPE. A row referencing a scope value
+    NOT present in that recovered registry is a HARD FAIL
+    (UnknownScopeError), never silently skipped or guessed. Expected
+    min_block/max_block identities are read from the SAME static
+    metadata (never derived from a golden numeric extreme at runtime);
+    only the CANDIDATE identity is computed live by
+    engine.aggregate_blocks()/aggregate_dispersion_states().
     """
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     availability = availability_snapshot()
@@ -547,9 +666,10 @@ def run_regression() -> dict:
             # NO tuning is performed here regardless of mismatch count.
             _block_cache.clear()
             _part_coverage_cache.clear()
-            _aggregate_cache.clear()
+            _scope_block_cache.clear()
+            _scope_aggregate_cache.clear()
 
-            for gr in golden_rows:
+            for row_index, gr in enumerate(golden_rows):
                 golden = gr.row
                 is_block_level = bool(golden.get("session") or golden.get("session_id"))
 
@@ -585,59 +705,99 @@ def run_regression() -> dict:
                     continue
 
                 # Aggregate-schema row (no session/asset column).
-                if rel not in _ALL36_AGGREGATE_FILES:
+                if rel not in _aggregate_scope_routing():
                     skipped_agg += 1
                     continue
 
-                feat_or_state, horizon_ms, q, is_disp = _aggregate_row_key(rel, golden)
-                main_agg, disp_agg = _all36_aggregate_lookup()
-                if is_disp:
-                    cand = next(
-                        (a for a in disp_agg
-                         if a.state == feat_or_state and a.horizon_ms == horizon_ms and a.q == q),
-                        None,
-                    )
-                else:
-                    cand = next(
-                        (a for a in main_agg
-                         if a.feature == feat_or_state and a.horizon_ms == horizon_ms and a.q == q),
-                        None,
-                    )
-                if cand is None:
-                    pending += 1
+                try:
+                    row_views = list(_iter_aggregate_row_views(rel, golden))
+                except UnknownScopeError as exc:
+                    failed += 1
+                    failures.append({
+                        "source_file": rel, "session": "", "asset": "",
+                        "feature": "", "horizon_ms": "", "q": "",
+                        "metric": "scope", "golden": str(exc),
+                        "reproduced": "", "difference": "",
+                    })
                     continue
 
-                candidate = {
-                    "total_blocks": cand.total_blocks,
-                    "positive_blocks_count": cand.positive_blocks_count,
-                    "positive_share": cand.positive_share,
-                    "feature_mean": cand.feature_mean,
-                    "min_block": cand.min_block,
-                    "max_block": cand.max_block,
-                }
-                fails = _val.compare_aggregate(golden, candidate)
-                if _val.aggregate_failed(fails):
-                    failed += 1
-                    failed_fields = [f for f, v in fails.items() if v]
-                    failures.append({
-                        "source_file": rel,
-                        "session":    "",
-                        "asset":      "",
-                        "feature":    feat_or_state,
-                        "horizon_ms": horizon_ms,
-                        "q":          q,
-                        "metric":     failed_fields[0] if failed_fields else "unknown",
-                        "golden":     _fmt_row_fields(golden, failed_fields),
-                        "reproduced": _fmt_row_fields(
-                            {**candidate,
-                             "min_block": _block_identity_str(candidate["min_block"]),
-                             "max_block": _block_identity_str(candidate["max_block"])},
-                            failed_fields,
-                        ),
-                        "difference": _fmt_row_diff(golden, candidate, failed_fields),
-                    })
-                else:
-                    matched += 1
+                for scope, feat_or_state, horizon_ms, q, sub_golden, is_disp in row_views:
+                    try:
+                        main_agg, disp_agg = _scope_aggregate_lookup(scope)
+                    except UnknownScopeError as exc:
+                        failed += 1
+                        failures.append({
+                            "source_file": rel, "session": "", "asset": "",
+                            "feature": feat_or_state, "horizon_ms": horizon_ms, "q": q,
+                            "metric": "scope", "golden": str(exc),
+                            "reproduced": "", "difference": "",
+                        })
+                        continue
+
+                    if is_disp:
+                        cand = next(
+                            (a for a in disp_agg
+                             if a.state == feat_or_state and a.horizon_ms == horizon_ms and a.q == q),
+                            None,
+                        )
+                    else:
+                        cand = next(
+                            (a for a in main_agg
+                             if a.feature == feat_or_state and a.horizon_ms == horizon_ms and a.q == q),
+                            None,
+                        )
+                    if cand is None:
+                        pending += 1
+                        continue
+
+                    # Expected min_block/max_block identity comes ONLY
+                    # from the static recovered metadata — never from
+                    # the golden numeric extreme at runtime, never
+                    # from the candidate.
+                    expected_id = _expected_block_identity(rel, row_index, scope)
+                    golden_for_compare = dict(sub_golden)
+                    if expected_id and expected_id.get("min_block"):
+                        golden_for_compare["min_block"] = (
+                            expected_id["min_block"]["session_id"],
+                            expected_id["min_block"]["asset"],
+                        )
+                    if expected_id and expected_id.get("max_block"):
+                        golden_for_compare["max_block"] = (
+                            expected_id["max_block"]["session_id"],
+                            expected_id["max_block"]["asset"],
+                        )
+
+                    candidate = {
+                        "total_blocks": cand.total_blocks,
+                        "positive_blocks_count": cand.positive_blocks_count,
+                        "positive_share": cand.positive_share,
+                        "feature_mean": cand.feature_mean,
+                        "min_block": cand.min_block,
+                        "max_block": cand.max_block,
+                    }
+                    fails = _val.compare_aggregate(golden_for_compare, candidate)
+                    if _val.aggregate_failed(fails):
+                        failed += 1
+                        failed_fields = [f for f, v in fails.items() if v]
+                        failures.append({
+                            "source_file": rel,
+                            "session":    "",
+                            "asset":      "",
+                            "feature":    feat_or_state,
+                            "horizon_ms": horizon_ms,
+                            "q":          q,
+                            "metric":     failed_fields[0] if failed_fields else "unknown",
+                            "golden":     _fmt_row_fields(golden_for_compare, failed_fields),
+                            "reproduced": _fmt_row_fields(
+                                {**candidate,
+                                 "min_block": _block_identity_str(candidate["min_block"]),
+                                 "max_block": _block_identity_str(candidate["max_block"])},
+                                failed_fields,
+                            ),
+                            "difference": _fmt_row_diff(golden_for_compare, candidate, failed_fields),
+                        })
+                    else:
+                        matched += 1
 
         outcomes.append(
             RegressionOutcome(
