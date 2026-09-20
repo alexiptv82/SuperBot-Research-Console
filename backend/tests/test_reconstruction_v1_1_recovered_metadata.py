@@ -44,7 +44,7 @@ METADATA_PATH = (
 # output. A drift in this hash means the recovered metadata artifact
 # changed; that must be re-audited, not silently accepted.
 EXPECTED_METADATA_SHA256 = (
-    "b12f1bb13ca7667f7fa55c59e741563b3e15267826de4511cf43fd79b2262ab3"
+    "06c37a906b11d860357368ca4922790b14ae38e464114465d09f3600e987f451"
 )
 
 

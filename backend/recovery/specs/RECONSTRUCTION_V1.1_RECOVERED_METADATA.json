@@ -24319,5 +24319,31 @@
     "max_unrecoverable": 0,
     "matching_method": "exact_float_equality_after_csv_parse",
     "matching_tolerance": 0
+  },
+  "golden_csv_sha256": {
+    "CP24/composite_aggregates_24h.csv": "dd47d14241c5ecb331d0b2bc6be502c913de60adecc6fdeae1e42989c46753b5",
+    "CP24/composite_q80_q90_q95_block_level_24h.csv": "51fefefd48cb858c794543f5e050a048349b671d83c377534c555f8baa607e0f",
+    "CP24/fair_gap_dispersion_aggregates_24h.csv": "b41234df272942c2e519c85f3caecf6f0da1da3e0dcaeaafd9c1696ee1780ff8",
+    "CP24/fair_gap_dispersion_block_level_24h.csv": "f99c2b1ac3ba67d1ae7a1b8a3e5196bb8a0c3be2860ed5cc34db2a0e0021eadc",
+    "CP24/session_audit_24h.csv": "ab06fa2b32f616162f1b270da8762a2ea4c506a45f35fe43ed7fe33b241cc9db",
+    "CP24/simple_aggregates_24h.csv": "ae841592e14b2525d0da9dd95fedd07a858e3a31d1885c4483ca8c08c24fd13e",
+    "CP24/simple_q80_q90_q95_block_level_24h.csv": "a2371edf5561e1d20651c5dab14079835c69c80380b257a865c004b0091bb772",
+    "CP24/weekend_vs_weekday_selected_30s.csv": "397aeb739ecb12d75148d1970825f8a2f58b53c883f3afe96a24a5e381249571",
+    "CP36/composite_block_level_new12.csv": "2834e377080765df888899078dc4754ea90ff3a45c68d7de90117ffc78ea1641",
+    "CP36/composite_horizon_profile_all36_q90.csv": "670f850d22b2323ed01ef4a063b60bd17e04085e3ec91ddecb5e4542d5adbe18",
+    "CP36/composite_horizon_profile_new12_q90.csv": "a91a795ea56e0abb6b1eaaa8c1e1b46748605bf220f961a5130c1b706060e46c",
+    "CP36/composite_sensitivity_all36_30s.csv": "6ac20842546809cc99711b34225c6c4c9e39f2246f40941e0efb37b213e75f61",
+    "CP36/composite_sensitivity_new12_30s.csv": "c3ad06cc9cf296c7d296440657f87629a68e9e7f01c567f5b657d73734d9d614",
+    "CP36/fair_gap_dispersion_all36.csv": "cbe18b12bb7c87c20374a5949bf139a315231587f6931877c64d9e551bd1b108",
+    "CP36/fair_gap_dispersion_block_level_new12.csv": "d7c6f7dafe8bc5d021894ba98e224b78f2ee40a971a1540ea69929aa68f5d82e",
+    "CP36/fair_gap_dispersion_new12.csv": "1a3c8113bd5624675cbfca6dbfdf3e4c42d018ec09e1b1de23575ec7ecc691ca",
+    "CP36/selected_q90_30s_comparison_24h_new12_all36.csv": "9a9ad4f279f88f7b302e2caa17181ddfecfac1d5d23094eea390598d0f0e4145",
+    "CP36/session_audit_36h.csv": "5fc4ded8d1ef4eee4e04ff8438eed8da35f043461b888a0c0556a80fd85d3b0c",
+    "CP36/session_audit_new12.csv": "798ac73ca1fef6a8f7fb6892c7466f1d5f218023b70c1de61904e89a185aeb07",
+    "CP36/simple_block_level_new12.csv": "3b6c8ec85630ff7b29cd03511e2dc79f1c3e11f080b943634aee3c9788fca98c",
+    "CP36/simple_horizon_profile_all36_q90.csv": "ca2a4717b4500933552b47161dac30eb15988f1c6019766c964e3fbf959e7e10",
+    "CP36/simple_horizon_profile_new12_q90.csv": "5747940558e57fd43f51b9b21f524a6a49176d57e9afc1f3e6be4b345a5debeb",
+    "CP36/simple_sensitivity_all36_30s.csv": "49a823078c714112c347454cb599aeac3f46df474b857495ff6846f0ec6fd703",
+    "CP36/simple_sensitivity_new12_30s.csv": "353525fbe92788beb2b7977c0f24f802d67248a581ac7c08fb4664bf23bd180d"
   }
 }

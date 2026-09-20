@@ -425,6 +425,32 @@ AGGREGATE_SCOPE_FILE_ROUTING = {
 }
 
 
+# ---------------------------------------------------------------------------
+# PART D: golden CSV SHA256 pinning (ISSUE 5, Message 222 — FINAL
+# HARNESS AUDIT FIX). Pins the SHA256 of every golden CP24/CP36 CSV at
+# generation time so the runtime harness (recovery.harness.
+# run_regression -> _verify_golden_source_hashes) can hard-stop with
+# GOLDEN_SOURCE_HASH_MISMATCH before opening any candidate RAW or
+# attempting any quantitative comparison if a golden source file was
+# tampered with, silently edited, replaced, or is missing/extra.
+# ---------------------------------------------------------------------------
+
+EXPECTED_GOLDEN_CSV_COUNT = 24
+
+
+def compute_golden_csv_hashes() -> dict:
+    paths = sorted((GOLDENS_DIR / "CP24").glob("*.csv")) + sorted(
+        (GOLDENS_DIR / "CP36").glob("*.csv")
+    )
+    hashes = {p.relative_to(GOLDENS_DIR).as_posix(): _sha256(p) for p in paths}
+    if len(hashes) != EXPECTED_GOLDEN_CSV_COUNT:
+        raise MetadataScopeInconsistency(
+            f"Expected {EXPECTED_GOLDEN_CSV_COUNT} golden CSVs on disk, "
+            f"found {len(hashes)}: {sorted(hashes)}"
+        )
+    return hashes
+
+
 def build() -> dict:
     methodology_sha = _sha256(METHODOLOGY_SPEC)
     validation_sha = _sha256(VALIDATION_SPEC)
@@ -435,6 +461,7 @@ def build() -> dict:
 
     scopes, cross_checks = recover_scopes()
     block_identities, id_summary = recover_block_identities(scopes)
+    golden_csv_sha256 = compute_golden_csv_hashes()
 
     doc = {
         "schema_version": 1,
@@ -452,6 +479,7 @@ def build() -> dict:
         "aggregate_scope_file_routing": AGGREGATE_SCOPE_FILE_ROUTING,
         "block_identities": block_identities,
         "identity_recovery_summary": id_summary,
+        "golden_csv_sha256": golden_csv_sha256,
     }
     return doc
 

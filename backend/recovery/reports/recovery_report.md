@@ -1,6 +1,6 @@
 # FrozenAnalysisEngine — Phase 2 Recovery Report
 
-Generated: 2026-09-20T06:17:02.510547+00:00
+Generated: 2026-09-20T17:50:38.050016+00:00
 
 ## FrozenAnalysisEngine
 
@@ -37,9 +37,11 @@ Generated: 2026-09-20T06:17:02.510547+00:00
 ## Golden regression summary
 
 - Total golden rows across CP24/CP36 CSVs: **11449**
+- Total quantitative comparison instances: **11471** (wide multi-scope files expand 1 row into multiple instances)
+- METADATA_ONLY files excluded from instances (session-audit collector/QA diagnostics): **3**
 - Matched: **0**
 - Failed:  **0**
-- Pending raw OLD36: **11449**
+- Pending raw OLD36: **11471**
 
 See `golden_regression_summary.csv` and `golden_regression_failures.csv`.
 

@@ -55,7 +55,44 @@ from .sandbox import availability_snapshot
 PENDING = "PENDING_RAW_OLD36"
 MATCHED = "MATCHED"
 FAILED  = "FAILED"
-SKIPPED = "SKIPPED"
+
+# FAILED reason codes (ISSUE 4, Message 222 — FINAL HARNESS AUDIT FIX).
+# A row that cannot be reproduced because the underlying block is
+# structurally invalid, or because the requested (feature,horizon,q)
+# / dispersion sub-state simply does not exist in the reconstructed
+# block, is a HARD FAIL of the regression. It must NEVER be reported
+# as PENDING (PENDING is reserved EXCLUSIVELY for "the raw OLD36 grid
+# for this session/asset has not been imported yet") nor as a vague
+# SKIPPED bucket that silently drops out of the matched/failed
+# accounting.
+STRUCTURAL_INVALID = "STRUCTURAL_INVALID"
+EXPECTED_METRIC_MISSING = "EXPECTED_METRIC_MISSING"
+DISPERSION_STATE_MISSING = "DISPERSION_STATE_MISSING"
+
+# Exact allowlist (ISSUE 1, Message 222) of golden CSVs that are
+# collector/QA session metadata only (grid/book/trade file counts,
+# sampler lag, watchdog, writer-queue diagnostics, etc.) — they carry
+# NO feature/asset/mean_signed_bps analysis output whatsoever and
+# must NEVER be routed into reproduce_row() or counted as a
+# quantitative pending/matched/failed/skipped instance. This is an
+# EXACT allowlist of the three known frozen paths — deliberately NOT
+# a filename/glob heuristic (a future golden artifact literally named
+# "session_audit_something.csv" that DOES carry analysis columns must
+# not be silently swept into this bucket).
+METADATA_ONLY_FILES: frozenset[str] = frozenset({
+    "CP24/session_audit_24h.csv",
+    "CP36/session_audit_36h.csv",
+    "CP36/session_audit_new12.csv",
+})
+
+
+class GoldenSourceHashMismatchError(Exception):
+    """Raised when a golden CP24/CP36 CSV's SHA256 does not match the
+    hash pinned in RECONSTRUCTION_V1.1_RECOVERED_METADATA.json at
+    generation time (ISSUE 5, Message 222). HARD STOP — the harness
+    must never proceed with ANY comparison against a golden source
+    file that may have been tampered with, silently edited, replaced,
+    or is missing/extra relative to the pinned 24-file registry."""
 
 # Comparison tolerances/field logic now live in ``recovery.validation``
 # (transcribed verbatim from RECONSTRUCTION_V1.1_VALIDATION_SPEC.txt).
@@ -87,6 +124,11 @@ SKIPPED = "SKIPPED"
 _RECOVERED_METADATA_PATH = (
     Path(__file__).resolve().parent / "specs" / "RECONSTRUCTION_V1.1_RECOVERED_METADATA.json"
 )
+
+# ISSUE 3 (Message 222): the ONLY golden CSV whose positive_blocks
+# column is a packed "A/B" string. Never generalized to any other
+# file by filename pattern — this is an exact, single-path scope.
+_PACKED_POSITIVE_BLOCKS_FILE = "CP36/selected_q90_30s_comparison_24h_new12_all36.csv"
 
 
 class UnknownScopeError(Exception):
@@ -386,8 +428,15 @@ def reproduce_row(golden_row: dict) -> dict:
     sub-entry is looked up and returned — the BASE fair_gap_reversion
     metrics are NEVER substituted for a dispersion-state row.
 
-    Status is one of PENDING / MATCHED / SKIPPED (caller determines
-    MATCHED vs FAILED by comparing field-by-field).
+    Status is one of PENDING / MATCHED / FAILED (ISSUE 4, Message
+    222): PENDING means the raw OLD36 grid has not been imported yet;
+    FAILED (with a reason_code of STRUCTURAL_INVALID /
+    EXPECTED_METRIC_MISSING / DISPERSION_STATE_MISSING) means the
+    block/metric/dispersion-state could not be reproduced at all and
+    is a hard regression failure; MATCHED means comparable candidate
+    values were produced and the caller now performs the real
+    field-by-field numeric comparison (which may still yield a FAILED
+    row at the run_regression() level if a value differs).
 
     SAFETY:
     - Does NOT compare reproduced values against golden numeric outputs
@@ -412,10 +461,17 @@ def reproduce_row(golden_row: dict) -> dict:
 
     summary = _get_block_summary(session_id, asset)
     if summary is None:
+        # The raw OLD36 grid for this (session_id, asset) has not been
+        # imported yet — the ONLY condition this function reports as
+        # PENDING (ISSUE 4, Message 222).
         return {"status": PENDING}
 
     if not summary.valid:
-        return {"status": SKIPPED, "reason": summary.invalid_reason}
+        return {
+            "status": FAILED,
+            "reason_code": STRUCTURAL_INVALID,
+            "reason": summary.invalid_reason,
+        }
 
     # Find matching metric
     match = next(
@@ -426,7 +482,11 @@ def reproduce_row(golden_row: dict) -> dict:
         None,
     )
     if match is None:
-        return {"status": SKIPPED, "reason": "feature/horizon/q not found in block"}
+        return {
+            "status": FAILED,
+            "reason_code": EXPECTED_METRIC_MISSING,
+            "reason": "feature/horizon/q not found in block",
+        }
 
     if dispersion_state:
         state_entry = next(
@@ -435,7 +495,8 @@ def reproduce_row(golden_row: dict) -> dict:
         )
         if state_entry is None:
             return {
-                "status": SKIPPED,
+                "status": FAILED,
+                "reason_code": DISPERSION_STATE_MISSING,
                 "reason": f"dispersion_state {dispersion_state!r} not found in block",
             }
         return {
@@ -467,11 +528,27 @@ class RegressionOutcome:
     failed: int
     pending: int
     skipped_aggregate_scope: int = 0
+    # ISSUE 2 (Message 222): file_kind/total_instances distinguish the
+    # SOURCE CSV row count (total_rows) from the number of individual
+    # quantitative comparison instances that count actually expands
+    # into. For block-level files and narrow (single-scope-per-row)
+    # aggregate files these are identical. For wide multi-scope
+    # aggregate files (weekend_vs_weekday_selected_30s.csv: 3 scopes;
+    # selected_q90_30s_comparison_24h_new12_all36.csv: 3 scopes) one
+    # source row expands to N instances (e.g. 11 rows -> 33
+    # instances) — matched+failed+pending+skipped_aggregate_scope
+    # MUST sum to total_instances, never to total_rows, for those
+    # files. METADATA_ONLY files report total_instances=0 (no
+    # quantitative comparison is ever attempted against them).
+    file_kind: str = "BLOCK_LEVEL"
+    total_instances: int = 0
 
     def as_row(self) -> dict[str, str | int]:
         return {
             "source_file": self.source_file,
+            "file_kind": self.file_kind,
             "total_rows": self.total_rows,
+            "total_instances": self.total_instances,
             "matched": self.matched,
             "failed": self.failed,
             "pending": self.pending,
@@ -602,11 +679,32 @@ def _iter_aggregate_row_views(rel: str, golden: dict):
 
     if source == "wide_columns_prefixed":
         feature_or_state = golden.get("feature") or ""
+        # ISSUE 3 (Message 222): the packed "A/B" positive_blocks/
+        # total_blocks string format is a SCOPED, deterministic parse
+        # applied ONLY to the one known frozen schema that uses it
+        # (CP36/selected_q90_30s_comparison_24h_new12_all36.csv).
+        # Every other wide_columns_prefixed-routed file (there is
+        # none today, but if one is ever added without this exact
+        # packed convention) keeps the plain safe_int() behavior
+        # untouched — this is never widened into a generic parsing
+        # rule.
+        use_packed_parser = rel == _PACKED_POSITIVE_BLOCKS_FILE
         for prefix, scope in routing["scope_prefix_map"].items():
-            sub = {
-                "mean_signed_bps": golden.get(f"{prefix}_mean_bps"),
-                "positive_blocks": golden.get(f"{prefix}_positive_blocks"),
-            }
+            raw_positive_blocks = golden.get(f"{prefix}_positive_blocks")
+            if use_packed_parser:
+                positive_blocks, total_blocks = _val.parse_packed_positive_blocks(
+                    raw_positive_blocks
+                )
+                sub = {
+                    "mean_signed_bps": golden.get(f"{prefix}_mean_bps"),
+                    "positive_blocks": positive_blocks,
+                    "total_blocks":    total_blocks,
+                }
+            else:
+                sub = {
+                    "mean_signed_bps": golden.get(f"{prefix}_mean_bps"),
+                    "positive_blocks": raw_positive_blocks,
+                }
             yield scope, feature_or_state, 30000, 0.90, sub, False
         return
 
@@ -621,6 +719,83 @@ def _iter_aggregate_row_views(rel: str, golden: dict):
     q_default = 0.90 if "_q90" in rel else None
     feat_or_state, horizon_ms, q, is_disp = _aggregate_row_key(golden, horizon_default, q_default)
     yield scope, feat_or_state, horizon_ms, q, golden, is_disp
+
+
+def _instances_per_source_row(rel: str, file_is_block_level: bool) -> int:
+    """Number of quantitative comparison INSTANCES one golden CSV row
+    expands into (ISSUE 2, Message 222).
+
+    Block-level rows (keyed on session_id/session + asset) always
+    reproduce exactly one instance. Aggregate-schema rows expand to
+    one instance PER embedded scope for wide multi-scope files
+    (wide_columns / wide_columns_prefixed routing —
+    weekend_vs_weekday_selected_30s.csv and
+    selected_q90_30s_comparison_24h_new12_all36.csv both embed 3
+    scopes per row) and to exactly one instance for every narrow
+    (single-scope-per-row) aggregate file. Never guessed — read from
+    the SAME static aggregate_scope_file_routing registry used
+    everywhere else in this module. An unrouted aggregate file (none
+    exist today among the 24 pinned goldens) reports 1, matching the
+    existing skipped_aggregate_scope per-row accounting.
+    """
+    if file_is_block_level:
+        return 1
+    routing = _aggregate_scope_routing().get(rel)
+    if routing is None:
+        return 1
+    source = routing.get("scope_source")
+    if source == "wide_columns":
+        return len(routing["scopes"])
+    if source == "wide_columns_prefixed":
+        return len(routing["scope_prefix_map"])
+    return 1
+
+
+def _verify_golden_source_hashes() -> None:
+    """GOLDEN_SOURCE_HASH_MISMATCH preflight (ISSUE 5, Message 222).
+
+    MUST run before ANY candidate RAW is opened or ANY quantitative
+    comparison is attempted — this is the very first statement of
+    ``run_regression()``. Recomputes SHA256 for every golden CP24/CP36
+    CSV currently on disk and compares it against the hashes pinned
+    in RECONSTRUCTION_V1.1_RECOVERED_METADATA.json#golden_csv_sha256
+    at metadata-generation time. Also verifies the pinned registry and
+    the on-disk file set are IDENTICAL (a missing/renamed/extra golden
+    CSV is itself a hash-integrity concern, never silently ignored).
+
+    HARD STOP: raises GoldenSourceHashMismatchError on ANY mismatch.
+    Never widens tolerance, never skips a file, never continues.
+    """
+    import hashlib
+
+    meta = _load_recovered_metadata()
+    pinned: dict = meta.get("golden_csv_sha256") or {}
+    on_disk = list_cp24_csvs() + list_cp36_csvs()
+    on_disk_rel = {p.relative_to(GOLDENS_DIR).as_posix() for p in on_disk}
+
+    if not pinned:
+        raise GoldenSourceHashMismatchError(
+            "GOLDEN_SOURCE_HASH_MISMATCH: RECONSTRUCTION_V1.1_RECOVERED_"
+            "METADATA.json carries no golden_csv_sha256 registry."
+        )
+
+    if set(pinned.keys()) != on_disk_rel:
+        raise GoldenSourceHashMismatchError(
+            "GOLDEN_SOURCE_HASH_MISMATCH: pinned golden_csv_sha256 registry "
+            f"does not match the golden CSVs on disk. "
+            f"pinned_only={sorted(set(pinned) - on_disk_rel)} "
+            f"disk_only={sorted(on_disk_rel - set(pinned))}"
+        )
+
+    for path in on_disk:
+        rel = path.relative_to(GOLDENS_DIR).as_posix()
+        expected = pinned[rel]
+        actual = hashlib.sha256(path.read_bytes()).hexdigest()
+        if actual != expected:
+            raise GoldenSourceHashMismatchError(
+                f"GOLDEN_SOURCE_HASH_MISMATCH: {rel!r} sha256 {actual} != "
+                f"pinned {expected}"
+            )
 
 
 def run_regression() -> dict:
@@ -647,7 +822,25 @@ def run_regression() -> dict:
     metadata (never derived from a golden numeric extreme at runtime);
     only the CANDIDATE identity is computed live by
     engine.aggregate_blocks()/aggregate_dispersion_states().
+
+    ISSUE 1 (Message 222): the 3 METADATA_ONLY_FILES (session-audit
+    collector/QA diagnostics) are excluded entirely, before any other
+    classification — they are never routed into reproduce_row() or
+    counted as a pending/matched/failed/skipped instance.
+
+    ISSUE 2 (Message 222): every RegressionOutcome reports BOTH
+    total_rows (source CSV rows) and total_instances (quantitative
+    comparison instances — total_rows * embedded-scope-count for wide
+    multi-scope files, total_rows otherwise).
+    matched+failed+pending+skipped_aggregate_scope always sums to
+    total_instances for every non-metadata file.
+
+    ISSUE 5 (Message 222): the golden CSV SHA256 preflight
+    (_verify_golden_source_hashes) runs FIRST, before anything else
+    in this function.
     """
+    _verify_golden_source_hashes()
+
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     availability = availability_snapshot()
     raw_ready = availability["present_sessions"] == availability["expected_sessions"]
@@ -658,9 +851,36 @@ def run_regression() -> dict:
     for path in list_cp24_csvs() + list_cp36_csvs():
         rel = path.relative_to(GOLDENS_DIR).as_posix()
         golden_rows = list(read_golden_rows([path]))
+
+        if rel in METADATA_ONLY_FILES:
+            # ISSUE 1: collector/QA session metadata carries no
+            # feature/asset/mean_signed_bps analysis output — never
+            # touched by reproduce_row(), never counted as a
+            # quantitative instance.
+            outcomes.append(
+                RegressionOutcome(
+                    source_file=rel,
+                    file_kind="METADATA_ONLY",
+                    total_rows=len(golden_rows),
+                    total_instances=0,
+                    matched=0,
+                    failed=0,
+                    pending=0,
+                    skipped_aggregate_scope=0,
+                )
+            )
+            continue
+
+        file_is_block_level = bool(
+            golden_rows
+            and (golden_rows[0].row.get("session") or golden_rows[0].row.get("session_id"))
+        )
+        instances_per_row = _instances_per_source_row(rel, file_is_block_level)
+        total_instances = len(golden_rows) * instances_per_row
+
         matched = failed = pending = skipped_agg = 0
         if not raw_ready:
-            pending = len(golden_rows)
+            pending = total_instances
         else:
             # Raw grids are present: reproduce + compare each row.
             # NO tuning is performed here regardless of mismatch count.
@@ -676,8 +896,31 @@ def run_regression() -> dict:
                 if is_block_level:
                     result = reproduce_row(golden)
                     st = result.get("status", PENDING)
-                    if st in (PENDING, SKIPPED):
+
+                    if st == PENDING:
+                        # ISSUE 4: PENDING is reserved EXCLUSIVELY for
+                        # "raw OLD36 grid for this session/asset not
+                        # imported yet".
                         pending += 1
+                        continue
+
+                    if st == FAILED:
+                        # ISSUE 4: structural/metric/dispersion-state
+                        # hard fail — never silently reported as
+                        # PENDING or a vague SKIPPED bucket.
+                        failed += 1
+                        failures.append({
+                            "source_file": rel,
+                            "session":    golden.get("session_id", golden.get("session", "")),
+                            "asset":      golden.get("asset", ""),
+                            "feature":    golden.get("feature", golden.get("state", "")),
+                            "horizon_ms": golden.get("horizon_ms", ""),
+                            "q":          golden.get("q", ""),
+                            "metric":     result.get("reason_code", "unknown"),
+                            "golden":     "",
+                            "reproduced": result.get("reason", ""),
+                            "difference": "",
+                        })
                         continue
 
                     dispersion_state = golden.get("dispersion_state") or golden.get("state")
@@ -711,8 +954,15 @@ def run_regression() -> dict:
 
                 try:
                     row_views = list(_iter_aggregate_row_views(rel, golden))
-                except UnknownScopeError as exc:
-                    failed += 1
+                except (UnknownScopeError, _val.PackedFieldParseError) as exc:
+                    # ISSUE 3: a malformed packed "A/B" positive_blocks
+                    # value is a HARD FAIL of that row's instances, not
+                    # a silent skip/pending and never a coercion. Count
+                    # ALL instances_per_row instances this row would
+                    # otherwise have expanded into as failed, so the
+                    # per-file instance accounting (ISSUE 2) still
+                    # sums to total_instances exactly.
+                    failed += instances_per_row
                     failures.append({
                         "source_file": rel, "session": "", "asset": "",
                         "feature": "", "horizon_ms": "", "q": "",
@@ -799,10 +1049,24 @@ def run_regression() -> dict:
                     else:
                         matched += 1
 
+        # ISSUE 2 invariant: every non-metadata file's
+        # matched+failed+pending+skipped_aggregate_scope MUST sum to
+        # exactly total_instances — never to total_rows for a wide
+        # multi-scope file. This is asserted here (not just
+        # documented) so any future regression in the counting logic
+        # fails loudly instead of silently under-reporting.
+        _computed_total = matched + failed + pending + skipped_agg
+        assert _computed_total == total_instances, (
+            f"{rel}: instance accounting mismatch "
+            f"({_computed_total} != total_instances={total_instances})"
+        )
+
         outcomes.append(
             RegressionOutcome(
                 source_file=rel,
+                file_kind="BLOCK_LEVEL" if file_is_block_level else "AGGREGATE",
                 total_rows=len(golden_rows),
+                total_instances=total_instances,
                 matched=matched,
                 failed=failed,
                 pending=pending,
@@ -816,8 +1080,8 @@ def run_regression() -> dict:
         w = csv.DictWriter(
             fh,
             fieldnames=[
-                "source_file", "total_rows", "matched", "failed", "pending",
-                "skipped_aggregate_scope",
+                "source_file", "file_kind", "total_rows", "total_instances",
+                "matched", "failed", "pending", "skipped_aggregate_scope",
             ],
         )
         w.writeheader()
@@ -895,9 +1159,11 @@ def run_regression() -> dict:
 
 def _render_markdown(outcomes, availability, raw_ready: bool) -> str:
     total_rows = sum(o.total_rows for o in outcomes)
+    total_instances = sum(o.total_instances for o in outcomes)
     matched = sum(o.matched for o in outcomes)
     failed = sum(o.failed for o in outcomes)
     pending = sum(o.pending for o in outcomes)
+    metadata_only_files = sum(1 for o in outcomes if o.file_kind == "METADATA_ONLY")
     status_counts = status_summary()
     lines = [
         "# FrozenAnalysisEngine — Phase 2 Recovery Report",
@@ -937,6 +1203,10 @@ def _render_markdown(outcomes, availability, raw_ready: bool) -> str:
         "## Golden regression summary",
         "",
         f"- Total golden rows across CP24/CP36 CSVs: **{total_rows}**",
+        f"- Total quantitative comparison instances: **{total_instances}** "
+        f"(wide multi-scope files expand 1 row into multiple instances)",
+        f"- METADATA_ONLY files excluded from instances (session-audit "
+        f"collector/QA diagnostics): **{metadata_only_files}**",
         f"- Matched: **{matched}**",
         f"- Failed:  **{failed}**",
         f"- Pending raw OLD36: **{pending}**",
@@ -975,6 +1245,10 @@ __all__ = [
     "PENDING",
     "MATCHED",
     "FAILED",
-    "SKIPPED",
+    "STRUCTURAL_INVALID",
+    "EXPECTED_METRIC_MISSING",
+    "DISPERSION_STATE_MISSING",
+    "METADATA_ONLY_FILES",
+    "GoldenSourceHashMismatchError",
     "reproduce_row",
 ]

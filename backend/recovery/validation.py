@@ -280,6 +280,46 @@ def aggregate_failed(fails: dict[str, bool | None]) -> bool:
     return any(v is True for v in fails.values())
 
 
+# ---------------------------------------------------------------------------
+# Packed field parsing (ISSUE 3 — SCOPED to the single known frozen
+# schema that stores "A/B" packed positive_blocks/total_blocks
+# strings: CP36/selected_q90_30s_comparison_24h_new12_all36.csv).
+#
+# This is intentionally NOT a change to generic safe_int() semantics —
+# it is a dedicated parser used ONLY where the harness explicitly
+# opts into it for that one known frozen column format.
+# ---------------------------------------------------------------------------
+
+
+class PackedFieldParseError(ValueError):
+    """Raised when a packed "A/B" field does not match the frozen
+    format exactly (two non-negative integers separated by '/').
+    Malformed values are a HARD FAIL, never silently coerced."""
+
+
+def parse_packed_positive_blocks(raw) -> tuple[int, int]:
+    """Parse the frozen "A/B" packed positive_blocks format.
+
+    Returns (positive_blocks, total_blocks) as ints.
+    Raises PackedFieldParseError for anything else (missing value,
+    wrong separator count, non-digit parts, negative numbers, decimals).
+    """
+    if raw is None:
+        raise PackedFieldParseError("packed positive_blocks value is None")
+    s = str(raw).strip()
+    parts = s.split("/")
+    if len(parts) != 2:
+        raise PackedFieldParseError(
+            f"expected 'A/B' packed format, got {raw!r}"
+        )
+    a_str, b_str = parts[0].strip(), parts[1].strip()
+    if not (a_str.isdigit() and b_str.isdigit()):
+        raise PackedFieldParseError(
+            f"expected two non-negative integers separated by '/', got {raw!r}"
+        )
+    return int(a_str), int(b_str)
+
+
 __all__ = [
     "TOL_THRESHOLD",
     "TOL_MEAN_SIGNED_BPS",

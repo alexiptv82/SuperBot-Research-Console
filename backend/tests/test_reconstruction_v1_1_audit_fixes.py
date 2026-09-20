@@ -247,11 +247,15 @@ class TestT04DispersionStateRowLookup:
         assert r_mid["N"] == 15
         assert r_low["mean_signed_bps"] != r_mid["mean_signed_bps"]
 
-    def test_unknown_dispersion_state_is_skipped_not_crashed(self):
+    def test_unknown_dispersion_state_is_failed_not_pending(self):
+        """ISSUE 4 (Message 222 audit fix): an unrecognized dispersion
+        sub-state is a HARD FAIL (reason_code=DISPERSION_STATE_MISSING),
+        never PENDING and never a silent SKIPPED bucket."""
         self._seed_summary()
         result = reproduce_row({"session_id": "SID_D", "asset": "BTC",
                                  "state": "nonexistent", "horizon_ms": "5000"})
-        assert result["status"] == "SKIPPED"
+        assert result["status"] == "FAILED"
+        assert result["reason_code"] == "DISPERSION_STATE_MISSING"
 
     def test_non_dispersion_row_still_returns_base_metrics(self):
         """Regression guard: rows WITHOUT a dispersion_state must
