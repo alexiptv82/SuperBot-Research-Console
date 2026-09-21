@@ -1,0 +1,24 @@
+{
+  "candidate_generator_read_historical_target_numerics": false,
+  "candidate_row_count": 252,
+  "diagnostic_spec_version": "V1.2_STAGE1_DRAFT2",
+  "generated_at_utc": "2026-09-21T12:26:29.769526Z",
+  "new36_opened": false,
+  "runtime_source_commit": "7c53fe46b397ce9fed41ae66b554b17647386f0f",
+  "session_ids": [
+    "20260905T073818Z_e44d99bd",
+    "20260906T221530Z_db18dc51"
+  ],
+  "stage0_patch_sha256": "258a3a20f9d314f8df489468bef672cda9aceeb6f12158e307d7c86a4c3ee2fa",
+  "stage1_candidate_diagnostics_sha256": "027d4696d381587ab02a8536850a773034485d7b32b2f65c294774e68d61bde2",
+  "stage1_candidate_diagnostics_size": 110460,
+  "strata": {
+    "S1": 32,
+    "S2": 64,
+    "S3": 24,
+    "S4": 24,
+    "S5": 36,
+    "S6": 72
+  },
+  "v1_1_reports_modified": false
+}
