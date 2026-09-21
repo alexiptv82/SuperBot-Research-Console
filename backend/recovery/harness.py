@@ -630,15 +630,29 @@ def _block_identity_str(v: tuple[str, str] | None) -> str:
     return "" if v is None else f"{v[0]},{v[1]}"
 
 
+def _report_field_value(d: dict, field: str):
+    """Resolve report-only field aliases using the same schema mapping
+    semantics as validation.compare_aggregate().
+
+    This helper affects only human-readable failure rendering. It does not
+    participate in candidate generation or pass/fail decisions.
+    """
+    if field == "feature_mean":
+        return d.get("feature_mean", d.get("mean_signed_bps"))
+    if field == "positive_blocks":
+        return d.get("positive_blocks", d.get("positive_blocks_count"))
+    return d.get(field)
+
+
 def _fmt_row_fields(d: dict, fields: list[str]) -> str:
-    return "; ".join(f"{f}={d.get(f)}" for f in fields)
+    return "; ".join(f"{f}={_report_field_value(d, f)}" for f in fields)
 
 
 def _fmt_row_diff(golden: dict, candidate: dict, fields: list[str]) -> str:
     parts = []
     for f in fields:
-        gv = _val.safe_float(golden.get(f))
-        cv = candidate.get(f)
+        gv = _val.safe_float(_report_field_value(golden, f))
+        cv = _report_field_value(candidate, f)
         if gv is not None and isinstance(cv, (int, float)) and not isinstance(cv, bool):
             parts.append(f"d{f}={cv - gv:.2e}")
     return "; ".join(parts)
@@ -778,7 +792,11 @@ def _iter_aggregate_row_views(rel: str, golden: dict):
         raise UnknownScopeError(f"{rel!r}: unrecognized scope_source {source!r}")
 
     horizon_default = 30000 if rel.endswith("_30s.csv") else None
-    q_default = 0.90 if "_q90" in rel else None
+    # Dispersion aggregate golden schemas omit an explicit q column, just
+    # like the block-level dispersion schemas handled in reproduce_row().
+    # They represent the canonical q=0.90 slice. Resolve that schema key
+    # here so aggregate candidate lookup uses the same deterministic q.
+    q_default = 0.90 if ("_q90" in rel or routing.get("kind") == "dispersion") else None
     feat_or_state, horizon_ms, q, is_disp = _aggregate_row_key(golden, horizon_default, q_default)
     yield scope, feat_or_state, horizon_ms, q, golden, is_disp
 

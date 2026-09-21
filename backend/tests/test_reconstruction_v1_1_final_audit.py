@@ -60,6 +60,8 @@ from recovery.harness import (
     _get_block_summary,
     _instances_per_source_row,
     _iter_aggregate_row_views,
+    _fmt_row_diff,
+    _fmt_row_fields,
     _load_grid_for_block,
     _load_recovered_metadata,
     _verify_golden_source_hashes,
@@ -852,3 +854,72 @@ class TestT25BlockLevelPendingLeak:
         for row in out["outcomes"]:
             total = row["matched"] + row["failed"] + row["pending"] + row["skipped_aggregate_scope"]
             assert total == row["total_instances"], row["source_file"]
+
+
+# ===========================================================================
+# V1.2 STAGE 0 — harness/report infrastructure corrections only
+# ===========================================================================
+class TestT26Stage0HarnessReportFixes:
+    """Pure schema/routing tests. No OLD36 candidate generation."""
+
+    @pytest.mark.parametrize(
+        "rel",
+        [
+            "CP24/fair_gap_dispersion_aggregates_24h.csv",
+            "CP36/fair_gap_dispersion_all36.csv",
+            "CP36/fair_gap_dispersion_new12.csv",
+        ],
+    )
+    def test_dispersion_aggregate_without_q_routes_to_canonical_q90(self, rel):
+        golden = {"state": "high", "horizon_ms": "5000", "period": "ALL24"}
+        views = list(_iter_aggregate_row_views(rel, golden))
+        assert len(views) == 1
+        _scope, _state, _horizon, q, _sub, is_disp = views[0]
+        assert is_disp is True
+        assert q == 0.90
+
+    def test_feature_mean_report_alias_matches_validation_schema(self):
+        golden = {"mean_signed_bps": "0.12177437869083244"}
+        candidate = {"feature_mean": 0.12508681742720498}
+        assert _fmt_row_fields(golden, ["feature_mean"]).startswith(
+            "feature_mean=0.12177437869083244"
+        )
+        assert _fmt_row_fields(candidate, ["feature_mean"]).startswith(
+            "feature_mean=0.12508681742720498"
+        )
+        assert _fmt_row_diff(golden, candidate, ["feature_mean"]).startswith(
+            "dfeature_mean=3.31e-03"
+        )
+
+    def test_positive_blocks_report_alias_uses_candidate_count_key(self):
+        golden = {"positive_blocks": "5"}
+        candidate = {"positive_blocks_count": 6}
+        assert _fmt_row_fields(golden, ["positive_blocks"]) == "positive_blocks=5"
+        assert _fmt_row_fields(candidate, ["positive_blocks"]) == "positive_blocks=6"
+        assert _fmt_row_diff(golden, candidate, ["positive_blocks"]) == (
+            "dpositive_blocks=1.00e+00"
+        )
+
+
+    def test_non_dispersion_qless_narrow_file_still_resolves_q_none(self, monkeypatch):
+        from recovery import harness as harness_mod
+
+        rel = "SYNTH/simple_qless.csv"
+        monkeypatch.setattr(
+            harness_mod,
+            "_aggregate_scope_routing",
+            lambda: {
+                rel: {
+                    "kind": "simple",
+                    "scope_source": "filename",
+                    "scope": "ALL24",
+                }
+            },
+        )
+        views = list(harness_mod._iter_aggregate_row_views(
+            rel, {"feature": "bitget_ofi", "horizon_ms": "1000"}
+        ))
+        assert len(views) == 1
+        _scope, _feature, _horizon, q, _sub, is_disp = views[0]
+        assert is_disp is False
+        assert q is None
