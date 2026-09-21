@@ -1,6 +1,6 @@
 # FrozenAnalysisEngine — Phase 2 Recovery Report
 
-Generated: 2026-09-20T17:58:42.238996+00:00
+Generated: 2026-09-21T06:43:29.119908+00:00
 
 ## FrozenAnalysisEngine
 
@@ -16,32 +16,22 @@ Generated: 2026-09-20T17:58:42.238996+00:00
 
 ## OLD36 raw-reference availability
 
-- Sessions present: **0 / 11**
-- Nominal hours present: **0 / 36.0 h**
-- Raw-ready for reproduction: **NO**
+- Sessions present: **11 / 11**
+- Nominal hours present: **36.0 / 36.0 h**
+- Raw-ready for reproduction: **YES**
 
 ### Missing OLD36 raw sessions
 
-- `20260905T073818Z_e44d99bd`
-- `20260906T054317Z_7973d176`
-- `20260906T092548Z_d18fd1e3`
-- `20260906T221530Z_db18dc51`
-- `20260907T070729Z_48d293bf`
-- `20260907T124300Z_6ac966eb`
-- `20260907T160215Z_ee5b0782`
-- `20260907T221751Z_3abdfd02`
-- `20260908T074322Z_1057297f`
-- `20260908T120838Z_3cfee030`
-- `20260909T171030Z_1952d031`
+_none_
 
 ## Golden regression summary
 
 - Total golden rows across CP24/CP36 CSVs: **11449**
 - Total quantitative comparison instances: **11471** (wide multi-scope files expand 1 row into multiple instances)
 - METADATA_ONLY files excluded from instances (session-audit collector/QA diagnostics): **3**
-- Matched: **0**
-- Failed:  **0**
-- Pending raw OLD36: **11471**
+- Matched: **192**
+- Failed:  **11279**
+- Pending raw OLD36: **0**
 
 See `golden_regression_summary.csv` and `golden_regression_failures.csv`.
 
@@ -57,4 +47,4 @@ See `recovery_rules.json` and `recovery_provenance.json`.
 
 ## Next step
 
-Upload the 11 OLD36_REFERENCE raw session ZIPs via the normal chunked uploader. Each session_id will be auto-tagged `OLD36_REFERENCE`; content-addressed retention deduplicates identical uploads; milestone totals are untouched.
+All 11 OLD36 raw sessions are imported. Wire the `reproduce_row` hook and re-run the harness.
