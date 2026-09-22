@@ -1,0 +1,131 @@
+{
+  "actual_row_counts_per_axis": {
+    "HB": 144,
+    "HC": 72,
+    "HG": 72,
+    "HZ": 288
+  },
+  "actual_total_row_count": 576,
+  "assets": [
+    "BTC",
+    "ETH"
+  ],
+  "axes": [
+    "HZ",
+    "HG",
+    "HC",
+    "HB"
+  ],
+  "diagnostic_version": "V1.2_STAGE3_FINAL",
+  "expected_row_counts_per_axis": {
+    "HB": 144,
+    "HC": 72,
+    "HG": 72,
+    "HZ": 288
+  },
+  "expected_total_row_count": 576,
+  "feature_sets_per_axis": {
+    "HB": [
+      "depth_imbalance_l1",
+      "gap_depthL1",
+      "gap_localOFI",
+      "bitget_ofi",
+      "depthL1_extOFI",
+      "gap_depth_extOFI"
+    ],
+    "HC": [
+      "gap_depth_extOFI"
+    ],
+    "HG": [
+      "depthL1_extOFI"
+    ],
+    "HZ": [
+      "bitget_ofi",
+      "bitget_trade_flow",
+      "depth_imbalance_l1",
+      "depth_imbalance_l5",
+      "external_ofi",
+      "external_trade_flow",
+      "fair_accel_100ms",
+      "fair_gap_reversion",
+      "leader_gap_100ms",
+      "leader_gap_200ms",
+      "leader_gap_500ms",
+      "leader_gap_1000ms"
+    ]
+  },
+  "fingerprint_encoding_definition": "SHA256 of accepted positions sorted ascending, encoded as raw concatenated 8-byte little-endian signed int64, no delimiter; empty set = SHA256 of zero-length byte string; lowercase hex digest",
+  "frozen_analysis_engine_state": "NOT_CONFIGURED",
+  "golden_artifacts_read_by_generator": false,
+  "horizons_per_axis": {
+    "HB": [
+      1000,
+      5000,
+      30000
+    ],
+    "HC": [
+      1000,
+      5000,
+      30000
+    ],
+    "HG": [
+      1000,
+      5000,
+      30000
+    ],
+    "HZ": []
+  },
+  "new36_opened": false,
+  "quantile_method": "linear_type7",
+  "quantiles_per_axis": {
+    "HB": [
+      0.9
+    ],
+    "HC": [
+      0.8,
+      0.9,
+      0.95
+    ],
+    "HG": [
+      0.8,
+      0.9,
+      0.95
+    ],
+    "HZ": [
+      0.8,
+      0.9,
+      0.95
+    ]
+  },
+  "runtime_source_commit": "6b874179f4bb7a558d64609b1900d978666fff32",
+  "session_ids": [
+    "20260905T073818Z_e44d99bd",
+    "20260906T221530Z_db18dc51"
+  ],
+  "source_sha256": {
+    "backend/recovery/v1_2_stage3.py": "342b359988a8e464429cce6cff3093d8ffd530956e08c6230173529da9145506",
+    "backend/tests/test_v1_2_stage3.py": "f73a2d51060f848ea51fa1a69798c31b147e95de28434604b0f71774fe4b5bcb"
+  },
+  "stage3_diagnostics_sha256": "19e62bfe316e617f85ce5efa2f6b35fef9757c1300246fa0c9616804c084dd46",
+  "stage3_diagnostics_size": 119494,
+  "threshold_exact_tolerance": "None==None exact; float: exact Python float equality",
+  "v1_1_stage1_stage2_modified": false,
+  "variant_sets_per_axis": {
+    "HB": [
+      "B0",
+      "B1"
+    ],
+    "HC": [
+      "C0",
+      "C1"
+    ],
+    "HG": [
+      "G0",
+      "G1"
+    ],
+    "HZ": [
+      "T0",
+      "TZ"
+    ]
+  }
+}

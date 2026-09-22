@@ -1,42 +1,34 @@
 [
   {
-    "content": "PRECHECK: verify git HEAD and SHA256 hashes match expected",
+    "content": "PRE-RUN GATE: verify HEAD, SHA256s, frozen sources, no existing artifacts",
     "status": "completed"
   },
   {
-    "content": "Read HC block + HG block in v1_2_stage3.py to understand current semantics",
+    "content": "ENVIRONMENT PROVENANCE: record Python/NumPy versions",
     "status": "completed"
   },
   {
-    "content": "Add _assert_position_subset helper + I19 explicit runtime assertion in HG/G1",
+    "content": "SAFETY GATE: verify NEW36 firewall, sessions, assets",
     "status": "completed"
   },
   {
-    "content": "Add I20 explicit runtime assertion in HC/C1 with shared-gap-gate parent",
+    "content": "SINGLE STAGE3 INVOCATION: run_stage3_diagnostics once, report exceptions if any",
     "status": "completed"
   },
   {
-    "content": "Fix invariant comments in stage3.py to reflect explicit assertions",
+    "content": "POST-RUN VERIFICATION: row counts, schema, manifest fields",
     "status": "completed"
   },
   {
-    "content": "Add I19/I20 PASS+FAIL tests + regression checks in test_v1_2_stage3.py",
+    "content": "POST-RUN SOURCE INTEGRITY: re-verify HEAD and SHAs unchanged",
     "status": "completed"
   },
   {
-    "content": "Run pytest backend/tests/test_v1_2_stage3.py — fix until green",
+    "content": "CREATE AUDIT BUNDLE + SELF-CHECK: zip 5 files, verify",
     "status": "completed"
   },
   {
-    "content": "Create STAGE3_CANONICAL_AUDIT_NOTE.txt",
-    "status": "completed"
-  },
-  {
-    "content": "Create SUPERBOT_V1_2_STAGE3_PATCH1_CODE_AUDIT.zip + self-check",
-    "status": "completed"
-  },
-  {
-    "content": "Output required §15 report",
+    "content": "OUTPUT REQUIRED REPORT",
     "status": "in_progress"
   }
 ]
