@@ -1,38 +1,30 @@
 [
   {
-    "content": "Inspect engine.py BlockMetrics schema (R3 prerequisite)",
+    "content": "Precheck: verify HEAD/SHA256 (PASSED)",
     "status": "completed"
   },
   {
-    "content": "Read full v1_2_stage2.py to identify insertion points for R1/R2/R3",
+    "content": "R3: replace fail-open with fail-closed in v1_2_stage2.py",
     "status": "completed"
   },
   {
-    "content": "Read full test_v1_2_stage2.py to understand current test structure",
+    "content": "R1: fix output dir, CSV name, remove output_dir param, PROTECTED_NAMES guard, manifest keys, alignment_true_n scope in v1_2_stage2.py",
     "status": "completed"
   },
   {
-    "content": "Implement R2 (Real I12 actual field comparison) in v1_2_stage2.py",
+    "content": "Tests: add _populate_matching_r3_metrics helper and update _make_all_contexts",
     "status": "completed"
   },
   {
-    "content": "Implement R3 (Frozen Engine P0 Drift Guard) in v1_2_stage2.py",
+    "content": "Tests: replace test_r3_skips_silently with fail-closed tests; update all R1 tests to monkeypatch",
     "status": "completed"
   },
   {
-    "content": "Implement R1 (Final artifact writer + orchestrator with full manifest) in v1_2_stage2.py",
+    "content": "Run pytest backend/tests/test_v1_2_stage2.py; all must pass",
     "status": "completed"
   },
   {
-    "content": "Add R1/R2/R3 focused tests to test_v1_2_stage2.py",
-    "status": "completed"
-  },
-  {
-    "content": "Run pytest backend/tests/test_v1_2_stage2.py and verify all pass",
-    "status": "completed"
-  },
-  {
-    "content": "Post-patch scope check: git diff HEAD -- to confirm only 2 files changed, no commit",
+    "content": "Post-patch scope audit: only 2 authorized files changed",
     "status": "completed"
   }
 ]

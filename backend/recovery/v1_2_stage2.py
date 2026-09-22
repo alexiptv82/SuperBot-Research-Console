@@ -170,8 +170,11 @@ _STAGE2_CSV_COLUMNS: tuple[str, ...] = (
     "aligned_negative_pair_n",
 )
 
-# Default output directory for Stage 2 artifacts (backend root).
-_STAGE2_DEFAULT_OUTPUT_DIR: Path = Path(__file__).resolve().parent.parent
+# Frozen default output directory for Stage 2 artifacts.
+# Always resolves to backend/recovery/reports/v1_2/ relative to this file.
+_STAGE2_DEFAULT_OUTPUT_DIR: Path = (
+    Path(__file__).resolve().parent / "reports" / "v1_2"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -819,8 +822,17 @@ def _assert_r3_p0_drift_guard(
         comparison operand.
     """
     key = (feature, horizon_ms, STAGE2_Q)
-    if not ctx.metrics or key not in ctx.metrics:
-        return  # No frozen metrics to compare — synthetic / test contexts.
+    # Fail-closed: ctx.metrics absent or empty → AssertionError.
+    if not ctx.metrics:
+        raise AssertionError(
+            f"R3 DRIFT: ctx.metrics is absent or empty; "
+            f"frozen metric required for key={key!r}"
+        )
+    # Fail-closed: requested key not present in metrics → AssertionError.
+    if key not in ctx.metrics:
+        raise AssertionError(
+            f"R3 DRIFT: missing frozen metric key={key!r}"
+        )
 
     m = ctx.metrics[key]
 
@@ -1168,9 +1180,11 @@ def _validate_stage2_safety() -> None:
 def write_stage2_artifacts(
     rows: list[dict],
     runtime_source_commit: str,
-    output_dir: "Path | None" = None,
 ) -> "tuple[Path, Path]":
-    """Write Stage 2 policy diagnostics CSV and deterministic manifest JSON.
+    """Write Stage 2 overlap diagnostics CSV and deterministic manifest JSON.
+
+    Always writes to ``_STAGE2_DEFAULT_OUTPUT_DIR``
+    (``backend/recovery/reports/v1_2/``).
 
     Parameters
     ----------
@@ -1178,9 +1192,6 @@ def write_stage2_artifacts(
         The 144 Stage 2 policy-comparison rows from generate_stage2_rows().
     runtime_source_commit : str
         The git commit hash of the repository at run time.
-    output_dir : Path or None
-        Directory to write artifacts into.  Defaults to the backend root
-        (parent of the recovery package).  Tests should supply tmp_path.
 
     Returns
     -------
@@ -1188,6 +1199,8 @@ def write_stage2_artifacts(
 
     Raises
     ------
+    AssertionError
+        If either output filename is listed in _PROTECTED_NAMES.
     FileExistsError
         If either output file already exists (never overwrites).
 
@@ -1195,11 +1208,23 @@ def write_stage2_artifacts(
     -----
     No timestamp is included in the manifest — output is fully deterministic
     given identical inputs.  Manifest JSON is serialised with sort_keys=True.
+    Output directory is created if absent.
     """
-    out = Path(output_dir) if output_dir is not None else _STAGE2_DEFAULT_OUTPUT_DIR
+    out = _STAGE2_DEFAULT_OUTPUT_DIR
 
-    csv_path = out / "stage2_policy_diagnostics.csv"
+    csv_path = out / "stage2_overlap_diagnostics.csv"
     manifest_path = out / "stage2_manifest.json"
+
+    # _PROTECTED_NAMES guard: abort before any I/O if either name is protected.
+    for _name, _path in (
+        ("stage2_overlap_diagnostics.csv", csv_path),
+        ("stage2_manifest.json", manifest_path),
+    ):
+        if _name in _PROTECTED_NAMES:
+            raise AssertionError(
+                f"Stage2 output name {_name!r} is listed in _PROTECTED_NAMES; "
+                f"aborting write to prevent protected artifact overwrite"
+            )
 
     # Strict existence guard — raise before any computation.
     if csv_path.exists():
@@ -1216,8 +1241,8 @@ def write_stage2_artifacts(
     buf = io.StringIO()
     df.to_csv(buf, index=False)
     csv_bytes = buf.getvalue().encode("utf-8")
-    csv_sha256 = hashlib.sha256(csv_bytes).hexdigest()
-    csv_byte_size = len(csv_bytes)
+    artifact_sha256 = hashlib.sha256(csv_bytes).hexdigest()
+    artifact_size = len(csv_bytes)
 
     # ── Derive summary counts ─────────────────────────────────────────────────
     actual_row_count = len(rows)
@@ -1243,17 +1268,11 @@ def write_stage2_artifacts(
         "actual_unique_case_count": actual_unique_case_count,
         "assets": list(STAGE2_ASSETS),
         "candidate_generation_frozen_before_golden_comparison": True,
-        "csv_byte_size": csv_byte_size,
-        "csv_sha256": csv_sha256,
         "diagnostic_version": STAGE2_VERSION,
         "engine_py_modified": False,
         "expected_row_count": STAGE2_POLICY_ROWS,
         "expected_unique_case_count": STAGE2_UNIQUE_CASES,
-        "feature_families": {
-            "all_six": list(STAGE2_FAMILIES),
-            "control": list(STAGE2_CONTROL_FAMILIES),
-            "primary": list(STAGE2_PRIMARY_FAMILIES),
-        },
+        "feature_matrix": list(STAGE2_FAMILIES),
         "fingerprint_encoding_definition": (
             "SHA256 of accepted positions sorted ascending, encoded as raw "
             "concatenated 8-byte little-endian signed int64, no delimiter; "
@@ -1277,8 +1296,11 @@ def write_stage2_artifacts(
                 "scope": "EVENT-SCOPE",
             },
             "alignment_true_n": {
-                "domain": "gap_event_domain AND alignment=True",
-                "scope": "EVENT-SCOPE",
+                "domain": (
+                    "gap_event_domain AND alignment=True; "
+                    "pre-threshold grid-domain count"
+                ),
+                "scope": "GRID-SCOPE",
             },
             "confirmation_component_negative_n": {
                 "domain": "pre_alignment_events AND D_ext<0",
@@ -1323,6 +1345,8 @@ def write_stage2_artifacts(
         ),
         "spacing_steps": {str(h): max(10, h // GRID_MS) for h in STAGE2_HORIZONS},
         "stage1_artifacts_modified": False,
+        "stage2_overlap_diagnostics_sha256": artifact_sha256,
+        "stage2_overlap_diagnostics_size": artifact_size,
         "v1_1_reports_modified": False,
     }
 
@@ -1339,17 +1363,16 @@ def write_stage2_artifacts(
 
 def run_stage2_diagnostics(
     runtime_source_commit: str,
-    output_dir: "Path | None" = None,
 ) -> "tuple[Path, Path]":
     """Top-level Stage 2 orchestrator.  Requires explicit authorisation.
 
     Calls generate_stage2_rows() (real OLD36 data path) then writes
-    artifacts via write_stage2_artifacts().
+    artifacts via write_stage2_artifacts() to _STAGE2_DEFAULT_OUTPUT_DIR.
 
     THIS MUST NOT BE INVOKED UNTIL EXPLICITLY AUTHORISED.
     """
     rows = generate_stage2_rows(contexts=None)
-    return write_stage2_artifacts(rows, runtime_source_commit, output_dir=output_dir)
+    return write_stage2_artifacts(rows, runtime_source_commit)
 
 
 # ---------------------------------------------------------------------------

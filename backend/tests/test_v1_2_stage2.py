@@ -139,12 +139,54 @@ def _make_ctx(
     )
 
 
+def _populate_matching_r3_metrics(ctx: _BlockContext) -> None:
+    """Populate ctx.metrics with exact P0 metrics for all Stage 2 feature/horizon combos.
+
+    Derives each BlockMetrics entry from the SAME Stage 2 functions that
+    _process_unique_case will call, so R3 comparisons pass deterministically
+    on synthetic contexts.
+
+    This is TEST-ONLY infrastructure.  Do NOT call from production paths.
+    """
+    for feature in STAGE2_FAMILIES:
+        for horizon_ms in STAGE2_HORIZONS:
+            spacing = max(10, horizon_ms // GRID_MS)
+            pre_result = _extract_pre_overlap(feature, ctx, horizon_ms, STAGE2_Q)
+            if len(pre_result.positions) > 0:
+                p0_mask = _greedy_overlap_filter(pre_result.positions, spacing)
+            else:
+                p0_mask = np.zeros(0, dtype=bool)
+            metrics = _compute_policy_metrics(pre_result, p0_mask)
+            n_accepted = int(np.sum(p0_mask))
+            bm = BlockMetrics(
+                session_id=ctx.session_id,
+                asset=ctx.asset,
+                feature=feature,
+                horizon_ms=horizon_ms,
+                q=STAGE2_Q,
+                N=n_accepted,
+                threshold=pre_result.threshold,
+                mean_signed_bps=metrics["mean_signed_bps"],
+                hit_rate=metrics["hit_rate"],
+                median_signed_bps=None,
+                mean_abs_move=metrics["mean_abs_move"],
+            )
+            ctx.metrics[(feature, horizon_ms, STAGE2_Q)] = bm
+
+
 def _make_all_contexts(seed_base: int = 0) -> dict[tuple[str, str], _BlockContext]:
-    """Build synthetic contexts for all declared (session, asset) pairs."""
+    """Build synthetic contexts for all declared (session, asset) pairs.
+
+    Each context is populated with matching R3 metrics via
+    _populate_matching_r3_metrics() so that generate_stage2_rows() passes
+    the fail-closed R3 drift guard.
+    """
     ctxs = {}
     for i, sid in enumerate(STAGE2_SESSIONS):
         for j, asset in enumerate(STAGE2_ASSETS):
-            ctxs[(sid, asset)] = _make_ctx(sid, asset, seed=seed_base + i * 10 + j)
+            ctx = _make_ctx(sid, asset, seed=seed_base + i * 10 + j)
+            _populate_matching_r3_metrics(ctx)
+            ctxs[(sid, asset)] = ctx
     return ctxs
 
 
@@ -977,37 +1019,46 @@ def _make_ctx_with_metrics(
 # R1: Final artifact writer tests
 # ===========================================================================
 
-def test_r1a_write_creates_csv_and_manifest(tmp_path):
+def test_r1a_write_creates_csv_and_manifest(tmp_path, monkeypatch):
     """R1-A: write_stage2_artifacts creates both CSV and manifest on first call."""
+    import recovery.v1_2_stage2 as _m
+    monkeypatch.setattr(_m, "_STAGE2_DEFAULT_OUTPUT_DIR", tmp_path)
+
     contexts = _make_all_contexts(seed_base=1100)
     rows = generate_stage2_rows(contexts=contexts)
 
-    csv_path, manifest_path = write_stage2_artifacts(rows, "abc1234", output_dir=tmp_path)
+    csv_path, manifest_path = write_stage2_artifacts(rows, "abc1234")
 
     assert csv_path.exists(), "CSV file not created"
     assert manifest_path.exists(), "Manifest file not created"
-    assert csv_path.name == "stage2_policy_diagnostics.csv"
+    assert csv_path.name == "stage2_overlap_diagnostics.csv"
     assert manifest_path.name == "stage2_manifest.json"
 
 
-def test_r1b_second_call_raises_file_exists_error(tmp_path):
+def test_r1b_second_call_raises_file_exists_error(tmp_path, monkeypatch):
     """R1-B: second call to write_stage2_artifacts raises FileExistsError."""
+    import recovery.v1_2_stage2 as _m
+    monkeypatch.setattr(_m, "_STAGE2_DEFAULT_OUTPUT_DIR", tmp_path)
+
     contexts = _make_all_contexts(seed_base=1200)
     rows = generate_stage2_rows(contexts=contexts)
 
-    write_stage2_artifacts(rows, "abc1234", output_dir=tmp_path)
+    write_stage2_artifacts(rows, "abc1234")
 
     with pytest.raises(FileExistsError):
-        write_stage2_artifacts(rows, "abc1234", output_dir=tmp_path)
+        write_stage2_artifacts(rows, "abc1234")
 
 
-def test_r1c_csv_columns_in_fixed_deterministic_order(tmp_path):
+def test_r1c_csv_columns_in_fixed_deterministic_order(tmp_path, monkeypatch):
     """R1-C: CSV columns match _STAGE2_CSV_COLUMNS exactly (fixed deterministic order)."""
     import pandas as _pd
+    import recovery.v1_2_stage2 as _m
+    monkeypatch.setattr(_m, "_STAGE2_DEFAULT_OUTPUT_DIR", tmp_path)
+
     contexts = _make_all_contexts(seed_base=1300)
     rows = generate_stage2_rows(contexts=contexts)
 
-    csv_path, _ = write_stage2_artifacts(rows, "abc1234", output_dir=tmp_path)
+    csv_path, _ = write_stage2_artifacts(rows, "abc1234")
 
     df = _pd.read_csv(csv_path)
     assert list(df.columns) == list(_STAGE2_CSV_COLUMNS), (
@@ -1015,48 +1066,56 @@ def test_r1c_csv_columns_in_fixed_deterministic_order(tmp_path):
     )
 
 
-def test_r1d_manifest_top_level_keys_are_sorted(tmp_path):
+def test_r1d_manifest_top_level_keys_are_sorted(tmp_path, monkeypatch):
     """R1-D: manifest JSON top-level keys are sorted (sort_keys=True serialisation)."""
+    import recovery.v1_2_stage2 as _m
+    monkeypatch.setattr(_m, "_STAGE2_DEFAULT_OUTPUT_DIR", tmp_path)
     contexts = _make_all_contexts(seed_base=1400)
     rows = generate_stage2_rows(contexts=contexts)
 
-    _, manifest_path = write_stage2_artifacts(rows, "abc1234", output_dir=tmp_path)
+    _, manifest_path = write_stage2_artifacts(rows, "abc1234")
 
     manifest = json_module.loads(manifest_path.read_text(encoding="utf-8"))
     keys = list(manifest.keys())
     assert keys == sorted(keys), f"Manifest top-level keys not sorted: {keys}"
 
 
-def test_r1e_existing_csv_alone_raises_file_exists_error(tmp_path):
+def test_r1e_existing_csv_alone_raises_file_exists_error(tmp_path, monkeypatch):
     """R1-E: if CSV already exists (manifest absent), FileExistsError is raised."""
+    import recovery.v1_2_stage2 as _m
+    monkeypatch.setattr(_m, "_STAGE2_DEFAULT_OUTPUT_DIR", tmp_path)
     contexts = _make_all_contexts(seed_base=1500)
     rows = generate_stage2_rows(contexts=contexts)
 
-    # Pre-create only the CSV
-    (tmp_path / "stage2_policy_diagnostics.csv").write_text("dummy")
+    # Pre-create only the CSV with the FINAL frozen name.
+    (tmp_path / "stage2_overlap_diagnostics.csv").write_text("dummy")
 
     with pytest.raises(FileExistsError):
-        write_stage2_artifacts(rows, "abc1234", output_dir=tmp_path)
+        write_stage2_artifacts(rows, "abc1234")
 
 
-def test_r1f_existing_manifest_alone_raises_file_exists_error(tmp_path):
+def test_r1f_existing_manifest_alone_raises_file_exists_error(tmp_path, monkeypatch):
     """R1-F: if manifest already exists (CSV absent), FileExistsError is raised."""
+    import recovery.v1_2_stage2 as _m
+    monkeypatch.setattr(_m, "_STAGE2_DEFAULT_OUTPUT_DIR", tmp_path)
     contexts = _make_all_contexts(seed_base=1600)
     rows = generate_stage2_rows(contexts=contexts)
 
-    # Pre-create only the manifest
+    # Pre-create only the manifest.
     (tmp_path / "stage2_manifest.json").write_text("{}")
 
     with pytest.raises(FileExistsError):
-        write_stage2_artifacts(rows, "abc1234", output_dir=tmp_path)
+        write_stage2_artifacts(rows, "abc1234")
 
 
-def test_r1g_none_values_produce_empty_csv_fields(tmp_path):
+def test_r1g_none_values_produce_empty_csv_fields(tmp_path, monkeypatch):
     """R1-G: None row values appear as empty fields (not 'None' or 'nan') in the CSV."""
+    import recovery.v1_2_stage2 as _m
+    monkeypatch.setattr(_m, "_STAGE2_DEFAULT_OUTPUT_DIR", tmp_path)
     contexts = _make_all_contexts(seed_base=1700)
     rows = generate_stage2_rows(contexts=contexts)
 
-    csv_path, _ = write_stage2_artifacts(rows, "abc1234", output_dir=tmp_path)
+    csv_path, _ = write_stage2_artifacts(rows, "abc1234")
 
     # For non-gap_depth_extOFI rows the gap-extra fields must be None → empty string.
     with csv_path.open(newline="", encoding="utf-8") as f:
@@ -1073,39 +1132,50 @@ def test_r1g_none_values_produce_empty_csv_fields(tmp_path):
         assert found_non_gap, "No non-gap_depth_extOFI row found in CSV"
 
 
-def test_r1h_manifest_csv_sha256_matches_written_file(tmp_path):
-    """R1-H: manifest csv_sha256 == SHA256 of the exact bytes written to disk."""
+def test_r1h_manifest_artifact_sha256_matches_written_file(tmp_path, monkeypatch):
+    """R1-H: stage2_overlap_diagnostics_sha256 == SHA256 of exact bytes written to disk."""
     import hashlib as _hl
+    import recovery.v1_2_stage2 as _m
+    monkeypatch.setattr(_m, "_STAGE2_DEFAULT_OUTPUT_DIR", tmp_path)
     contexts = _make_all_contexts(seed_base=1800)
     rows = generate_stage2_rows(contexts=contexts)
 
-    csv_path, manifest_path = write_stage2_artifacts(rows, "abc1234", output_dir=tmp_path)
+    csv_path, manifest_path = write_stage2_artifacts(rows, "abc1234")
 
     csv_bytes = csv_path.read_bytes()
     actual_sha256 = _hl.sha256(csv_bytes).hexdigest()
 
     manifest = json_module.loads(manifest_path.read_text(encoding="utf-8"))
-    assert manifest["csv_sha256"] == actual_sha256, (
-        f"SHA256 mismatch: manifest={manifest['csv_sha256']!r} actual={actual_sha256!r}"
+    assert manifest["stage2_overlap_diagnostics_sha256"] == actual_sha256, (
+        f"SHA256 mismatch: "
+        f"manifest={manifest['stage2_overlap_diagnostics_sha256']!r} "
+        f"actual={actual_sha256!r}"
     )
 
 
-def test_r1i_manifest_csv_byte_size_matches_actual(tmp_path):
-    """R1-I: manifest csv_byte_size == actual byte size of the written CSV file."""
+def test_r1i_manifest_artifact_size_matches_actual(tmp_path, monkeypatch):
+    """R1-I: stage2_overlap_diagnostics_size == actual byte size of the written CSV file."""
+    import recovery.v1_2_stage2 as _m
+    monkeypatch.setattr(_m, "_STAGE2_DEFAULT_OUTPUT_DIR", tmp_path)
     contexts = _make_all_contexts(seed_base=1900)
     rows = generate_stage2_rows(contexts=contexts)
 
-    csv_path, manifest_path = write_stage2_artifacts(rows, "abc1234", output_dir=tmp_path)
+    csv_path, manifest_path = write_stage2_artifacts(rows, "abc1234")
 
     actual_byte_size = csv_path.stat().st_size
     manifest = json_module.loads(manifest_path.read_text(encoding="utf-8"))
-    assert manifest["csv_byte_size"] == actual_byte_size, (
-        f"Byte size mismatch: manifest={manifest['csv_byte_size']} actual={actual_byte_size}"
+    assert manifest["stage2_overlap_diagnostics_size"] == actual_byte_size, (
+        f"Byte size mismatch: "
+        f"manifest={manifest['stage2_overlap_diagnostics_size']} "
+        f"actual={actual_byte_size}"
     )
 
 
-def test_r1j_manifest_complete_required_field_set(tmp_path):
-    """R1-J: manifest contains the complete required FINAL/DRAFT3 field set."""
+def test_r1j_manifest_complete_required_field_set(tmp_path, monkeypatch):
+    """R1-J: manifest contains the complete FINAL required field set; forbidden old keys absent."""
+    import recovery.v1_2_stage2 as _m
+    monkeypatch.setattr(_m, "_STAGE2_DEFAULT_OUTPUT_DIR", tmp_path)
+
     _REQUIRED_MANIFEST_KEYS = {
         "GRID_MS",
         "P0_definition",
@@ -1114,13 +1184,11 @@ def test_r1j_manifest_complete_required_field_set(tmp_path):
         "actual_unique_case_count",
         "assets",
         "candidate_generation_frozen_before_golden_comparison",
-        "csv_byte_size",
-        "csv_sha256",
         "diagnostic_version",
         "engine_py_modified",
         "expected_row_count",
         "expected_unique_case_count",
-        "feature_families",
+        "feature_matrix",
         "fingerprint_encoding_definition",
         "gap_depth_extOFI_diagnostic_counters",
         "historical_target_numerics_read_by_generator",
@@ -1135,25 +1203,35 @@ def test_r1j_manifest_complete_required_field_set(tmp_path):
         "spacing_boundary_semantics",
         "spacing_steps",
         "stage1_artifacts_modified",
+        "stage2_overlap_diagnostics_sha256",
+        "stage2_overlap_diagnostics_size",
         "v1_1_reports_modified",
     }
+    _FORBIDDEN_KEYS = {"csv_sha256", "csv_byte_size", "feature_families"}
 
     contexts = _make_all_contexts(seed_base=2000)
     rows = generate_stage2_rows(contexts=contexts)
 
-    _, manifest_path = write_stage2_artifacts(rows, "abc1234", output_dir=tmp_path)
+    _, manifest_path = write_stage2_artifacts(rows, "abc1234")
     manifest = json_module.loads(manifest_path.read_text(encoding="utf-8"))
 
     missing = _REQUIRED_MANIFEST_KEYS - set(manifest.keys())
     assert not missing, f"Manifest missing required fields: {sorted(missing)}"
 
+    present_forbidden = _FORBIDDEN_KEYS & set(manifest.keys())
+    assert not present_forbidden, (
+        f"Manifest contains forbidden legacy fields: {sorted(present_forbidden)}"
+    )
 
-def test_r1k_manifest_gap_depth_extofi_scope_dict_present_and_correct(tmp_path):
-    """R1-K: gap_depth_extOFI_diagnostic_counters has all 10 fields with correct SCOPE labels."""
+
+def test_r1k_manifest_gap_depth_extofi_scope_dict_present_and_correct(tmp_path, monkeypatch):
+    """R1-K: gap scope dict has 2 GRID-SCOPE and 8 EVENT-SCOPE (alignment_true_n is GRID-SCOPE)."""
+    import recovery.v1_2_stage2 as _m
+    monkeypatch.setattr(_m, "_STAGE2_DEFAULT_OUTPUT_DIR", tmp_path)
     contexts = _make_all_contexts(seed_base=2100)
     rows = generate_stage2_rows(contexts=contexts)
 
-    _, manifest_path = write_stage2_artifacts(rows, "abc1234", output_dir=tmp_path)
+    _, manifest_path = write_stage2_artifacts(rows, "abc1234")
     manifest = json_module.loads(manifest_path.read_text(encoding="utf-8"))
 
     scope_dict = manifest.get("gap_depth_extOFI_diagnostic_counters")
@@ -1170,15 +1248,79 @@ def test_r1k_manifest_gap_depth_extofi_scope_dict_present_and_correct(tmp_path):
             f"Invalid scope value for {field}: {entry['scope']!r}"
         )
 
-    # Exactly one field is GRID-SCOPE: confirmation_finite_n.
+    # Exactly TWO fields must be GRID-SCOPE: confirmation_finite_n and alignment_true_n.
     grid_scope = [f for f in _I12_GAP_EXTRA_FIELDS if scope_dict[f]["scope"] == "GRID-SCOPE"]
-    assert grid_scope == ["confirmation_finite_n"], (
-        f"Expected only 'confirmation_finite_n' to be GRID-SCOPE, got: {grid_scope}"
+    assert set(grid_scope) == {"confirmation_finite_n", "alignment_true_n"}, (
+        f"Expected {{confirmation_finite_n, alignment_true_n}} to be GRID-SCOPE, "
+        f"got: {grid_scope}"
     )
 
-    # All remaining nine are EVENT-SCOPE.
+    # The remaining eight must be EVENT-SCOPE.
     event_scope = [f for f in _I12_GAP_EXTRA_FIELDS if scope_dict[f]["scope"] == "EVENT-SCOPE"]
-    assert len(event_scope) == 9
+    assert len(event_scope) == 8, (
+        f"Expected 8 EVENT-SCOPE counters, got {len(event_scope)}: {event_scope}"
+    )
+
+
+def test_r1_default_output_dir_resolves_to_recovery_reports_v1_2():
+    """R1: _STAGE2_DEFAULT_OUTPUT_DIR resolves to backend/recovery/reports/v1_2 (no write)."""
+    import recovery.v1_2_stage2 as _m
+    from pathlib import Path
+
+    expected = Path(_m.__file__).resolve().parent / "reports" / "v1_2"
+    assert _m._STAGE2_DEFAULT_OUTPUT_DIR == expected, (
+        f"Wrong default output dir.\nExpected: {expected}\nGot: {_m._STAGE2_DEFAULT_OUTPUT_DIR}"
+    )
+
+
+def test_r1_manifest_has_no_timestamp_field(tmp_path, monkeypatch):
+    """R1: manifest must NOT contain any timestamp or current-time field."""
+    import recovery.v1_2_stage2 as _m
+    monkeypatch.setattr(_m, "_STAGE2_DEFAULT_OUTPUT_DIR", tmp_path)
+    contexts = _make_all_contexts(seed_base=2150)
+    rows = generate_stage2_rows(contexts=contexts)
+
+    _, manifest_path = write_stage2_artifacts(rows, "abc1234")
+    manifest = json_module.loads(manifest_path.read_text(encoding="utf-8"))
+
+    # No time-related key may exist.
+    _forbidden_time_keys = {"timestamp", "created_at", "generated_at", "run_time", "time"}
+    present_time_keys = _forbidden_time_keys & set(manifest.keys())
+    assert not present_time_keys, (
+        f"Manifest contains forbidden time-based field(s): {sorted(present_time_keys)}"
+    )
+
+
+def test_r1_manifest_feature_matrix_contains_all_six_families(tmp_path, monkeypatch):
+    """R1: manifest feature_matrix lists exactly the six Stage2 families."""
+    import recovery.v1_2_stage2 as _m
+    monkeypatch.setattr(_m, "_STAGE2_DEFAULT_OUTPUT_DIR", tmp_path)
+    contexts = _make_all_contexts(seed_base=2200)
+    rows = generate_stage2_rows(contexts=contexts)
+
+    _, manifest_path = write_stage2_artifacts(rows, "abc1234")
+    manifest = json_module.loads(manifest_path.read_text(encoding="utf-8"))
+
+    assert "feature_matrix" in manifest
+    assert set(manifest["feature_matrix"]) == set(STAGE2_FAMILIES), (
+        f"feature_matrix mismatch: {manifest['feature_matrix']!r}"
+    )
+
+
+def test_r1_protected_names_guard_aborts_write(tmp_path, monkeypatch):
+    """R1: write aborts with AssertionError if a stage2 output name is in _PROTECTED_NAMES."""
+    import recovery.v1_2_stage2 as _m
+    monkeypatch.setattr(_m, "_STAGE2_DEFAULT_OUTPUT_DIR", tmp_path)
+    # Inject the CSV name into _PROTECTED_NAMES.
+    monkeypatch.setattr(
+        _m, "_PROTECTED_NAMES",
+        _m._PROTECTED_NAMES | frozenset(["stage2_overlap_diagnostics.csv"]),
+    )
+    contexts = _make_all_contexts(seed_base=2300)
+    rows = generate_stage2_rows(contexts=contexts)
+
+    with pytest.raises(AssertionError, match="_PROTECTED_NAMES"):
+        write_stage2_artifacts(rows, "abc1234")
 
 
 # ===========================================================================
@@ -1398,17 +1540,39 @@ def test_r3f_drift_guard_raises_on_N_mismatch():
         _assert_r3_p0_drift_guard(ctx, feature, horizon_ms, p0_row, threshold=0.25)
 
 
-def test_r3_skips_silently_when_metrics_empty():
-    """R3 (skip): drift guard does nothing when ctx.metrics is empty (synthetic contexts)."""
+def test_r3_empty_metrics_raises_r3_drift():
+    """R3: empty ctx.metrics raises AssertionError matching '^R3 DRIFT:' (fail-closed)."""
     feature = "bitget_ofi"
     horizon_ms = 1000
 
     ctx = _make_ctx(STAGE2_SESSIONS[0], "BTC")
-    assert not ctx.metrics, "Expected empty metrics for synthetic context"
+    assert not ctx.metrics, "Expected empty metrics dict from _make_ctx"
 
-    p0_row = {"accepted_n": 7, "mean_signed_bps": 3.5, "hit_rate": 0.7}
-    # Must not raise (ctx.metrics has no matching key).
-    _assert_r3_p0_drift_guard(ctx, feature, horizon_ms, p0_row, threshold=0.25)
+    p0_row = {"accepted_n": 5, "mean_signed_bps": 2.0, "hit_rate": 0.6}
+
+    with pytest.raises(AssertionError, match="^R3 DRIFT:"):
+        _assert_r3_p0_drift_guard(ctx, feature, horizon_ms, p0_row, threshold=0.3)
+
+
+def test_r3_missing_key_raises_r3_drift():
+    """R3: non-empty ctx.metrics but missing requested key raises AssertionError (fail-closed)."""
+    feature = "bitget_ofi"
+    horizon_ms = 1000
+    wrong_feature = "depth_imbalance_l1"  # A different key — bitget_ofi is absent.
+
+    ctx = _make_ctx_with_metrics(
+        wrong_feature, horizon_ms,
+        N=5, threshold=0.3, mean_signed_bps=2.0, hit_rate=0.6,
+    )
+    assert ctx.metrics, "Expected non-empty metrics"
+    assert (feature, horizon_ms, STAGE2_Q) not in ctx.metrics, (
+        "Expected the bitget_ofi key to be absent"
+    )
+
+    p0_row = {"accepted_n": 5, "mean_signed_bps": 2.0, "hit_rate": 0.6}
+
+    with pytest.raises(AssertionError, match="^R3 DRIFT:"):
+        _assert_r3_p0_drift_guard(ctx, feature, horizon_ms, p0_row, threshold=0.3)
 
 
 def test_r3_schema_guard_raises_on_missing_attribute():
