@@ -1,6 +1,14 @@
 [
   {
-    "content": "PHASE 6: Final report",
+    "content": "Run focused tests only (pytest test_v1_2_stage2.py)",
     "status": "completed"
+  },
+  {
+    "content": "Verify git diff — only 2 new files, zero existing file changes",
+    "status": "completed"
+  },
+  {
+    "content": "Compile and return full report",
+    "status": "in_progress"
   }
 ]
