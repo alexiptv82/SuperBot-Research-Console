@@ -1,0 +1,156 @@
+SUPERBOT_V1_2_CANDIDATE_SPEC
+version=1.2-frozen-candidate
+scope=PRE_NEW36_TECHNICAL_FREEZE
+document_class=CANONICAL_FROZEN_CANDIDATE
+editing_policy=IMMUTABLE_AFTER_HASH
+
+# ---------------------------------------------------------------------
+# 1. FROZEN AXIS SELECTION
+# ---------------------------------------------------------------------
+HZ=TZ
+HG=G1
+HC=C1
+HB=B0
+G1_THRESHOLD_SOURCE=TZ
+
+no_alternatives=true
+no_tuning=true
+no_new_candidate=true
+no_OLD36_rerun=true
+
+# ---------------------------------------------------------------------
+# 2. SHARED FROZEN SEMANTICS (inherited from V1.1 / Stage1 / Stage2)
+# ---------------------------------------------------------------------
+grid_ms=100
+k=horizon_ms//GRID_MS
+spacing_steps=max(10,k)
+grid_pos=immutable_ascending_after_frozen_stable_sort
+quality_admissibility=V1.1_frozen
+forward_return=canonical_t_plus_k;endpoint_finite_and_gt_zero;full_gate_NOT_reapplied_at_endpoint
+session_end=truncate_if(grid_pos+k>last_index)
+quantile_method=type7_linear_interpolation
+threshold_none_policy=fewer_than_2_finite_domain_values_yields_N=0
+asset_independence=BTC_and_ETH_computed_independently
+aggregation=V1.1_frozen
+hit_rate_convention=zero_is_a_miss
+dispersion_tertiles=quality_grid_frozen
+refactor_out_of_scope=true
+
+# ---------------------------------------------------------------------
+# 3. HZ = TZ  (raw simple-feature threshold semantics under HZ)
+# ---------------------------------------------------------------------
+HZ_domain=quality_admissible AND isfinite(signal) AND signal!=0.0
+HZ_threshold=type7_quantile(abs(signal),q)
+HZ_exact_zero_excluded_from_threshold_domain=true
+HZ_NaN_and_zero_remain_distinct=true
+HZ_fair_gap_threshold_semantics_unchanged=true
+
+# ---------------------------------------------------------------------
+# 4. HG = G1  (composite depthL1 + extOFI structural variant)
+# ---------------------------------------------------------------------
+G1_gate_feature=bitget_depth_imbalance_l1
+G1_gate_threshold=TZ(depth_imbalance_l1)_for_same_(session,asset,q)
+G1_ext_ofi_column=external_ofi_consensus_l1
+G1_pre_overlap_mask=
+    quality
+    AND isfinite(di_l1)
+    AND di_l1!=0
+    AND abs(di_l1)>=TZ_threshold
+    AND isfinite(ext_ofi)
+    AND ext_ofi!=0
+    AND sign(ext_ofi)==sign(di_l1)
+    AND isfinite(fwd)
+G1_direction=sign(di_l1)
+G1_confirmation=RAW_SIGN_ONLY;NO_Z_SCORE
+G1_fail_closed_invariant=
+    G1_pre_overlap_events must be a subset of
+    the parent frozen depth_imbalance_l1 gate
+    (quality AND isfinite(di_l1) AND di_l1!=0 AND abs(di_l1)>=TZ_threshold AND isfinite(fwd))
+G1_TZ_composition_end_to_end_measured_on_OLD36_after_freeze=NO
+G1_TZ_composition_must_not_trigger_OLD36_rerun=true
+
+# ---------------------------------------------------------------------
+# 5. HC = C1  (composite gap + depth + extOFI structural variant)
+# ---------------------------------------------------------------------
+C1_gap_feature=bitget_gap_to_fair_bps
+C1_gap_threshold=frozen_fair_gap_threshold_type7_quantile;domain_unchanged_by_HZ_zero_rule
+C1_pre_overlap_mask=
+    quality
+    AND isfinite(gap)
+    AND gap!=0
+    AND abs(gap)>=gap_threshold
+    AND isfinite(di_l1)
+    AND di_l1!=0
+    AND sign(di_l1)==-sign(gap)
+    AND isfinite(ext_ofi)
+    AND ext_ofi!=0
+    AND sign(ext_ofi)==-sign(gap)
+    AND isfinite(fwd)
+C1_direction=-sign(gap)
+C1_confirmation=RAW_SIGNS_ONLY
+C1_prohibited_features={z_di_l1,z_ext_ofi,z_gap_d}
+C1_fail_closed_invariant=
+    C1_pre_overlap_events must be a subset of
+    the shared gap threshold-crossing set before confirmation
+    (quality AND isfinite(gap) AND gap!=0 AND abs(gap)>=gap_threshold AND isfinite(fwd))
+C0_reference_only=D=mean(z_di_l1,z_ext_ofi);sign(D)==-sign(gap);NOT_CANDIDATE
+
+# ---------------------------------------------------------------------
+# 6. HB = B0  (greedy earliest-first overlap filter)
+# ---------------------------------------------------------------------
+B0_algorithm=
+    process ascending grid_pos;
+    accept first event;
+    subsequently accept iff (pos - last_accepted) >= spacing_steps
+B0_equality_policy=ACCEPTED
+B1_reference_only=strict_greater_than;NOT_CANDIDATE;may_exist_as_predeclared_diagnostic_control_only
+B1_never_replaces_B0=true
+conflict_definition=distance<spacing_steps
+
+# ---------------------------------------------------------------------
+# 7. INVARIANTS THE CANDIDATE GENERATOR MUST ENFORCE
+# ---------------------------------------------------------------------
+I_CANDIDATE_1=grid_pos_is_immutable_after_stable_sort
+I_CANDIDATE_2=spacing_steps=max(10,k)
+I_CANDIDATE_3=B0_greedy_uses_>=_spacing
+I_CANDIDATE_4=B1_diagnostic_uses_strict_>_spacing
+I_G1_PARENT_SUBSET=G1_pre_overlap ⊆ depth_l1_parent_gate
+I_C1_GAP_SUBSET=C1_pre_overlap ⊆ gap_parent_threshold_crossing_set
+I_TZ_ZERO_EXCLUSION=exact_zeros_excluded_from_TZ_threshold_domain
+I_FAIR_GAP_UNCHANGED=fair_gap_threshold_domain_unchanged_by_HZ_zero_rule
+I_NO_Z_SCORE_IN_CANDIDATE=candidate_uses_only_raw_signs_for_G1_and_C1_confirmation
+I_HB_I11=B1.accepted_n <= B0.accepted_n per_paired_case
+I_HB_I12=if exact_spacing_pair_n==0 then B0 and B1 identical per_paired_case
+I_NO_GOLDEN_IMPORTS=candidate_generator_must_not_import_or_read_golden_artifacts
+I_NO_NEW36_ACCESS=candidate_generator_must_not_access_NEW36_raw_or_quantitative_artifacts
+I_FROZEN_ANALYSIS_ENGINE=remain_NOT_CONFIGURED;accepts_input=false
+
+# ---------------------------------------------------------------------
+# 8. OUT-OF-SCOPE / EXPLICITLY DISCLOSED
+# ---------------------------------------------------------------------
+G1_TZ_end_to_end_measurement_on_OLD36=NOT_PERFORMED_AFTER_FREEZE
+OLD36_rerun_disposition=FORBIDDEN
+NEW36_execution_by_this_document=FORBIDDEN
+FrozenAnalysisEngine_activation_by_this_document=FORBIDDEN
+Offline_golden_comparison_phase=SEPARATE_PHASE_AFTER_CANDIDATE_ARTIFACT_HASHING
+
+# ---------------------------------------------------------------------
+# 9. FUTURE NEW36 GENERATOR CONTRACT
+# ---------------------------------------------------------------------
+future_NEW36_candidate_generator_must=
+    a) implement exactly the semantics above
+    b) never import or read golden artifacts
+    c) never open NEW36 raw before preflight (Section 12 of task) passes
+    d) hash candidate artifacts BEFORE any golden comparison
+    e) leave FrozenAnalysisEngine untouched (NOT_CONFIGURED)
+future_NEW36_candidate_generator_must_not=
+    a) rerun OLD36
+    b) alter frozen semantics under a different name
+    c) treat B1 as candidate at any time
+    d) reintroduce z-score confirmation into G1 or C1
+
+# ---------------------------------------------------------------------
+# 10. TERMINATION
+# ---------------------------------------------------------------------
+document_terminates_here=true
+append_after_hash=FORBIDDEN

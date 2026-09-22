@@ -1,0 +1,198 @@
+SUPERBOT_V1_2_ACCEPTANCE_CRITERIA
+version=1.2-pre-new36-final
+scope=PRE_NEW36_ACCEPTANCE
+document_class=CANONICAL_ACCEPTANCE_CRITERIA
+editing_policy=IMMUTABLE_AFTER_HASH
+sections_present=B,C,D,E,F,G,H,I,J,K,L
+
+# =====================================================================
+# SECTION B — CANDIDATE IDENTITY AND SAFETY CONTEXT
+# =====================================================================
+candidate=HZ=TZ, HG=G1, HC=C1, HB=B0, G1_THRESHOLD_SOURCE=TZ
+candidate_spec_document=V1_2_CANDIDATE_SPEC.txt
+safety_context=
+    NEW36_quantitative_access=NO
+    NEW36_run_count=0 at freeze
+    OLD36_rerun_count=0 at freeze
+    golden_read_by_candidate_generator=NO
+    FrozenAnalysisEngine=NOT_CONFIGURED
+    FrozenAnalysisEngine_accepts_input=false
+    OLD36_raw_ready_changed=NO
+
+# =====================================================================
+# SECTION C — ORDERED CELL CLASSIFICATION (supersedes former C.6)
+# =====================================================================
+evaluate_each_applicable_HG_HC_cell_in_this_exact_order=
+    1. NOT_APPLICABLE:
+         threshold=None on either side (golden or candidate).
+    2. CATASTROPHIC_STRUCTURAL:
+         (golden_N==0 AND candidate_N>0)
+         OR
+         (candidate_N==0 AND golden_N>0).
+    3. WITHIN_ZERO_ZERO:
+         golden_N==0 AND candidate_N==0.
+         Classified as WITHIN.
+    4. INVALID_RUN:
+         required falsified baseline missing.
+    5. AXIS_UNVERIFIABLE:
+         required control envelope unavailable.
+    6. FALSIFIED_BASELINE_ANOMALY:
+         F = abs(relN_falsified)
+         if F <= env then axis = FAIL.
+    7. Otherwise apply band classification:
+         WITHIN:        abs(relN) <= env
+         CATASTROPHIC:  abs(relN) >= sqrt(env * F)
+         ELEVATED:      everything remaining
+         (WITHIN takes precedence when both WITHIN and ELEVATED could match;
+          CATASTROPHIC takes precedence over ELEVATED but not over WITHIN.)
+epsilon_policy=NO_EPSILON
+hidden_tolerance_policy=FORBIDDEN
+
+# =====================================================================
+# SECTION D — ENVELOPE RATIO r AND MEDIAN
+# =====================================================================
+envelope_ratio_definition=
+    if env >  0                     : r = abs(relN) / env
+    if env == 0 AND abs(relN) == 0  : r = 0
+    if env == 0 AND abs(relN) >  0  : r = +infinity
+    if structural CATASTROPHIC cell : r = +infinity
+median_definition=
+    odd  N: central sorted value
+    even N: arithmetic mean of the two central values
+NOT_APPLICABLE_cell_treatment=
+    excluded from median computation;
+    remains in inventory.
+
+# =====================================================================
+# SECTION E — HG VERDICT ARCHITECTURE
+# =====================================================================
+HG_component_1=N_reconstruction (per-cell classification of Section C over all applicable HG cells)
+HG_component_2=exact_G1_gate_threshold_prediction (threshold-level match)
+threshold_exactness_tolerance=1e-12
+HG_verdict=
+    PASS:
+        component_1 verdict = PASS
+        AND component_2 verdict = PASS
+    FAIL:
+        component_1 FAILS
+        OR component_2 FAILS
+        OR any cell classified FALSIFIED_BASELINE_ANOMALY
+    PARTIAL:
+        otherwise, provided:
+            no CATASTROPHIC cell AND
+            median(r) over applicable cells <= 1
+HG_component_1_PASS_requires=
+    no CATASTROPHIC cell
+    AND no FALSIFIED_BASELINE_ANOMALY
+    AND median(r) <= 1
+    AND no INVALID_RUN
+
+# =====================================================================
+# SECTION F — HC VERDICT ARCHITECTURE
+# =====================================================================
+HC_component_1=N_reconstruction (per-cell classification of Section C over all applicable HC cells)
+HC_component_2=exact_C1_fair_gap_threshold_prediction (frozen fair-gap threshold; tolerance 1e-12)
+HC_verdict=same_architecture_as_HG
+HC_PARTIAL_conditions=identical_to_HG (no CATASTROPHIC; median(r)<=1)
+
+# =====================================================================
+# SECTION G — HB RULE (DISCRIMINATING CELLS)
+# =====================================================================
+discriminating_cell_definition=
+    exact_spacing_pair_n > 0
+    AND
+    B0.accepted_positions_sha256 != B1.accepted_positions_sha256
+HB_evidence_scope=only_discriminating_control_family_cells
+HB_comparison=
+    per_discriminating_cell:
+        compare abs(relN(B0)) versus abs(relN(B1))
+HB_verdict=
+    PASS:
+        at least one discriminating control cell exists
+        AND B1 is strictly better in ZERO discriminating cells
+        AND B0 is strictly better in AT LEAST ONE discriminating cell
+        AND I11 holds everywhere
+        AND I12 holds everywhere
+    FAIL:
+        B1 strictly better than B0 in EVERY discriminating control cell
+        OR I11 violation anywhere
+        OR I12 violation anywhere
+    PARTIAL:
+        discriminating cells exist
+        AND results are mixed (neither PASS nor FAIL conditions met)
+    UNVERIFIABLE:
+        no discriminating control cell exists
+unresolved_families=reported_only;do_not_determine_HB_verdict
+B1_candidate_status=NEVER_CANDIDATE
+
+# =====================================================================
+# SECTION H — HZ RULE
+# =====================================================================
+HZ_UNVERIFIABLE=no_HZ_DISCRIMINATING_cell_exists
+HZ_PASS_PARTIAL_FAIL_rules=INHERIT_PREVIOUSLY_APPROVED_HZ_RULES
+HZ_previously_approved_rules_summary=
+    PASS:
+        every HZ_DISCRIMINATING cell shows candidate threshold match
+        AND no CATASTROPHIC_STRUCTURAL cell across HZ inventory
+        AND median(r) <= 1
+    FAIL:
+        any threshold mismatch beyond 1e-12 tolerance
+        OR any CATASTROPHIC_STRUCTURAL cell
+        OR any FALSIFIED_BASELINE_ANOMALY
+    PARTIAL:
+        otherwise, provided no FAIL condition holds
+
+# =====================================================================
+# SECTION I — COLLECTOR / PIPELINE MISMATCH
+# =====================================================================
+before_any_quantitative_NEW36_access=
+    if collector_sha_mismatch OR pipeline_sha_mismatch:
+        verdict = PRECONDITION_FAIL
+        run MUST NOT start
+        one_shot_authorization = NOT_CONSUMED
+after_one_shot_started_or_any_quantitative_NEW36_access=
+    if collector_sha_mismatch OR pipeline_sha_mismatch:
+        verdict = INVALID_RUN
+        no analytical retry
+        one_shot_authorization = CONSUMED_INVALID
+
+# =====================================================================
+# SECTION J — NUMERICAL CONSTANTS (EXHAUSTIVE)
+# =====================================================================
+threshold_exactness_tolerance=1e-12
+control_envelope_multiplier=1.0
+new_empirical_tolerance=FORBIDDEN
+tolerance_expansion=FORBIDDEN
+
+# =====================================================================
+# SECTION K — AGGREGATION & PARTIAL RULES
+# =====================================================================
+median_r_scope=applicable_cells_only (NOT_APPLICABLE excluded; structural CATASTROPHIC cells enter with r=+inf)
+PARTIAL_for_HG_HC_requires=
+    no CATASTROPHIC cell in axis inventory
+    AND median(r) over applicable cells <= 1
+PARTIAL_for_HB_requires=
+    discriminating cells exist
+    AND mixed results without meeting PASS or FAIL
+Axis_verdict_aggregation_to_overall=
+    PASS:  every axis in {HZ,HG,HC,HB} is PASS
+    FAIL:  any axis is FAIL OR any INVALID_RUN present
+    PARTIAL: no FAIL, at least one PARTIAL, remainder PASS or UNVERIFIABLE
+    UNVERIFIABLE: no FAIL, no PARTIAL, at least one UNVERIFIABLE
+
+# =====================================================================
+# SECTION L — FALSIFIED BASELINE HANDLING
+# =====================================================================
+falsified_baseline_role=orthogonal_null_control_for_anomaly_detection
+required_falsified_baseline_missing=INVALID_RUN (per Section C step 4)
+FALSIFIED_BASELINE_ANOMALY_definition=
+    F = abs(relN_falsified)
+    F <= env  =>  the cell is a FALSIFIED_BASELINE_ANOMALY
+    a FALSIFIED_BASELINE_ANOMALY in any cell forces its owning axis to FAIL
+falsified_baseline_role_in_CATASTROPHIC_band=
+    used in ratio bound: CATASTROPHIC if abs(relN) >= sqrt(env * F)
+    when F==0 the bound collapses to 0 (all non-WITHIN cells become CATASTROPHIC candidates,
+    but Section C order still permits WITHIN before CATASTROPHIC)
+
+document_terminates_here=true
+append_after_hash=FORBIDDEN
