@@ -1,30 +1,22 @@
 [
   {
-    "content": "Precheck: verify HEAD/SHA256 (PASSED)",
+    "content": "READ-ONLY VERIFICATION: Verify CSV, Manifest, Provenance artifacts and cross-check all stats",
     "status": "completed"
   },
   {
-    "content": "R3: replace fail-open with fail-closed in v1_2_stage2.py",
+    "content": "PACKAGING: Copy artifacts to /tmp/stage2_real_run_export/, create SHA256SUMS.txt and FILE_SIZES.txt",
     "status": "completed"
   },
   {
-    "content": "R1: fix output dir, CSV name, remove output_dir param, PROTECTED_NAMES guard, manifest keys, alignment_true_n scope in v1_2_stage2.py",
+    "content": "ZIP CREATION: Create SUPERBOT_V1_2_STAGE2_REAL_RUN_f89049e.zip with exactly 5 root-level entries",
     "status": "completed"
   },
   {
-    "content": "Tests: add _populate_matching_r3_metrics helper and update _make_all_contexts",
+    "content": "SELF-CHECK: Verify ZIP entry count, extract, re-verify hashes/sizes, confirm git HEAD unchanged",
     "status": "completed"
   },
   {
-    "content": "Tests: replace test_r3_skips_silently with fail-closed tests; update all R1 tests to monkeypatch",
-    "status": "completed"
-  },
-  {
-    "content": "Run pytest backend/tests/test_v1_2_stage2.py; all must pass",
-    "status": "completed"
-  },
-  {
-    "content": "Post-patch scope audit: only 2 authorized files changed",
+    "content": "FINAL REPORT: Output full formatted report with FINAL_VERDICT only if all checks pass",
     "status": "completed"
   }
 ]

@@ -1,0 +1,100 @@
+{
+  "GRID_MS": 100,
+  "P0_definition": "greedy_earliest_first: accept next candidate event iff (pos - last_accepted_pos) >= spacing_steps; V1.1 frozen engine semantics (_greedy_overlap_filter)",
+  "P1_definition": "greedy_latest_first: process events descending, accept iff (last_accepted_pos - pos) >= spacing_steps, output sorted ascending (Stage2 new policy, _greedy_latest_first_filter)",
+  "actual_row_count": 144,
+  "actual_unique_case_count": 72,
+  "assets": [
+    "BTC",
+    "ETH"
+  ],
+  "candidate_generation_frozen_before_golden_comparison": true,
+  "diagnostic_version": "V1.2_STAGE2_FINAL",
+  "engine_py_modified": false,
+  "expected_row_count": 144,
+  "expected_unique_case_count": 72,
+  "feature_matrix": [
+    "bitget_ofi",
+    "depthL1_extOFI",
+    "gap_depth_extOFI",
+    "depth_imbalance_l1",
+    "gap_depthL1",
+    "gap_localOFI"
+  ],
+  "fingerprint_encoding_definition": "SHA256 of accepted positions sorted ascending, encoded as raw concatenated 8-byte little-endian signed int64, no delimiter; empty set = SHA256 of zero-length byte string; lowercase hex digest",
+  "gap_depth_extOFI_diagnostic_counters": {
+    "aligned_forward_valid_n": {
+      "domain": "gap_event_domain AND gap!=0 AND |gap|>=gap_threshold AND alignment=True AND isfinite(forward_return) (final pre-overlap event set)",
+      "scope": "EVENT-SCOPE"
+    },
+    "aligned_negative_pair_n": {
+      "domain": "pre_overlap_events AND D_ext<0 AND gap>0",
+      "scope": "EVENT-SCOPE"
+    },
+    "aligned_positive_pair_n": {
+      "domain": "pre_overlap_events AND D_ext>0 AND gap<0",
+      "scope": "EVENT-SCOPE"
+    },
+    "alignment_true_n": {
+      "domain": "gap_event_domain AND alignment=True; pre-threshold grid-domain count",
+      "scope": "GRID-SCOPE"
+    },
+    "confirmation_component_negative_n": {
+      "domain": "pre_alignment_events AND D_ext<0",
+      "scope": "EVENT-SCOPE"
+    },
+    "confirmation_component_positive_n": {
+      "domain": "pre_alignment_events AND D_ext>0",
+      "scope": "EVENT-SCOPE"
+    },
+    "confirmation_finite_n": {
+      "domain": "quality_admissible AND isfinite(confirmation_component)",
+      "scope": "GRID-SCOPE"
+    },
+    "direction_negative_n": {
+      "domain": "pre_overlap_events AND gap>0 (direction=-1, sell)",
+      "scope": "EVENT-SCOPE"
+    },
+    "direction_positive_n": {
+      "domain": "pre_overlap_events AND gap<0 (direction=+1, buy)",
+      "scope": "EVENT-SCOPE"
+    },
+    "gap_threshold_crossing_n": {
+      "domain": "gap_event_domain AND gap!=0 AND |gap|>=gap_threshold (pre-alignment threshold crossings within gap_event_domain)",
+      "scope": "EVENT-SCOPE"
+    }
+  },
+  "historical_target_numerics_read_by_generator": false,
+  "horizons_ms": [
+    1000,
+    5000,
+    30000
+  ],
+  "k_values": {
+    "1000": 10,
+    "30000": 300,
+    "5000": 50
+  },
+  "mean_abs_move_domain": "accepted_events",
+  "new36_opened": false,
+  "policy_ids": [
+    "P0",
+    "P1"
+  ],
+  "q": 0.9,
+  "runtime_source_commit": "f89049e574f111514bd7609f6d8a695c7fcf9793",
+  "session_ids": [
+    "20260905T073818Z_e44d99bd",
+    "20260906T221530Z_db18dc51"
+  ],
+  "spacing_boundary_semantics": "inclusive: distance >= spacing_steps \u2192 accepted (non-conflicting); strict: distance < spacing_steps \u2192 conflicting",
+  "spacing_steps": {
+    "1000": 10,
+    "30000": 300,
+    "5000": 50
+  },
+  "stage1_artifacts_modified": false,
+  "stage2_overlap_diagnostics_sha256": "701c6680a1ba32ccca67e0ab4f82799932d0ace8df8840d2b10d1d91d3807c7f",
+  "stage2_overlap_diagnostics_size": 56619,
+  "v1_1_reports_modified": false
+}
