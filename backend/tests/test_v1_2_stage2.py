@@ -21,6 +21,9 @@ import pytest
 # ── path setup ──────────────────────────────────────────────────────────────
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import csv as csv_module
+import json as json_module
+
 from recovery.v1_2_stage2 import (
     STAGE2_ASSETS,
     STAGE2_FAMILIES,
@@ -31,17 +34,24 @@ from recovery.v1_2_stage2 import (
     STAGE2_Q,
     STAGE2_SESSIONS,
     STAGE2_UNIQUE_CASES,
+    STAGE2_VERSION,
     Stage2Case,
+    _STAGE2_CSV_COLUMNS,
+    _I12_GAP_EXTRA_FIELDS,
+    _I12_SHARED_FIELDS,
+    _assert_i12_actual_field_comparison,
+    _assert_r3_p0_drift_guard,
+    _compute_policy_metrics,
+    _extract_pre_overlap,
     _greedy_latest_first_filter,
+    _PreOverlapResult,
     _sha256_positions,
     compute_pre_overlap_diagnostics,
     expand_stage2_matrix,
     generate_stage2_rows,
-    _extract_pre_overlap,
-    _compute_policy_metrics,
-    _PreOverlapResult,
+    write_stage2_artifacts,
 )
-from recovery.engine import GRID_MS, _greedy_overlap_filter
+from recovery.engine import GRID_MS, BlockMetrics, _greedy_overlap_filter
 from recovery.v1_2_diagnostics import _BlockContext
 
 
@@ -410,6 +420,7 @@ def _make_pre_overlap_result(
         forward_eligible_n=len(positions),
         overlap_spacing_steps=10,
         gap_extra=None,
+        threshold=None,  # not needed for policy-metrics tests
     )
 
 
@@ -853,7 +864,6 @@ def test_extract_pre_overlap_gap_extra_only_for_gap_depth_extofi():
         if feature == "gap_depth_extOFI":
             assert result.gap_extra is not None, "gap_extra must be set for gap_depth_extOFI"
             # Verify all 10 extra fields are present
-            from recovery.v1_2_stage2 import _I12_GAP_EXTRA_FIELDS
             for field in _I12_GAP_EXTRA_FIELDS:
                 assert field in result.gap_extra, f"missing gap_extra field: {field}"
         else:
@@ -916,7 +926,6 @@ def test_gap_depth_extofi_rows_have_non_none_gap_extras():
     all other feature rows have None for those fields."""
     contexts = _make_all_contexts(seed_base=1000)
     rows = generate_stage2_rows(contexts=contexts)
-    from recovery.v1_2_stage2 import _I12_GAP_EXTRA_FIELDS
     for row in rows:
         if row["feature"] == "gap_depth_extOFI":
             for field in _I12_GAP_EXTRA_FIELDS:
@@ -928,3 +937,529 @@ def test_gap_depth_extofi_rows_have_non_none_gap_extras():
                 assert row[field] is None, (
                     f"Non-gap row has non-None {field}: {row['feature']}"
                 )
+
+
+
+# ===========================================================================
+# Patch 1 helpers
+# ===========================================================================
+
+def _make_ctx_with_metrics(
+    feature: str,
+    horizon_ms: int,
+    N: int,
+    threshold: "float | None",
+    mean_signed_bps: "float | None",
+    hit_rate: "float | None",
+    mean_abs_move: "float | None" = 0.0,
+    seed: int = 42,
+) -> _BlockContext:
+    """Build a synthetic _BlockContext pre-populated with a matching BlockMetrics entry."""
+    ctx = _make_ctx(STAGE2_SESSIONS[0], "BTC", seed=seed)
+    bm = BlockMetrics(
+        session_id=STAGE2_SESSIONS[0],
+        asset="BTC",
+        feature=feature,
+        horizon_ms=horizon_ms,
+        q=STAGE2_Q,
+        N=N,
+        threshold=threshold,
+        mean_signed_bps=mean_signed_bps,
+        hit_rate=hit_rate,
+        median_signed_bps=None,
+        mean_abs_move=mean_abs_move,
+    )
+    ctx.metrics[(feature, horizon_ms, STAGE2_Q)] = bm
+    return ctx
+
+
+# ===========================================================================
+# R1: Final artifact writer tests
+# ===========================================================================
+
+def test_r1a_write_creates_csv_and_manifest(tmp_path):
+    """R1-A: write_stage2_artifacts creates both CSV and manifest on first call."""
+    contexts = _make_all_contexts(seed_base=1100)
+    rows = generate_stage2_rows(contexts=contexts)
+
+    csv_path, manifest_path = write_stage2_artifacts(rows, "abc1234", output_dir=tmp_path)
+
+    assert csv_path.exists(), "CSV file not created"
+    assert manifest_path.exists(), "Manifest file not created"
+    assert csv_path.name == "stage2_policy_diagnostics.csv"
+    assert manifest_path.name == "stage2_manifest.json"
+
+
+def test_r1b_second_call_raises_file_exists_error(tmp_path):
+    """R1-B: second call to write_stage2_artifacts raises FileExistsError."""
+    contexts = _make_all_contexts(seed_base=1200)
+    rows = generate_stage2_rows(contexts=contexts)
+
+    write_stage2_artifacts(rows, "abc1234", output_dir=tmp_path)
+
+    with pytest.raises(FileExistsError):
+        write_stage2_artifacts(rows, "abc1234", output_dir=tmp_path)
+
+
+def test_r1c_csv_columns_in_fixed_deterministic_order(tmp_path):
+    """R1-C: CSV columns match _STAGE2_CSV_COLUMNS exactly (fixed deterministic order)."""
+    import pandas as _pd
+    contexts = _make_all_contexts(seed_base=1300)
+    rows = generate_stage2_rows(contexts=contexts)
+
+    csv_path, _ = write_stage2_artifacts(rows, "abc1234", output_dir=tmp_path)
+
+    df = _pd.read_csv(csv_path)
+    assert list(df.columns) == list(_STAGE2_CSV_COLUMNS), (
+        f"Column order mismatch.\nExpected: {list(_STAGE2_CSV_COLUMNS)}\nGot: {list(df.columns)}"
+    )
+
+
+def test_r1d_manifest_top_level_keys_are_sorted(tmp_path):
+    """R1-D: manifest JSON top-level keys are sorted (sort_keys=True serialisation)."""
+    contexts = _make_all_contexts(seed_base=1400)
+    rows = generate_stage2_rows(contexts=contexts)
+
+    _, manifest_path = write_stage2_artifacts(rows, "abc1234", output_dir=tmp_path)
+
+    manifest = json_module.loads(manifest_path.read_text(encoding="utf-8"))
+    keys = list(manifest.keys())
+    assert keys == sorted(keys), f"Manifest top-level keys not sorted: {keys}"
+
+
+def test_r1e_existing_csv_alone_raises_file_exists_error(tmp_path):
+    """R1-E: if CSV already exists (manifest absent), FileExistsError is raised."""
+    contexts = _make_all_contexts(seed_base=1500)
+    rows = generate_stage2_rows(contexts=contexts)
+
+    # Pre-create only the CSV
+    (tmp_path / "stage2_policy_diagnostics.csv").write_text("dummy")
+
+    with pytest.raises(FileExistsError):
+        write_stage2_artifacts(rows, "abc1234", output_dir=tmp_path)
+
+
+def test_r1f_existing_manifest_alone_raises_file_exists_error(tmp_path):
+    """R1-F: if manifest already exists (CSV absent), FileExistsError is raised."""
+    contexts = _make_all_contexts(seed_base=1600)
+    rows = generate_stage2_rows(contexts=contexts)
+
+    # Pre-create only the manifest
+    (tmp_path / "stage2_manifest.json").write_text("{}")
+
+    with pytest.raises(FileExistsError):
+        write_stage2_artifacts(rows, "abc1234", output_dir=tmp_path)
+
+
+def test_r1g_none_values_produce_empty_csv_fields(tmp_path):
+    """R1-G: None row values appear as empty fields (not 'None' or 'nan') in the CSV."""
+    contexts = _make_all_contexts(seed_base=1700)
+    rows = generate_stage2_rows(contexts=contexts)
+
+    csv_path, _ = write_stage2_artifacts(rows, "abc1234", output_dir=tmp_path)
+
+    # For non-gap_depth_extOFI rows the gap-extra fields must be None → empty string.
+    with csv_path.open(newline="", encoding="utf-8") as f:
+        reader = csv_module.DictReader(f)
+        found_non_gap = False
+        for row in reader:
+            if row["feature"] != "gap_depth_extOFI":
+                assert row["gap_threshold_crossing_n"] == "", (
+                    f"Expected empty string for None field, "
+                    f"got: {row['gap_threshold_crossing_n']!r}"
+                )
+                found_non_gap = True
+                break
+        assert found_non_gap, "No non-gap_depth_extOFI row found in CSV"
+
+
+def test_r1h_manifest_csv_sha256_matches_written_file(tmp_path):
+    """R1-H: manifest csv_sha256 == SHA256 of the exact bytes written to disk."""
+    import hashlib as _hl
+    contexts = _make_all_contexts(seed_base=1800)
+    rows = generate_stage2_rows(contexts=contexts)
+
+    csv_path, manifest_path = write_stage2_artifacts(rows, "abc1234", output_dir=tmp_path)
+
+    csv_bytes = csv_path.read_bytes()
+    actual_sha256 = _hl.sha256(csv_bytes).hexdigest()
+
+    manifest = json_module.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["csv_sha256"] == actual_sha256, (
+        f"SHA256 mismatch: manifest={manifest['csv_sha256']!r} actual={actual_sha256!r}"
+    )
+
+
+def test_r1i_manifest_csv_byte_size_matches_actual(tmp_path):
+    """R1-I: manifest csv_byte_size == actual byte size of the written CSV file."""
+    contexts = _make_all_contexts(seed_base=1900)
+    rows = generate_stage2_rows(contexts=contexts)
+
+    csv_path, manifest_path = write_stage2_artifacts(rows, "abc1234", output_dir=tmp_path)
+
+    actual_byte_size = csv_path.stat().st_size
+    manifest = json_module.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["csv_byte_size"] == actual_byte_size, (
+        f"Byte size mismatch: manifest={manifest['csv_byte_size']} actual={actual_byte_size}"
+    )
+
+
+def test_r1j_manifest_complete_required_field_set(tmp_path):
+    """R1-J: manifest contains the complete required FINAL/DRAFT3 field set."""
+    _REQUIRED_MANIFEST_KEYS = {
+        "GRID_MS",
+        "P0_definition",
+        "P1_definition",
+        "actual_row_count",
+        "actual_unique_case_count",
+        "assets",
+        "candidate_generation_frozen_before_golden_comparison",
+        "csv_byte_size",
+        "csv_sha256",
+        "diagnostic_version",
+        "engine_py_modified",
+        "expected_row_count",
+        "expected_unique_case_count",
+        "feature_families",
+        "fingerprint_encoding_definition",
+        "gap_depth_extOFI_diagnostic_counters",
+        "historical_target_numerics_read_by_generator",
+        "horizons_ms",
+        "k_values",
+        "mean_abs_move_domain",
+        "new36_opened",
+        "policy_ids",
+        "q",
+        "runtime_source_commit",
+        "session_ids",
+        "spacing_boundary_semantics",
+        "spacing_steps",
+        "stage1_artifacts_modified",
+        "v1_1_reports_modified",
+    }
+
+    contexts = _make_all_contexts(seed_base=2000)
+    rows = generate_stage2_rows(contexts=contexts)
+
+    _, manifest_path = write_stage2_artifacts(rows, "abc1234", output_dir=tmp_path)
+    manifest = json_module.loads(manifest_path.read_text(encoding="utf-8"))
+
+    missing = _REQUIRED_MANIFEST_KEYS - set(manifest.keys())
+    assert not missing, f"Manifest missing required fields: {sorted(missing)}"
+
+
+def test_r1k_manifest_gap_depth_extofi_scope_dict_present_and_correct(tmp_path):
+    """R1-K: gap_depth_extOFI_diagnostic_counters has all 10 fields with correct SCOPE labels."""
+    contexts = _make_all_contexts(seed_base=2100)
+    rows = generate_stage2_rows(contexts=contexts)
+
+    _, manifest_path = write_stage2_artifacts(rows, "abc1234", output_dir=tmp_path)
+    manifest = json_module.loads(manifest_path.read_text(encoding="utf-8"))
+
+    scope_dict = manifest.get("gap_depth_extOFI_diagnostic_counters")
+    assert scope_dict is not None, "gap_depth_extOFI_diagnostic_counters missing from manifest"
+    assert isinstance(scope_dict, dict)
+
+    # All 10 _I12_GAP_EXTRA_FIELDS must be present.
+    for field in _I12_GAP_EXTRA_FIELDS:
+        assert field in scope_dict, f"Missing counter in scope dict: {field}"
+        entry = scope_dict[field]
+        assert "scope" in entry, f"Missing 'scope' key for counter: {field}"
+        assert "domain" in entry, f"Missing 'domain' key for counter: {field}"
+        assert entry["scope"] in ("GRID-SCOPE", "EVENT-SCOPE"), (
+            f"Invalid scope value for {field}: {entry['scope']!r}"
+        )
+
+    # Exactly one field is GRID-SCOPE: confirmation_finite_n.
+    grid_scope = [f for f in _I12_GAP_EXTRA_FIELDS if scope_dict[f]["scope"] == "GRID-SCOPE"]
+    assert grid_scope == ["confirmation_finite_n"], (
+        f"Expected only 'confirmation_finite_n' to be GRID-SCOPE, got: {grid_scope}"
+    )
+
+    # All remaining nine are EVENT-SCOPE.
+    event_scope = [f for f in _I12_GAP_EXTRA_FIELDS if scope_dict[f]["scope"] == "EVENT-SCOPE"]
+    assert len(event_scope) == 9
+
+
+# ===========================================================================
+# R2: Real I12 Enforcement (actual emitted field comparison) tests
+# ===========================================================================
+
+def test_r2a_i12_actual_comparison_passes_on_equal_shared_fields():
+    """R2-A: _assert_i12_actual_field_comparison passes when P0 == P1 on all 10 shared fields."""
+    shared: dict = {
+        "feature": "bitget_ofi",
+        "pre_overlap_event_n": 5,
+        "first_event_grid_pos": 10,
+        "last_event_grid_pos": 100,
+        "pre_overlap_positions_sha256": "abc123def456",
+        "gap_steps_min": 5,
+        "gap_steps_median": 10.0,
+        "gap_steps_max": 20,
+        "conflicting_pair_n": 2,
+        "fraction_events_with_neighbor_inside_spacing": 0.4,
+        "maximum_local_cluster_size": 2,
+    }
+    row_p0 = dict(shared)
+    row_p1 = dict(shared)
+
+    # Must not raise.
+    _assert_i12_actual_field_comparison(row_p0, row_p1)
+
+
+def test_r2b_i12_raises_assertionerror_on_shared_field_mismatch():
+    """R2-B: I12 raises AssertionError('I12 FAIL ...') when a shared pre-overlap field differs."""
+    base: dict = {
+        "feature": "bitget_ofi",
+        "pre_overlap_event_n": 5,
+        "first_event_grid_pos": 10,
+        "last_event_grid_pos": 100,
+        "pre_overlap_positions_sha256": "abc123def456",
+        "gap_steps_min": 5,
+        "gap_steps_median": 10.0,
+        "gap_steps_max": 20,
+        "conflicting_pair_n": 2,
+        "fraction_events_with_neighbor_inside_spacing": 0.4,
+        "maximum_local_cluster_size": 2,
+    }
+    row_p0 = dict(base)
+    row_p1 = dict(base)
+    row_p1["pre_overlap_event_n"] = 99  # Deliberate mismatch.
+
+    with pytest.raises(AssertionError, match="I12 FAIL"):
+        _assert_i12_actual_field_comparison(row_p0, row_p1)
+
+
+def test_r2c_i12_raises_assertionerror_on_gap_extra_field_mismatch():
+    """R2-C: I12 raises AssertionError('I12 FAIL ...') on gap_depth_extOFI extra field mismatch."""
+    shared: dict = {
+        "feature": "gap_depth_extOFI",
+        "pre_overlap_event_n": 10,
+        "first_event_grid_pos": 5,
+        "last_event_grid_pos": 200,
+        "pre_overlap_positions_sha256": "xyz789",
+        "gap_steps_min": 8,
+        "gap_steps_median": 15.0,
+        "gap_steps_max": 30,
+        "conflicting_pair_n": 3,
+        "fraction_events_with_neighbor_inside_spacing": 0.3,
+        "maximum_local_cluster_size": 2,
+        **{f: 10 for f in _I12_GAP_EXTRA_FIELDS},
+    }
+    row_p0 = dict(shared)
+    row_p1 = dict(shared)
+    row_p1["gap_threshold_crossing_n"] = 99  # Deliberate mismatch on gap extra.
+
+    with pytest.raises(AssertionError, match="I12 FAIL"):
+        _assert_i12_actual_field_comparison(row_p0, row_p1)
+
+
+def test_r2_i12_passes_on_equal_gap_extra_fields():
+    """R2 (gap extra): I12 passes when all 10 gap_depth_extOFI extra fields are equal."""
+    shared: dict = {
+        "feature": "gap_depth_extOFI",
+        "pre_overlap_event_n": 10,
+        "first_event_grid_pos": 5,
+        "last_event_grid_pos": 200,
+        "pre_overlap_positions_sha256": "xyz789",
+        "gap_steps_min": 8,
+        "gap_steps_median": 15.0,
+        "gap_steps_max": 30,
+        "conflicting_pair_n": 3,
+        "fraction_events_with_neighbor_inside_spacing": 0.3,
+        "maximum_local_cluster_size": 2,
+        **{f: 10 for f in _I12_GAP_EXTRA_FIELDS},
+    }
+    row_p0 = dict(shared)
+    row_p1 = dict(shared)
+
+    _assert_i12_actual_field_comparison(row_p0, row_p1)  # Must not raise.
+
+
+def test_r2_i12_integration_via_generate_stage2_rows():
+    """R2 (integration): generate_stage2_rows with synthetic contexts passes R2 check end-to-end."""
+    contexts = _make_all_contexts(seed_base=2200)
+    # If R2 fails, generate_stage2_rows will raise AssertionError — must not raise here.
+    rows = generate_stage2_rows(contexts=contexts)
+    assert len(rows) == STAGE2_POLICY_ROWS
+
+
+# ===========================================================================
+# R3: Frozen Engine P0 Drift Guard tests
+# ===========================================================================
+
+def test_r3a_drift_guard_passes_on_exact_match():
+    """R3-A: drift guard passes when P0 output exactly matches ctx.metrics."""
+    feature = "bitget_ofi"
+    horizon_ms = 1000
+
+    ctx = _make_ctx_with_metrics(
+        feature, horizon_ms,
+        N=7, threshold=0.25, mean_signed_bps=3.5, hit_rate=0.7,
+    )
+    p0_row = {"accepted_n": 7, "mean_signed_bps": 3.5, "hit_rate": 0.7}
+
+    _assert_r3_p0_drift_guard(ctx, feature, horizon_ms, p0_row, threshold=0.25)
+
+
+def test_r3b_drift_guard_raises_on_threshold_mismatch():
+    """R3-B: drift guard raises AssertionError('R3 DRIFT ...') on threshold mismatch."""
+    feature = "bitget_ofi"
+    horizon_ms = 1000
+
+    ctx = _make_ctx_with_metrics(
+        feature, horizon_ms,
+        N=7, threshold=0.25, mean_signed_bps=3.5, hit_rate=0.7,
+    )
+    p0_row = {"accepted_n": 7, "mean_signed_bps": 3.5, "hit_rate": 0.7}
+
+    # P0 computed threshold differs from ctx.metrics.threshold.
+    with pytest.raises(AssertionError, match="R3 DRIFT"):
+        _assert_r3_p0_drift_guard(ctx, feature, horizon_ms, p0_row, threshold=0.30)
+
+
+def test_r3c_drift_guard_raises_on_mean_signed_bps_mismatch():
+    """R3-C: drift guard raises AssertionError('R3 DRIFT ...') on mean_signed_bps mismatch."""
+    feature = "bitget_ofi"
+    horizon_ms = 1000
+
+    ctx = _make_ctx_with_metrics(
+        feature, horizon_ms,
+        N=7, threshold=0.25, mean_signed_bps=3.5, hit_rate=0.7,
+    )
+    # P0 row reports a different mean_signed_bps.
+    p0_row = {"accepted_n": 7, "mean_signed_bps": 5.0, "hit_rate": 0.7}
+
+    with pytest.raises(AssertionError, match="R3 DRIFT"):
+        _assert_r3_p0_drift_guard(ctx, feature, horizon_ms, p0_row, threshold=0.25)
+
+
+def test_r3d_drift_guard_raises_on_hit_rate_mismatch():
+    """R3-D: drift guard raises AssertionError('R3 DRIFT ...') on hit_rate mismatch."""
+    feature = "bitget_ofi"
+    horizon_ms = 1000
+
+    ctx = _make_ctx_with_metrics(
+        feature, horizon_ms,
+        N=7, threshold=0.25, mean_signed_bps=3.5, hit_rate=0.7,
+    )
+    p0_row = {"accepted_n": 7, "mean_signed_bps": 3.5, "hit_rate": 0.9}  # wrong hit_rate
+
+    with pytest.raises(AssertionError, match="R3 DRIFT"):
+        _assert_r3_p0_drift_guard(ctx, feature, horizon_ms, p0_row, threshold=0.25)
+
+
+def test_r3e_mean_abs_move_excluded_no_assertion_raised():
+    """R3-E: mean_abs_move is NOT checked by R3 — no assertion even when it differs."""
+    feature = "bitget_ofi"
+    horizon_ms = 1000
+
+    ctx = _make_ctx(STAGE2_SESSIONS[0], "BTC")
+    # Create BlockMetrics with a deliberately wrong mean_abs_move.
+    bm = BlockMetrics(
+        session_id=STAGE2_SESSIONS[0],
+        asset="BTC",
+        feature=feature,
+        horizon_ms=horizon_ms,
+        q=STAGE2_Q,
+        N=7,
+        threshold=0.25,
+        mean_signed_bps=3.5,
+        hit_rate=0.7,
+        median_signed_bps=None,
+        mean_abs_move=999.0,  # Deliberately set to a wrong value.
+    )
+    ctx.metrics[(feature, horizon_ms, STAGE2_Q)] = bm
+
+    # P0 row has a different mean_abs_move — R3 must NOT raise.
+    p0_row = {
+        "accepted_n": 7,
+        "mean_signed_bps": 3.5,
+        "hit_rate": 0.7,
+        "mean_abs_move": 1.0,  # Differs from bm.mean_abs_move=999.0
+    }
+
+    # Should NOT raise (mean_abs_move is excluded from R3).
+    _assert_r3_p0_drift_guard(ctx, feature, horizon_ms, p0_row, threshold=0.25)
+
+
+def test_r3f_drift_guard_raises_on_N_mismatch():
+    """R3-F: drift guard raises AssertionError('R3 DRIFT ...') on N (accepted_n) mismatch."""
+    feature = "bitget_ofi"
+    horizon_ms = 1000
+
+    ctx = _make_ctx_with_metrics(
+        feature, horizon_ms,
+        N=10, threshold=0.25, mean_signed_bps=3.5, hit_rate=0.7,
+    )
+    p0_row = {"accepted_n": 7, "mean_signed_bps": 3.5, "hit_rate": 0.7}  # N=7 != 10
+
+    with pytest.raises(AssertionError, match="R3 DRIFT"):
+        _assert_r3_p0_drift_guard(ctx, feature, horizon_ms, p0_row, threshold=0.25)
+
+
+def test_r3_skips_silently_when_metrics_empty():
+    """R3 (skip): drift guard does nothing when ctx.metrics is empty (synthetic contexts)."""
+    feature = "bitget_ofi"
+    horizon_ms = 1000
+
+    ctx = _make_ctx(STAGE2_SESSIONS[0], "BTC")
+    assert not ctx.metrics, "Expected empty metrics for synthetic context"
+
+    p0_row = {"accepted_n": 7, "mean_signed_bps": 3.5, "hit_rate": 0.7}
+    # Must not raise (ctx.metrics has no matching key).
+    _assert_r3_p0_drift_guard(ctx, feature, horizon_ms, p0_row, threshold=0.25)
+
+
+def test_r3_schema_guard_raises_on_missing_attribute():
+    """R3 (schema): STAGE2_PATCH1_FAIL_R3_SCHEMA raised if metrics object lacks required attr."""
+    feature = "bitget_ofi"
+    horizon_ms = 1000
+
+    ctx = _make_ctx(STAGE2_SESSIONS[0], "BTC")
+
+    # Inject a mock object that is missing the 'N' attribute.
+    class _BadMetrics:
+        threshold = 0.5
+        mean_signed_bps = 1.0
+        hit_rate = 0.6
+        # N is intentionally absent.
+
+    ctx.metrics[(feature, horizon_ms, STAGE2_Q)] = _BadMetrics()
+
+    p0_row = {"accepted_n": 5, "mean_signed_bps": 1.0, "hit_rate": 0.6}
+
+    with pytest.raises(AssertionError, match="STAGE2_PATCH1_FAIL_R3_SCHEMA"):
+        _assert_r3_p0_drift_guard(ctx, feature, horizon_ms, p0_row, threshold=0.5)
+
+
+def test_r3_tolerance_within_1e12_passes():
+    """R3 (numeric): difference well within 1e-12 tolerance passes for mean_signed_bps."""
+    feature = "bitget_ofi"
+    horizon_ms = 1000
+
+    val = 3.5
+    ctx = _make_ctx_with_metrics(
+        feature, horizon_ms,
+        N=7, threshold=0.25, mean_signed_bps=val, hit_rate=0.7,
+    )
+    # Difference of 1e-13 (well within the 1e-12 tolerance) must pass.
+    p0_row = {"accepted_n": 7, "mean_signed_bps": val + 1e-13, "hit_rate": 0.7}
+
+    _assert_r3_p0_drift_guard(ctx, feature, horizon_ms, p0_row, threshold=0.25)
+
+
+def test_r3_tolerance_exceeds_1e12_fails():
+    """R3 (numeric): difference > 1e-12 raises AssertionError for mean_signed_bps."""
+    feature = "bitget_ofi"
+    horizon_ms = 1000
+
+    val = 3.5
+    ctx = _make_ctx_with_metrics(
+        feature, horizon_ms,
+        N=7, threshold=0.25, mean_signed_bps=val, hit_rate=0.7,
+    )
+    p0_row = {"accepted_n": 7, "mean_signed_bps": val + 2e-12, "hit_rate": 0.7}
+
+    with pytest.raises(AssertionError, match="R3 DRIFT"):
+        _assert_r3_p0_drift_guard(ctx, feature, horizon_ms, p0_row, threshold=0.25)

@@ -1,6 +1,38 @@
 [
   {
-    "content": "Compile and return full report",
+    "content": "Inspect engine.py BlockMetrics schema (R3 prerequisite)",
+    "status": "completed"
+  },
+  {
+    "content": "Read full v1_2_stage2.py to identify insertion points for R1/R2/R3",
+    "status": "completed"
+  },
+  {
+    "content": "Read full test_v1_2_stage2.py to understand current test structure",
+    "status": "completed"
+  },
+  {
+    "content": "Implement R2 (Real I12 actual field comparison) in v1_2_stage2.py",
+    "status": "completed"
+  },
+  {
+    "content": "Implement R3 (Frozen Engine P0 Drift Guard) in v1_2_stage2.py",
+    "status": "completed"
+  },
+  {
+    "content": "Implement R1 (Final artifact writer + orchestrator with full manifest) in v1_2_stage2.py",
+    "status": "completed"
+  },
+  {
+    "content": "Add R1/R2/R3 focused tests to test_v1_2_stage2.py",
+    "status": "completed"
+  },
+  {
+    "content": "Run pytest backend/tests/test_v1_2_stage2.py and verify all pass",
+    "status": "completed"
+  },
+  {
+    "content": "Post-patch scope check: git diff HEAD -- to confirm only 2 files changed, no commit",
     "status": "completed"
   }
 ]

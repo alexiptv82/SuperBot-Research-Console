@@ -23,8 +23,11 @@ Safety invariants (NEVER REMOVE):
 from __future__ import annotations
 
 import hashlib
+import io
+import json
 import math
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Sequence
 
 import numpy as np
@@ -123,6 +126,53 @@ _I12_GAP_EXTRA_FIELDS: tuple[str, ...] = (
     "aligned_negative_pair_n",
 )
 
+# Fixed column order for Stage 2 CSV output (deterministic, never changes).
+_STAGE2_CSV_COLUMNS: tuple[str, ...] = (
+    "diagnostic_version",
+    "session_id",
+    "asset",
+    "feature",
+    "horizon_ms",
+    "q",
+    "policy",
+    "grid_rows",
+    "quality_n",
+    "forward_eligible_n",
+    "overlap_spacing_steps",
+    "pre_overlap_event_n",
+    "first_event_grid_pos",
+    "last_event_grid_pos",
+    "pre_overlap_positions_sha256",
+    "gap_steps_min",
+    "gap_steps_median",
+    "gap_steps_max",
+    "conflicting_pair_n",
+    "fraction_events_with_neighbor_inside_spacing",
+    "maximum_local_cluster_size",
+    "accepted_n",
+    "overlap_dropped_n",
+    "accepted_positions_count",
+    "accepted_positions_sha256",
+    "accepted_first_grid_pos",
+    "accepted_last_grid_pos",
+    "mean_signed_bps",
+    "hit_rate",
+    "mean_abs_move",
+    "gap_threshold_crossing_n",
+    "confirmation_finite_n",
+    "alignment_true_n",
+    "aligned_forward_valid_n",
+    "confirmation_component_positive_n",
+    "confirmation_component_negative_n",
+    "direction_positive_n",
+    "direction_negative_n",
+    "aligned_positive_pair_n",
+    "aligned_negative_pair_n",
+)
+
+# Default output directory for Stage 2 artifacts (backend root).
+_STAGE2_DEFAULT_OUTPUT_DIR: Path = Path(__file__).resolve().parent.parent
+
 
 # ---------------------------------------------------------------------------
 # Data structures
@@ -154,6 +204,7 @@ class _PreOverlapResult:
     forward_eligible_n: int    # quality & isfinite(fwd) count
     overlap_spacing_steps: int # max(10, horizon_ms // GRID_MS)
     gap_extra: dict | None     # gap_depth_extOFI additional pre-overlap diagnostics
+    threshold: float | None    # quantile threshold used for pre-overlap event gate
 
 
 # ---------------------------------------------------------------------------
@@ -517,6 +568,7 @@ def _extract_pre_overlap(
         forward_eligible_n=forward_eligible_n,
         overlap_spacing_steps=spacing,
         gap_extra=gap_extra,
+        threshold=threshold,
     )
 
 
@@ -702,6 +754,159 @@ def _assert_i10_i11(rows: list[dict]) -> None:
                 )
 
 
+def _assert_i12_actual_field_comparison(row_p0: dict, row_p1: dict) -> None:
+    """Assert I12 by comparing actual emitted P0/P1 field values (R2).
+
+    Compares the 10 policy-independent pre-overlap shared fields between the
+    two emitted rows.  For gap_depth_extOFI cases, also compares the 10
+    additional pre-overlap pipeline diagnostic fields.
+
+    Any mismatch raises AssertionError with the field name and both values,
+    per the R2 audit requirement.
+
+    Raises
+    ------
+    AssertionError("I12 FAIL: field '...' P0=... P1=...")
+        If any compared field value differs between P0 and P1.
+    """
+    # Compare the 10 shared pre-overlap fields.
+    for f in _I12_SHARED_FIELDS:
+        if row_p0[f] != row_p1[f]:
+            raise AssertionError(
+                f"I12 FAIL: field '{f}' P0={row_p0[f]!r} P1={row_p1[f]!r}"
+            )
+
+    # For gap_depth_extOFI: also compare the 10 additional pipeline fields.
+    if row_p0["feature"] == "gap_depth_extOFI":
+        for f in _I12_GAP_EXTRA_FIELDS:
+            if row_p0[f] != row_p1[f]:
+                raise AssertionError(
+                    f"I12 FAIL: field '{f}' P0={row_p0[f]!r} P1={row_p1[f]!r}"
+                )
+
+
+def _assert_r3_p0_drift_guard(
+    ctx: "_BlockContext",
+    feature: str,
+    horizon_ms: int,
+    p0_row: dict,
+    threshold: "float | None",
+) -> None:
+    """Assert that P0 computed values match the frozen V1.1 engine metrics (R3).
+
+    Compares P0 ``accepted_n``, ``threshold``, ``mean_signed_bps``, and
+    ``hit_rate`` against ``ctx.metrics[(feature, horizon_ms, STAGE2_Q)]``.
+    Skips silently when the metrics key is absent (synthetic / test contexts
+    with empty metrics dicts).
+
+    EXCLUDED from comparison: ``mean_abs_move`` (per R3 spec).
+
+    Field-level comparison rules
+    ----------------------------
+    N               : exact integer equality.
+    threshold       : exact float equality (or None == None);
+                      nonfinite float → ABORT.
+    mean_signed_bps : both must be finite; absolute tolerance ≤ 1e-12.
+    hit_rate        : both must be finite; absolute tolerance ≤ 1e-12.
+
+    Raises
+    ------
+    AssertionError("STAGE2_PATCH1_FAIL_R3_SCHEMA")
+        If the metrics object is missing any required attribute.
+    AssertionError("R3 DRIFT: ...")
+        If any compared quantity deviates beyond its allowed tolerance, or
+        if an unexpected NaN / nonfinite value is encountered in a required
+        comparison operand.
+    """
+    key = (feature, horizon_ms, STAGE2_Q)
+    if not ctx.metrics or key not in ctx.metrics:
+        return  # No frozen metrics to compare — synthetic / test contexts.
+
+    m = ctx.metrics[key]
+
+    # Schema guard: verify all required attributes are present.
+    _required_r3_attrs = ("N", "threshold", "mean_signed_bps", "hit_rate")
+    if not all(hasattr(m, attr) for attr in _required_r3_attrs):
+        raise AssertionError("STAGE2_PATCH1_FAIL_R3_SCHEMA")
+
+    # ── N: exact integer equality ─────────────────────────────────────────────
+    expected_N: int = m.N
+    actual_N: int = p0_row["accepted_n"]
+    if actual_N != expected_N:
+        raise AssertionError(
+            f"R3 DRIFT: N expected={expected_N} got={actual_N}"
+        )
+
+    # ── threshold: exact equality (float or None); nonfinite float → ABORT ───
+    expected_thr = m.threshold
+    actual_thr = threshold
+    if expected_thr is None and actual_thr is None:
+        pass  # Both None — valid (domain has < 2 finite values).
+    elif expected_thr is None or actual_thr is None:
+        raise AssertionError(
+            f"R3 DRIFT: threshold expected={expected_thr!r} got={actual_thr!r}"
+        )
+    else:
+        if not math.isfinite(expected_thr):
+            raise AssertionError(
+                f"R3 DRIFT: threshold expected value is non-finite: {expected_thr!r}"
+            )
+        if not math.isfinite(actual_thr):
+            raise AssertionError(
+                f"R3 DRIFT: threshold actual value is non-finite: {actual_thr!r}"
+            )
+        if expected_thr != actual_thr:
+            raise AssertionError(
+                f"R3 DRIFT: threshold expected={expected_thr!r} got={actual_thr!r}"
+            )
+
+    # ── mean_signed_bps: finite required; absolute tolerance ≤ 1e-12 ─────────
+    expected_msb = m.mean_signed_bps
+    actual_msb = p0_row["mean_signed_bps"]
+    if expected_msb is None and actual_msb is None:
+        pass
+    elif expected_msb is None or actual_msb is None:
+        raise AssertionError(
+            f"R3 DRIFT: mean_signed_bps expected={expected_msb!r} got={actual_msb!r}"
+        )
+    else:
+        if not math.isfinite(expected_msb):
+            raise AssertionError(
+                f"R3 DRIFT: mean_signed_bps expected value is non-finite: {expected_msb!r}"
+            )
+        if not math.isfinite(actual_msb):
+            raise AssertionError(
+                f"R3 DRIFT: mean_signed_bps actual value is non-finite: {actual_msb!r}"
+            )
+        if abs(actual_msb - expected_msb) > 1e-12:
+            raise AssertionError(
+                f"R3 DRIFT: mean_signed_bps expected={expected_msb!r} got={actual_msb!r}"
+            )
+
+    # ── hit_rate: finite required; absolute tolerance ≤ 1e-12 ────────────────
+    expected_hr = m.hit_rate
+    actual_hr = p0_row["hit_rate"]
+    if expected_hr is None and actual_hr is None:
+        pass
+    elif expected_hr is None or actual_hr is None:
+        raise AssertionError(
+            f"R3 DRIFT: hit_rate expected={expected_hr!r} got={actual_hr!r}"
+        )
+    else:
+        if not math.isfinite(expected_hr):
+            raise AssertionError(
+                f"R3 DRIFT: hit_rate expected value is non-finite: {expected_hr!r}"
+            )
+        if not math.isfinite(actual_hr):
+            raise AssertionError(
+                f"R3 DRIFT: hit_rate actual value is non-finite: {actual_hr!r}"
+            )
+        if abs(actual_hr - expected_hr) > 1e-12:
+            raise AssertionError(
+                f"R3 DRIFT: hit_rate expected={expected_hr!r} got={actual_hr!r}"
+            )
+
+
 # ---------------------------------------------------------------------------
 # Row builder
 # ---------------------------------------------------------------------------
@@ -822,11 +1027,27 @@ def _process_unique_case(
     # Step 5: assert I1–I9, I12 for this pair (ABORT on any failure).
     _assert_pair_invariants(pre_result, p0_mask, p1_mask, spacing, pre_diag)
 
-    # Step 6: build and store rows.
-    for policy, mask in (("P0", p0_mask), ("P1", p1_mask)):
-        case = Stage2Case(sid, asset, feature, horizon_ms, q, policy)
-        row = _build_row(case, pre_result, pre_diag, mask)
-        rows_out[matrix_group[policy]] = row
+    # Step 6: build P0 row.
+    case_p0 = Stage2Case(sid, asset, feature, horizon_ms, q, "P0")
+    row_p0 = _build_row(case_p0, pre_result, pre_diag, p0_mask)
+
+    # Step 7: R3 — Frozen Engine P0 Drift Guard.
+    # Compares P0 accepted_n / threshold / mean_signed_bps / hit_rate against
+    # the frozen V1.1 engine metrics stored in ctx.metrics (if populated).
+    _assert_r3_p0_drift_guard(ctx, feature, horizon_ms, row_p0, pre_result.threshold)
+
+    # Step 8: build P1 row.
+    case_p1 = Stage2Case(sid, asset, feature, horizon_ms, q, "P1")
+    row_p1 = _build_row(case_p1, pre_result, pre_diag, p1_mask)
+
+    # Step 9: R2 — I12 actual emitted-field comparison (P0 vs P1).
+    # Compares actual values in the emitted rows for the 10 shared
+    # pre-overlap fields (and 10 gap extras for gap_depth_extOFI).
+    _assert_i12_actual_field_comparison(row_p0, row_p1)
+
+    # Step 10: store rows at their fixed matrix positions.
+    rows_out[matrix_group["P0"]] = row_p0
+    rows_out[matrix_group["P1"]] = row_p1
 
 
 def generate_stage2_rows(
@@ -941,6 +1162,197 @@ def _validate_stage2_safety() -> None:
 
 
 # ---------------------------------------------------------------------------
+# R1: Final artifact writer and orchestrator (deterministic manifest)
+# ---------------------------------------------------------------------------
+
+def write_stage2_artifacts(
+    rows: list[dict],
+    runtime_source_commit: str,
+    output_dir: "Path | None" = None,
+) -> "tuple[Path, Path]":
+    """Write Stage 2 policy diagnostics CSV and deterministic manifest JSON.
+
+    Parameters
+    ----------
+    rows : list[dict]
+        The 144 Stage 2 policy-comparison rows from generate_stage2_rows().
+    runtime_source_commit : str
+        The git commit hash of the repository at run time.
+    output_dir : Path or None
+        Directory to write artifacts into.  Defaults to the backend root
+        (parent of the recovery package).  Tests should supply tmp_path.
+
+    Returns
+    -------
+    (csv_path, manifest_path)
+
+    Raises
+    ------
+    FileExistsError
+        If either output file already exists (never overwrites).
+
+    Notes
+    -----
+    No timestamp is included in the manifest — output is fully deterministic
+    given identical inputs.  Manifest JSON is serialised with sort_keys=True.
+    """
+    out = Path(output_dir) if output_dir is not None else _STAGE2_DEFAULT_OUTPUT_DIR
+
+    csv_path = out / "stage2_policy_diagnostics.csv"
+    manifest_path = out / "stage2_manifest.json"
+
+    # Strict existence guard — raise before any computation.
+    if csv_path.exists():
+        raise FileExistsError(
+            f"Stage2 CSV already exists and will not be overwritten: {csv_path}"
+        )
+    if manifest_path.exists():
+        raise FileExistsError(
+            f"Stage2 manifest already exists and will not be overwritten: {manifest_path}"
+        )
+
+    # ── Serialize CSV (fixed column order, UTF-8; None → empty field) ────────
+    df = pd.DataFrame(rows, columns=list(_STAGE2_CSV_COLUMNS))
+    buf = io.StringIO()
+    df.to_csv(buf, index=False)
+    csv_bytes = buf.getvalue().encode("utf-8")
+    csv_sha256 = hashlib.sha256(csv_bytes).hexdigest()
+    csv_byte_size = len(csv_bytes)
+
+    # ── Derive summary counts ─────────────────────────────────────────────────
+    actual_row_count = len(rows)
+    actual_unique_case_count = len({
+        (r["session_id"], r["asset"], r["feature"], r["horizon_ms"], r["q"])
+        for r in rows
+    })
+
+    # ── Build deterministic manifest (no timestamp; sorted keys on serialize) ─
+    manifest: dict = {
+        "GRID_MS": GRID_MS,
+        "P0_definition": (
+            "greedy_earliest_first: accept next candidate event iff "
+            "(pos - last_accepted_pos) >= spacing_steps; "
+            "V1.1 frozen engine semantics (_greedy_overlap_filter)"
+        ),
+        "P1_definition": (
+            "greedy_latest_first: process events descending, accept iff "
+            "(last_accepted_pos - pos) >= spacing_steps, "
+            "output sorted ascending (Stage2 new policy, _greedy_latest_first_filter)"
+        ),
+        "actual_row_count": actual_row_count,
+        "actual_unique_case_count": actual_unique_case_count,
+        "assets": list(STAGE2_ASSETS),
+        "candidate_generation_frozen_before_golden_comparison": True,
+        "csv_byte_size": csv_byte_size,
+        "csv_sha256": csv_sha256,
+        "diagnostic_version": STAGE2_VERSION,
+        "engine_py_modified": False,
+        "expected_row_count": STAGE2_POLICY_ROWS,
+        "expected_unique_case_count": STAGE2_UNIQUE_CASES,
+        "feature_families": {
+            "all_six": list(STAGE2_FAMILIES),
+            "control": list(STAGE2_CONTROL_FAMILIES),
+            "primary": list(STAGE2_PRIMARY_FAMILIES),
+        },
+        "fingerprint_encoding_definition": (
+            "SHA256 of accepted positions sorted ascending, encoded as raw "
+            "concatenated 8-byte little-endian signed int64, no delimiter; "
+            "empty set = SHA256 of zero-length byte string; lowercase hex digest"
+        ),
+        "gap_depth_extOFI_diagnostic_counters": {
+            "aligned_forward_valid_n": {
+                "domain": (
+                    "gap_event_domain AND gap!=0 AND |gap|>=gap_threshold "
+                    "AND alignment=True AND isfinite(forward_return) "
+                    "(final pre-overlap event set)"
+                ),
+                "scope": "EVENT-SCOPE",
+            },
+            "aligned_negative_pair_n": {
+                "domain": "pre_overlap_events AND D_ext<0 AND gap>0",
+                "scope": "EVENT-SCOPE",
+            },
+            "aligned_positive_pair_n": {
+                "domain": "pre_overlap_events AND D_ext>0 AND gap<0",
+                "scope": "EVENT-SCOPE",
+            },
+            "alignment_true_n": {
+                "domain": "gap_event_domain AND alignment=True",
+                "scope": "EVENT-SCOPE",
+            },
+            "confirmation_component_negative_n": {
+                "domain": "pre_alignment_events AND D_ext<0",
+                "scope": "EVENT-SCOPE",
+            },
+            "confirmation_component_positive_n": {
+                "domain": "pre_alignment_events AND D_ext>0",
+                "scope": "EVENT-SCOPE",
+            },
+            "confirmation_finite_n": {
+                "domain": "quality_admissible AND isfinite(confirmation_component)",
+                "scope": "GRID-SCOPE",
+            },
+            "direction_negative_n": {
+                "domain": "pre_overlap_events AND gap>0 (direction=-1, sell)",
+                "scope": "EVENT-SCOPE",
+            },
+            "direction_positive_n": {
+                "domain": "pre_overlap_events AND gap<0 (direction=+1, buy)",
+                "scope": "EVENT-SCOPE",
+            },
+            "gap_threshold_crossing_n": {
+                "domain": (
+                    "gap_event_domain AND gap!=0 AND |gap|>=gap_threshold "
+                    "(pre-alignment threshold crossings within gap_event_domain)"
+                ),
+                "scope": "EVENT-SCOPE",
+            },
+        },
+        "historical_target_numerics_read_by_generator": False,
+        "horizons_ms": list(STAGE2_HORIZONS),
+        "k_values": {str(h): h // GRID_MS for h in STAGE2_HORIZONS},
+        "mean_abs_move_domain": "accepted_events",
+        "new36_opened": False,
+        "policy_ids": ["P0", "P1"],
+        "q": STAGE2_Q,
+        "runtime_source_commit": runtime_source_commit,
+        "session_ids": list(STAGE2_SESSIONS),
+        "spacing_boundary_semantics": (
+            "inclusive: distance >= spacing_steps → accepted (non-conflicting); "
+            "strict: distance < spacing_steps → conflicting"
+        ),
+        "spacing_steps": {str(h): max(10, h // GRID_MS) for h in STAGE2_HORIZONS},
+        "stage1_artifacts_modified": False,
+        "v1_1_reports_modified": False,
+    }
+
+    # ── Write files ───────────────────────────────────────────────────────────
+    out.mkdir(parents=True, exist_ok=True)
+    csv_path.write_bytes(csv_bytes)
+    manifest_path.write_text(
+        json.dumps(manifest, sort_keys=True, indent=2),
+        encoding="utf-8",
+    )
+
+    return csv_path, manifest_path
+
+
+def run_stage2_diagnostics(
+    runtime_source_commit: str,
+    output_dir: "Path | None" = None,
+) -> "tuple[Path, Path]":
+    """Top-level Stage 2 orchestrator.  Requires explicit authorisation.
+
+    Calls generate_stage2_rows() (real OLD36 data path) then writes
+    artifacts via write_stage2_artifacts().
+
+    THIS MUST NOT BE INVOKED UNTIL EXPLICITLY AUTHORISED.
+    """
+    rows = generate_stage2_rows(contexts=None)
+    return write_stage2_artifacts(rows, runtime_source_commit, output_dir=output_dir)
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -955,12 +1367,17 @@ __all__ = [
     "STAGE2_FAMILIES",
     "STAGE2_UNIQUE_CASES",
     "STAGE2_POLICY_ROWS",
+    "_STAGE2_CSV_COLUMNS",
     "Stage2Case",
     "expand_stage2_matrix",
     "compute_pre_overlap_diagnostics",
     "generate_stage2_rows",
+    "write_stage2_artifacts",
+    "run_stage2_diagnostics",
     "_greedy_latest_first_filter",
     "_sha256_positions",
     "_extract_pre_overlap",
     "_compute_policy_metrics",
+    "_assert_i12_actual_field_comparison",
+    "_assert_r3_p0_drift_guard",
 ]
