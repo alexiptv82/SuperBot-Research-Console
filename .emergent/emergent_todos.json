@@ -1,18 +1,42 @@
 [
   {
-    "content": "Fix linting warnings in test_v1_2_stage3.py (unused imports ~lines 597, 609)",
+    "content": "PRECHECK: verify git HEAD and SHA256 hashes match expected",
     "status": "completed"
   },
   {
-    "content": "Run pytest backend/tests/test_v1_2_stage3.py and fix all failures until green",
+    "content": "Read HC block + HG block in v1_2_stage3.py to understand current semantics",
     "status": "completed"
   },
   {
-    "content": "Post-check: verify only 2 authorized files changed, Stage2 hashes unchanged",
+    "content": "Add _assert_position_subset helper + I19 explicit runtime assertion in HG/G1",
     "status": "completed"
   },
   {
-    "content": "Output final report with FINAL_VERDICT: STAGE3_IMPLEMENTATION_READY_FOR_CODE_AUDIT",
+    "content": "Add I20 explicit runtime assertion in HC/C1 with shared-gap-gate parent",
     "status": "completed"
+  },
+  {
+    "content": "Fix invariant comments in stage3.py to reflect explicit assertions",
+    "status": "completed"
+  },
+  {
+    "content": "Add I19/I20 PASS+FAIL tests + regression checks in test_v1_2_stage3.py",
+    "status": "completed"
+  },
+  {
+    "content": "Run pytest backend/tests/test_v1_2_stage3.py — fix until green",
+    "status": "completed"
+  },
+  {
+    "content": "Create STAGE3_CANONICAL_AUDIT_NOTE.txt",
+    "status": "completed"
+  },
+  {
+    "content": "Create SUPERBOT_V1_2_STAGE3_PATCH1_CODE_AUDIT.zip + self-check",
+    "status": "completed"
+  },
+  {
+    "content": "Output required §15 report",
+    "status": "in_progress"
   }
 ]

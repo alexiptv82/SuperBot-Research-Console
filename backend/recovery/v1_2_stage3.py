@@ -311,6 +311,37 @@ def _csv_bytes(rows: list[dict]) -> bytes:
 
 
 # ---------------------------------------------------------------------------
+# Position-subset assertion helper (I19 / I20)
+# ---------------------------------------------------------------------------
+
+def _assert_position_subset(
+    child: np.ndarray,
+    parent: np.ndarray,
+    invariant_name: str,
+) -> None:
+    """Assert every position in `child` is present in `parent` (fail-closed).
+
+    Uses integer set membership.  Child and parent are each deduplicated
+    before comparison so duplicates cannot mask violations.
+
+    Raises AssertionError whose message contains `invariant_name` on any
+    violation, e.g.:
+        "I19 FAIL: 2 child position(s) not in parent set. Examples: [42, 77]"
+    """
+    if len(child) == 0:
+        return  # empty child is trivially a subset
+    parent_set = {int(p) for p in parent}
+    violations = sorted({int(p) for p in child} - parent_set)
+    if violations:
+        n_viol = len(violations)
+        examples = violations[:5]
+        raise AssertionError(
+            f"{invariant_name} FAIL: {n_viol} child position(s) not in parent set. "
+            f"Examples: {examples!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Drift guard helpers (I17)
 # ---------------------------------------------------------------------------
 
@@ -653,7 +684,11 @@ def _hg_block(
             })
 
             # ── G1: depth_imbalance_l1 gate + ext_ofi confirmation ─────────
-            # I18: G1 threshold == HZ-T0 depth_imbalance_l1 threshold at same q
+            # I18: threshold identity — G1 threshold == HZ-T0 threshold for
+            #      depth_imbalance_l1 at same q (by construction from hz_cache).
+            # I19: explicit runtime pre-overlap subset assertion — G1 positions
+            #      must ⊆ depth_l1 baseline pre-overlap positions (enforced
+            #      below after constructing g1_positions; fail-closed).
             hz_t0_di_l1, _ = hz_cache.get(("depth_imbalance_l1", q), (None, None))
             g1_thresh = hz_t0_di_l1
 
@@ -675,6 +710,13 @@ def _hg_block(
                 )
 
             g1_positions = ctx.gpos[g1_pre_mask]
+            # I19 runtime assertion: G1 pre-overlap positions ⊆ depth_l1 baseline
+            # pre-overlap positions (fail-closed, explicit).
+            # Parent: gate_domain & di_l1!=0 & |di_l1|>=g1_thresh & finite(fwd).
+            _i19_parent_mask = (
+                gate_domain & (di_l1 != 0.0) & (np.abs(di_l1) >= g1_thresh) & np.isfinite(fwd)
+            ) if g1_thresh is not None else np.zeros(len(ctx.gpos), dtype=bool)
+            _assert_position_subset(g1_positions, ctx.gpos[_i19_parent_mask], "I19")
             g1_directions = np.sign(di_l1[g1_pre_mask])
             g1_returns = fwd[g1_pre_mask]
             g1_accepted_mask = (
@@ -834,6 +876,13 @@ def _hc_block(
             })
 
             # ── C1: RAW-sign conjunction ────────────────────────────────────
+            # I20: explicit runtime shared-gap-gate subset assertion — C1
+            #      pre-overlap positions must ⊆ shared gap threshold-crossing
+            #      positions (quality & finite(gap) & gap!=0 & |gap|>=gap_thresh
+            #      & finite(fwd)).  C0 and C1 have different confirmation
+            #      semantics; I20 is asserted against the shared gate, NOT
+            #      against C0's confirmed pre-overlap set (enforced below;
+            #      fail-closed).
             # conf_finite for C1: finite(di_l1) & finite(ext_ofi)
             conf_fin_c1 = np.isfinite(di_l1) & np.isfinite(ext_ofi)
             gap_event_domain_c1 = gap_thresh_domain & conf_fin_c1
@@ -853,6 +902,13 @@ def _hc_block(
                 )
 
             c1_positions = ctx.gpos[c1_pre_mask]
+            # I20 runtime assertion: C1 pre-overlap positions ⊆ shared gap
+            # threshold-crossing set (fail-closed, explicit).
+            # Parent: gap_thresh_domain & gap!=0 & |gap|>=gap_thresh & finite(fwd).
+            _i20_parent_mask = (
+                gap_thresh_domain & (gap != 0.0) & (np.abs(gap) >= gap_thresh) & np.isfinite(fwd)
+            ) if gap_thresh is not None else np.zeros(len(ctx.gpos), dtype=bool)
+            _assert_position_subset(c1_positions, ctx.gpos[_i20_parent_mask], "I20")
             c1_directions = -np.sign(gap[c1_pre_mask])
             c1_returns = fwd[c1_pre_mask]
             c1_accepted_mask = (

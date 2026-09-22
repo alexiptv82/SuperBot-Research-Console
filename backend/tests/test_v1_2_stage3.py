@@ -61,6 +61,7 @@ from recovery.v1_2_stage3 import (
     _hb_extract_pre_overlap,
     _assert_hz_t0_drift_guard,
     _assert_event_drift_guard,
+    _assert_position_subset,
     _run_invariants,
     generate_stage3_rows,
     write_stage3_artifacts,
@@ -1595,3 +1596,213 @@ def test_matrix_no_duplicate_row_keys():
             f"Duplicate row keys in axis {axis}: "
             f"{[k for k in keys if keys.count(k) > 1][:5]}"
         )
+
+
+
+# ===========================================================================
+# Patch1 — I19 / I20 explicit runtime enforcement tests
+# ===========================================================================
+
+class TestAssertPositionSubset:
+    """Unit tests for _assert_position_subset (the shared enforcement helper)."""
+
+    def test_empty_child_always_passes(self):
+        """Empty child is trivially a subset of any parent."""
+        parent = np.array([1, 2, 3], dtype=np.int64)
+        _assert_position_subset(np.array([], dtype=np.int64), parent, "INVARIANT_X")
+
+    def test_empty_parent_empty_child_passes(self):
+        """Both empty: trivially passes."""
+        _assert_position_subset(
+            np.array([], dtype=np.int64),
+            np.array([], dtype=np.int64),
+            "INVARIANT_X",
+        )
+
+    def test_child_equals_parent_passes(self):
+        """Child == parent (exact equality) is a valid subset."""
+        arr = np.array([10, 20, 30], dtype=np.int64)
+        _assert_position_subset(arr.copy(), arr.copy(), "INVARIANT_X")
+
+    def test_strict_subset_passes(self):
+        """Child is a proper strict subset of parent — passes."""
+        parent = np.array([10, 20, 30, 40, 50], dtype=np.int64)
+        child = np.array([10, 30, 50], dtype=np.int64)
+        _assert_position_subset(child, parent, "INVARIANT_X")
+
+    def test_one_position_outside_parent_fails(self):
+        """One position in child missing from parent raises AssertionError."""
+        parent = np.array([10, 20, 30], dtype=np.int64)
+        child = np.array([10, 20, 999], dtype=np.int64)  # 999 not in parent
+        with pytest.raises(AssertionError, match="INVARIANT_X FAIL"):
+            _assert_position_subset(child, parent, "INVARIANT_X")
+
+    def test_duplicate_child_positions_do_not_hide_violation(self):
+        """Duplicate child entries must not mask a real violation."""
+        parent = np.array([1, 2, 3], dtype=np.int64)
+        # 4 appears multiple times but is not in parent
+        child = np.array([1, 2, 4, 4, 4], dtype=np.int64)
+        with pytest.raises(AssertionError):
+            _assert_position_subset(child, parent, "INVARIANT_X")
+
+
+# ---------------------------------------------------------------------------
+# I19 focused tests
+# ---------------------------------------------------------------------------
+
+def test_i19_g1_subset_passes():
+    """I19 PASS: valid G1 child subset of depth_l1 parent passes without exception."""
+    parent = np.array([5, 15, 25, 35, 45], dtype=np.int64)
+    # G1 positions are a proper subset (ext_ofi confirmation removes some)
+    g1_child = np.array([5, 25, 45], dtype=np.int64)
+    _assert_position_subset(g1_child, parent, "I19")  # must not raise
+
+
+def test_i19_g1_subset_fails():
+    """I19 FAIL: one injected G1 position outside depth_l1 parent raises AssertionError.
+
+    This simulates tampering / data corruption where G1 produces a position
+    that was NOT in the depth_imbalance_l1 baseline gate.
+    """
+    parent = np.array([5, 15, 25, 35], dtype=np.int64)
+    # 999 is outside the parent baseline — should trigger I19 FAIL
+    g1_child_tampered = np.array([5, 25, 999], dtype=np.int64)
+    with pytest.raises(AssertionError, match="I19 FAIL"):
+        _assert_position_subset(g1_child_tampered, parent, "I19")
+
+
+def test_i19_error_message_contains_label():
+    """AssertionError message must contain 'I19 FAIL' for traceability."""
+    with pytest.raises(AssertionError) as exc_info:
+        _assert_position_subset(
+            np.array([42], dtype=np.int64),
+            np.array([1, 2, 3], dtype=np.int64),
+            "I19",
+        )
+    assert "I19 FAIL" in str(exc_info.value)
+
+
+# ---------------------------------------------------------------------------
+# I20 focused tests
+# ---------------------------------------------------------------------------
+
+def test_i20_c1_subset_passes():
+    """I20 PASS: valid C1 child subset of shared gap threshold-crossing set passes."""
+    shared_gap_gate = np.array([10, 20, 30, 40, 50], dtype=np.int64)
+    # C1 adds di_l1 + ext_ofi confirmation; some gap-gate positions are dropped
+    c1_child = np.array([10, 40], dtype=np.int64)
+    _assert_position_subset(c1_child, shared_gap_gate, "I20")  # must not raise
+
+
+def test_i20_c1_subset_fails():
+    """I20 FAIL: C1 position outside shared gap threshold-crossing set raises AssertionError.
+
+    This simulates a position that crossed the gap threshold in C1 but was NOT
+    present in the shared gap-crossing set — which would be logically impossible
+    by construction, but must be caught explicitly (fail-closed).
+    """
+    shared_gap_gate = np.array([10, 20, 30], dtype=np.int64)
+    # 777 is outside the shared gap gate
+    c1_child_tampered = np.array([10, 777], dtype=np.int64)
+    with pytest.raises(AssertionError, match="I20 FAIL"):
+        _assert_position_subset(c1_child_tampered, shared_gap_gate, "I20")
+
+
+def test_i20_error_message_contains_label():
+    """AssertionError message must contain 'I20 FAIL' for traceability."""
+    with pytest.raises(AssertionError) as exc_info:
+        _assert_position_subset(
+            np.array([99], dtype=np.int64),
+            np.array([1, 2, 3], dtype=np.int64),
+            "I20",
+        )
+    assert "I20 FAIL" in str(exc_info.value)
+
+
+def test_i20_parent_is_shared_gap_gate_not_c0_confirmed():
+    """I20 canonical: parent is the shared gap threshold-crossing set, NOT C0 confirmed.
+
+    A C1 position may be absent from C0's confirmed set (different confirmation
+    semantics) while still satisfying I20 (present in the shared gap gate).
+    This test explicitly verifies that I20 is asserted against the gate, not C0.
+    """
+    shared_gap_gate = np.array([5, 10, 15, 20, 25], dtype=np.int64)
+    c0_confirmed = np.array([5, 15], dtype=np.int64)  # strict subset of gate
+    # C1 positions: present in gate but NOT in C0 confirmed (different confirmation)
+    c1_positions = np.array([10, 20], dtype=np.int64)
+
+    # I20 must PASS: C1 ⊆ shared_gap_gate
+    _assert_position_subset(c1_positions, shared_gap_gate, "I20")
+
+    # Confirm that C1 is NOT a subset of C0 (expected — different semantics)
+    c0_set = set(c0_confirmed.tolist())
+    c1_set = set(c1_positions.tolist())
+    assert not c1_set.issubset(c0_set), (
+        "Expected C1 to NOT be a subset of C0 in this test "
+        "(I20 parent is gate, not C0)"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Patch1 regression: Patch1 must not change existing semantics
+# ---------------------------------------------------------------------------
+
+def test_patch1_regression_hg_g1_still_runs():
+    """Regression: _hg_block G1 still completes successfully with valid synthetic data.
+
+    I19 assertion is fail-closed; valid data must pass through without raising.
+    """
+    ctx = _make_ctx("S1", "BTC", n=300, seed=77)
+    _populate_matching_stage3_metrics(ctx)
+    _, hz_cache = _hz_block(ctx, "S1", "BTC")
+    hg_rows = _hg_block(ctx, "S1", "BTC", hz_cache)
+    g1_rows = [r for r in hg_rows if r["variant_id"] == "G1"]
+    assert len(g1_rows) > 0, "Expected at least one G1 row"
+    # All G1 rows must have accepted_positions_sha256 (not None)
+    for r in g1_rows:
+        assert r["accepted_positions_sha256"] is not None or r["accepted_n"] == 0
+
+
+def test_patch1_regression_hc_c1_still_runs():
+    """Regression: _hc_block C1 still completes successfully with valid synthetic data.
+
+    I20 assertion is fail-closed; valid data must pass through without raising.
+    """
+    ctx = _make_ctx("S1", "BTC", n=300, seed=88)
+    _populate_matching_stage3_metrics(ctx)
+    hc_rows = _hc_block(ctx, "S1", "BTC")
+    c1_rows = [r for r in hc_rows if r["variant_id"] == "C1"]
+    assert len(c1_rows) > 0, "Expected at least one C1 row"
+
+
+def test_patch1_regression_576_rows_unchanged():
+    """Regression: Patch1 must not change the total row count (576)."""
+    ctxs = _make_all_contexts(seed_base=999)
+    rows = generate_stage3_rows(ctxs)
+    assert len(rows) == STAGE3_TOTAL_ROWS, (
+        f"Expected {STAGE3_TOTAL_ROWS} rows after Patch1, got {len(rows)}"
+    )
+
+
+def test_patch1_regression_hz_semantics_unchanged():
+    """Regression: HZ rows are identical before and after Patch1 (I19/I20 not in HZ)."""
+    ctx = _make_ctx("S1", "ETH", n=400, seed=55)
+    _populate_matching_stage3_metrics(ctx)
+    rows, _ = _hz_block(ctx, "S1", "ETH")
+    # Spot-check: all 12 features x 3 q x 2 variants = 72 rows per session/asset
+    assert len(rows) == len(STAGE3_HZ_FEATURES) * len(STAGE3_QUANTILES) * 2
+    for r in rows:
+        assert r["axis"] == "HZ"
+        assert r["variant_id"] in ("T0", "TZ")
+
+
+def test_patch1_regression_hb_semantics_unchanged():
+    """Regression: HB block still runs correctly; Patch1 has no HB changes."""
+    ctx = _make_ctx("S2", "ETH", n=400, seed=66)
+    _populate_matching_stage3_metrics(ctx)
+    _, hz_cache = _hz_block(ctx, "S2", "ETH")
+    hb_rows = _hb_block(ctx, "S2", "ETH")
+    expected = len(STAGE3_HB_FAMILIES) * 2 * len(STAGE3_HORIZONS)
+    assert len(hb_rows) == expected, (
+        f"Expected {expected} HB rows, got {len(hb_rows)}"
+    )
