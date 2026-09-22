@@ -1,22 +1,18 @@
 [
   {
-    "content": "READ-ONLY VERIFICATION: Verify CSV, Manifest, Provenance artifacts and cross-check all stats",
+    "content": "Fix linting warnings in test_v1_2_stage3.py (unused imports ~lines 597, 609)",
     "status": "completed"
   },
   {
-    "content": "PACKAGING: Copy artifacts to /tmp/stage2_real_run_export/, create SHA256SUMS.txt and FILE_SIZES.txt",
+    "content": "Run pytest backend/tests/test_v1_2_stage3.py and fix all failures until green",
     "status": "completed"
   },
   {
-    "content": "ZIP CREATION: Create SUPERBOT_V1_2_STAGE2_REAL_RUN_f89049e.zip with exactly 5 root-level entries",
+    "content": "Post-check: verify only 2 authorized files changed, Stage2 hashes unchanged",
     "status": "completed"
   },
   {
-    "content": "SELF-CHECK: Verify ZIP entry count, extract, re-verify hashes/sizes, confirm git HEAD unchanged",
-    "status": "completed"
-  },
-  {
-    "content": "FINAL REPORT: Output full formatted report with FINAL_VERDICT only if all checks pass",
+    "content": "Output final report with FINAL_VERDICT: STAGE3_IMPLEMENTATION_READY_FOR_CODE_AUDIT",
     "status": "completed"
   }
 ]

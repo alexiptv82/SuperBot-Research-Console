@@ -1,110 +1,119 @@
-# SuperBot Research Console V1 — plan.md
+# SUPERBOT V1.2 — Stage3 Implementation Plan (Implementation + Focused Tests Only)
 
 ## 1) Objectives
-- Deliver **SuperBot Research Console V1**: deterministic QA web app for **MultiVenue 3H session ZIPs** (upload → QA → registry → checkpoints).
-- Enforce frozen constraints: **collector SHA256 = `e924edc1b8348d9cc8e74a37eaa17e6bbc80116de29d2f7a00cd43444d1265a3`**, no tuning, no LLM, no trading.
-- Provide **dedup + immutable QA runs + validated-hours tracking** toward OLD36 / NEW12 / TOTAL48 / NEW36 / TOTAL72.
-- Implement **tolerant, adaptable manifest parsing**: missing critical runtime fields ⇒ **UNRESOLVED** (never guessed).
-- Be **GitHub + Docker + Railway-ready** with **SQLite (SQLAlchemy)**, DB path via `SUPERBOT_DB_PATH` (default `/app/backend/data/superbot.db`).
-- Add **single-owner password gate** (env `SUPERBOT_PASSWORD`) with signed server session cookie.
+- Implement **Stage3 candidate-only diagnostics generator** per frozen spec: **HZ_FINAL, HG_FINAL, HC_FINAL, HB_FINAL** (no cross-product) totaling **576 rows**.
+- Enforce **fail-closed invariants I1–I21** before any artifact write.
+- Ensure **golden isolation** (runtime module contains no golden reads/imports/paths).
+- Add **focused tests only** and run **only** `pytest backend/tests/test_v1_2_stage3.py`.
+- Maintain Stage2 lineage integrity: no changes to Stage1/Stage2/engine/FrozenAnalysisEngine, no real Stage3 run, no OLD36 RAW, no NEW36 quantitative access.
 
 ## 2) Implementation Steps
 
-### Phase 1 — POC (skip=true)
-- Skip standalone POC script (no external integrations).
-- Use **pytest synthetic fixtures** as the isolation gate for the core workflow (ZIP ingest → safe extract → QA verdict → registry write).
+### Phase 1 — Core POC (Isolation)
+User stories:
+1. As a developer, I want Stage3 row generation to work on **synthetic contexts only**, so no real data is touched.
+2. As a developer, I want deterministic **576-row assembly** by axis, so I can validate counts and keys.
+3. As a developer, I want invariants to fail-closed before any write, so no partial artifacts are produced.
+4. As a developer, I want fingerprinting to exactly match Stage1/Stage2 encoding, so outputs are comparable later.
+5. As an auditor, I want golden isolation checks, so runtime cannot accidentally read goldens.
 
-### Phase 2 — V1 App Development (MVP)
-**Backend (FastAPI, /api, 0.0.0.0:8001)**
-1. **Data model (SQLAlchemy + Alembic-lite create_all)**
-   - Tables: `sessions` (session_id canonical row), `qa_runs` (append-only per processing), `audit_log` (append-only), `raw_files` (retention state).
-   - Ensure: reprocessing creates new `qa_runs`; never overwrite.
-2. **Auth**
-   - `/api/auth/login` (password check) → signed session cookie.
-   - `/api/auth/logout`, `/api/auth/me`.
-   - Middleware/dep to protect **all** app APIs.
-3. **Upload + ingestion**
-   - `/api/sessions/upload` accepts 1..N ZIPs + `retain_raw` flag.
-   - Compute ZIP SHA256; attempt to derive `session_id` (from filename; if unknown mark provisional).
-   - Store raw ZIP temporarily; apply ZIP security rules (zip-slip, limits).
-4. **Deterministic QA engine (core)**
-   - ZIP: readable + CRC check.
-   - Collector: detect collector SHA256 from available evidence; mismatch ⇒ FAIL; unknown ⇒ UNRESOLVED.
-   - Manifest/runtime: tolerant parser with key registry + synonyms; missing critical fields ⇒ UNRESOLVED.
-   - Dataset structure: detect presence/counts of `sync_grid_100ms`, `normalized_books`, `normalized_trades`; missing/duplicate/unexpected parts ⇒ FAIL/WARNING per policy.
-   - Parquet: magic bytes + footer metadata readability (no full loads).
-   - Reconnects: record summary; recovered reconnect ≠ auto-fail.
-   - Output: per-check breakdown + `verdict` (PASS/PASS_WITH_WARNING/FAIL/UNRESOLVED), `failure_reasons`, `warnings`.
-5. **Duplicate detection**
-   - Use `(session_id, zip_sha256)` to classify: NEW / EXACT_DUPLICATE / SAME_SESSION_DIFFERENT_FILE / CONFLICT.
-   - Enforce: duplicates never add validated hours twice.
-6. **Validated-hours + checkpoints**
-   - `validated_hours` computed only from QA runs that qualify (policy: PASS and PASS_WITH_WARNING count; FAIL/UNRESOLVED count 0).
-   - Checkpoint view: OLD36 / NEW12 / TOTAL48 / NEW36 / TOTAL72 + `72H_DATA_QA_READY` when required sessions are QA-qualified.
-   - Implement **FrozenAnalysisEngine stub module** with status `NOT_CONFIGURED` and no approximation.
-7. **Raw ZIP retention**
-   - Default: delete raw ZIP after PASS; keep on FAIL/UNRESOLVED/crash or `retain_raw=true`.
-   - Track retention state and expose via API/UI.
-8. **Reports + export**
-   - Per-session + global exports: JSON, CSV, Markdown.
-   - QA Reports page backed by `/api/reports/...` endpoints.
-9. **System/Audit log**
-   - Append-only audit rows: upload, dedup decision, QA verdict, retention decision, reprocess.
+Steps:
+- **Precheck (read-only)**
+  - Record `git rev-parse HEAD` and `git status --short`; compare to expected `f89049e...` and report drift.
+  - Verify SHA256 unchanged for:
+    - `backend/recovery/v1_2_stage2.py` = `1612824c...`
+    - `backend/tests/test_v1_2_stage2.py` = `24877fe...`
+  - If unexpected drift in frozen sources: **STOP** with `STAGE3_IMPLEMENTATION_FAIL_PRECHECK`.
+- Create **only**:
+  - `backend/recovery/v1_2_stage3.py`
+  - `backend/tests/test_v1_2_stage3.py`
+- Build the Stage3 **core library** inside `v1_2_stage3.py`:
+  - Constants: diagnostic version, axes, variants, quantiles, horizons.
+  - Feature-set drift guard: assert exact **12 HZ features** match engine semantics at import/runtime precheck.
+  - Fingerprint helper: Stage1/Stage2 int64-LE concat → SHA256.
+  - Type-7 quantile threshold helper (abs(signal), finite-only; TZ excludes zeros).
+  - Row model + fixed CSV schema serializer (Python `csv` module, `\n` lineterminator, `repr(float)`, None→empty).
+- Implement **axis generators** that operate on injected synthetic ctx/data (no RAW readers):
+  - **HZ**: T0/TZ + classification + threshold fields; expected rows = 288.
+  - **HG**: depthL1_extOFI G0 drift guard, G1 gate logic with depth_imbalance_l1 threshold; expected rows = 72.
+  - **HC**: gap_depth_extOFI C0 drift guard, C1 raw-sign conjunction; expected rows = 72.
+  - **HB**: 6 families × horizons × sessions × assets × (B0/B1) with exact-spacing pair counting; expected rows = 144.
+- Implement **invariant suite I1–I21** (pure functions) run on the full row list **before any write**.
+- Implement writer API (production path fixed):
+  - `run_stage3_diagnostics()` writes to `backend/recovery/reports/v1_2/` with FileExistsError guards.
+  - Must not accept output_dir param.
+  - Must refuse protected names.
+  - Write CSV bytes, compute sha/size, then write manifest deterministic JSON.
+  - Note: tests will validate writer behavior but will not execute real Stage3 on OLD36.
 
-**Frontend (React, 3000)**
-10. **Login gate** (password form; maintain session).
-11. Implement required pages (§12.2):
-    - Overview (validated hours + readiness)
-    - Upload Sessions (drag/drop, progress, retain toggle)
-    - Session Registry (filter/sort/status)
-    - Session Detail (all §12.3 fields + per-check breakdown)
-    - QA Reports (downloads)
-    - Checkpoints (progress bars + readiness flags)
-    - Project Policy (render frozen rules verbatim)
-    - System / Audit Log
+### Phase 2 — V1 App Development (Core module + tests)
+User stories:
+1. As a developer, I want a single entrypoint to generate the Stage3 artifact deterministically (without running it in tests).
+2. As a developer, I want strict schema enforcement, so every axis writes the same column order.
+3. As a developer, I want matrix membership checks, so no accidental cartesian products occur.
+4. As a developer, I want drift guards (I17) to detect engine semantic changes.
+5. As an auditor, I want the manifest to include source SHA256s and safety flags.
 
-**Phase 2 user stories (at least 5)**
-1. As the owner, I must log in with an env password before I can access any page.
-2. As the owner, I drag-and-drop ZIPs and see a per-file verdict (PASS/WARNING/FAIL/UNRESOLVED) with reasons.
-3. As the owner, duplicates are detected (EXACT_DUPLICATE / SAME_SESSION_DIFFERENT_FILE / CONFLICT) and hours are not double-counted.
-4. As the owner, missing manifest/runtime fields produce UNRESOLVED with a list of missing critical fields.
-5. As the owner, I can open a Session Detail page and see every registry field + QA breakdown + retention state.
+Steps:
+- Flesh out implementations for each axis to match the frozen spec exactly:
+  - Ensure correct null/empty field semantics per axis.
+  - Ensure HB exact_spacing_pair_n computed using set-based O(N).
+  - Ensure drift guard compares required metrics with tolerance `<=1e-12`.
+  - Ensure G1 uses HZ-T0 depth_imbalance_l1 threshold (I18) and subset constraints (I19).
+  - Ensure C1 subset of C0 threshold-crossing set (I20).
+- Implement manifest schema exactly:
+  - Deterministic keys, `sort_keys=True`, no timestamp.
+  - Safety fields: `new36_opened=false`, `golden_artifacts_read_by_generator=false`, `v1_1_stage1_stage2_modified=false`.
+  - Include `source_sha256` for both new files.
+- Implement static **golden isolation guard** (I21): source scan for forbidden tokens/paths/imports.
 
-### Phase 3 — Testing, Docker, and Handoff Readiness
-1. **Pytest suite (§14.2)** using small synthetic fixtures (<30s):
-   - valid session, corrupted ZIP, wrong collector hash, exact duplicate, same session diff hash,
-     missing Parquet part, duplicate Parquet part, corrupted Parquet metadata,
-     watchdog true, nonzero exit code, writer error, recovered reconnect, unresolved reconnect,
-     zip-slip safe path handling.
-2. **End-to-end test pass** with testing agent: login → upload → registry → detail → exports → checkpoints.
-3. **Docker + docs**
-   - Add Dockerfile(s) + compose notes; ensure SQLite path uses persistent mount.
-   - Add `README.md` + `.env.example` documenting `SUPERBOT_DB_PATH`, `SUPERBOT_PASSWORD`.
-4. **Preview readiness step (critical)**
-   - After app is up, user uploads first real 3H ZIP.
-   - Validate/adapt manifest-field discovery (without guessing); update parser mapping if needed.
+### Phase 3 — Focused Testing & Validation
+User stories:
+1. As a tester, I want unit tests that prove HZ T0/TZ handling of zeros/NaNs and classification.
+2. As a tester, I want tests proving HG/HC alternative variants use RAW sign logic where specified.
+3. As a tester, I want HB boundary strictness and exact_spacing_pair_n correctness (non-adjacent pairs).
+4. As a tester, I want writer tests ensuring deterministic CSV bytes (newline, None formatting, column order).
+5. As an auditor, I want tests ensuring golden isolation and no real Stage3 execution.
 
-**Phase 3 user stories (at least 5)**
-1. As a developer, I run `pytest` and all §14.2 tests finish in under 30 seconds.
-2. As the owner, I can download registry-wide CSV/JSON/MD reports for audit.
-3. As the owner, PASS deletes raw ZIP by default while FAIL/UNRESOLVED always retain it.
-4. As the owner, reprocessing creates a new QA run and old runs remain visible.
-5. As a developer, I can build the Docker image and run it with a mounted volume for SQLite.
+Tests to implement in `test_v1_2_stage3.py` (synthetic-only):
+- HZ: 12-feature set guard; finite/nonzero/zero counts; zero_fraction; all 3 classes incl tied T0==TZ with zero_n>0; type7 threshold behavior; 288 rows.
+- HG: G0 drift guard (synthetic metrics); G1 threshold equals HZ-T0 depth_imbalance_l1; raw sign direction; external_ofi finite/nonzero/sign match; gate_zero_n; subset invariant; 72 rows.
+- HC: C0 drift guard; C1 raw di_l1 sign + raw external_ofi sign; explicit synthetic example where z-sign differs from raw; subset invariant; 72 rows.
+- HB: boundary >= vs >; exact_spacing_pair_n correctness for [0,5,10] spacing=10 → 1; exact_spacing_pair_n==0 implies identical B0/B1 outputs; B1.accepted_n<=B0.accepted_n; 144 rows.
+- Fingerprint: int64-LE encoding; order independence; empty hash.
+- I17/I21: drift guard failure cases (missing ctx.metrics/key); static scan forbids golden references.
+- Writer: fixed path/no output_dir; no overwrite; schema order; `\n` newline; None empty field; deterministic hash/size (for a synthetic mini-run).
+
+Execution:
+- Run only: `pytest backend/tests/test_v1_2_stage3.py`
+
+### Phase 4 — Post-Implementation Scope Verification
+User stories:
+1. As a maintainer, I want proof only the authorized files changed.
+2. As an auditor, I want Stage2 frozen hashes unchanged.
+3. As a reviewer, I want a clean summary report for code audit readiness.
+4. As a maintainer, I want confirmation no real Stage3 was executed.
+5. As an auditor, I want confirmation no OLD36 RAW/NEW36/goldens were accessed.
+
+Steps:
+- Verify only the two new files were created/changed.
+- Report any platform metadata drift separately (e.g., `.emergent`).
+- Do not commit; if auto-commit occurs, report HEAD.
 
 ## 3) Next Actions
-- Implement Phase 2 backend core (models → auth → upload → QA engine → dedup → checkpoints → exports → audit log).
-- Implement Phase 2 frontend pages + styling + session-based routing.
-- Add pytest fixtures + full §14.2 coverage.
-- Run testing agent E2E.
-- Prepare Docker + README + `.env.example`.
-- After Preview: ingest first real ZIP and adjust manifest key mapping to eliminate UNRESOLVED where appropriate.
+1. Run precheck commands (HEAD/status) and Stage2 SHA256 verification; decide pass/fail.
+2. Create `backend/recovery/v1_2_stage3.py` skeleton with: constants, schema writer, fingerprint, threshold/type7, invariant framework.
+3. Implement HZ axis generator first + unit tests for classification/threshold logic.
+4. Implement HB axis generator + tests for boundary and exact_spacing_pair_n.
+5. Implement HG/HC variants + drift/subset invariants + tests.
+6. Implement writer + manifest + golden-isolation static guard + tests.
+7. Run `pytest backend/tests/test_v1_2_stage3.py` and fix until green.
 
 ## 4) Success Criteria
-- All 8 required pages exist and are auth-protected.
-- Uploading ZIPs produces deterministic QA verdicts and immutable registry entries.
-- Duplicate detection works per spec; validated hours never double-count.
-- Missing/unknown critical manifest fields yield UNRESOLVED (no guessed values) and prevent PASS.
-- Checkpoints compute OLD36/NEW12/TOTAL48/NEW36/TOTAL72 and `72H_DATA_QA_READY` correctly.
-- `FrozenAnalysisEngine` is present and clearly `NOT_CONFIGURED` (no fake analysis).
-- Pytest covers all §14.2 scenarios and runs fast with synthetic fixtures.
-- Repo is Docker-buildable and Railway-ready with SQLite on persistent volume.
+- Precheck passes (or drift is only untracked artifacts/metadata) and Stage2 SHA256s match expected.
+- Only two files created: `v1_2_stage3.py`, `test_v1_2_stage3.py` (no other source modifications).
+- Stage3 generator produces exactly: HZ=288, HG=72, HC=72, HB=144, TOTAL=576, with fixed schema and null semantics.
+- All invariants I1–I21 implemented and covered by focused tests; fail-closed before any write.
+- Golden isolation: static scan passes; runtime has no golden read/import/path.
+- Tests: `pytest backend/tests/test_v1_2_stage3.py` passes; no other test suites run.
+- No real Stage3 execution; no OLD36 RAW; no NEW36 quantitative open; no golden artifacts read.
