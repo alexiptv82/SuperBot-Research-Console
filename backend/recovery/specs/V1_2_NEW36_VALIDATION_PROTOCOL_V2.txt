@@ -1,0 +1,172 @@
+SUPERBOT_V1_2_NEW36_VALIDATION_PROTOCOL_V2 version=2.0 document_class=CANONICAL_PROSPECTIVE_VALIDATION_PROTOCOL scope=NEW36_PROSPECTIVE_IMPLEMENTATION_EQUIVALENCE_AND_STRUCTURAL_FALSIFICATION editing_policy=IMMUTABLE_AFTER_HASH
+================================================================
+1. PURPOSE AND EPISTEMIC BOUNDARY
+================================================================
+primary_validation_objective= test implementation equivalence between two independently authored implementations of the frozen V1.2 candidate specification on unseen NEW36 data, and test the emitted candidate artifact against a closed, pre-registered set of structural invariants.
+historical_reconstruction_validation=UNAVAILABLE reason= no historical NEW36 golden/reference output exists in the accessible project history/runtime; CP24 and CP36 golden artifacts are OLD36.
+this_protocol_does_not_establish= historical_generator_source_identity; historical_event_identity; uniqueness_of_the_specification; correctness_of_OLD36_informed_rule_choices; profitability; alpha; predictive_power; economic_significance; generalization_beyond_NEW36; live_trading_readiness; production_readiness
+BASE_ACCEPTANCE_SHA256= 3da3564fd40ba55a153e5c979bc7f1ed2a2ee32a1ba6baac9ef326b7a969feef
+AMENDMENT_001_SHA256= ff464308580aa82ba7d7d26150d3647d2a993f97ad2de62d72888b9b302caa26
+BASE_and_AMENDMENT_disposition= immutable_historical_protocol_evidence; superseded_for_NEW36_by_this_V2_protocol; historical_golden_dependent_acceptance_rules_are_inapplicable_to_NEW36
+================================================================
+2. FROZEN CANDIDATE IDENTITY
+================================================================
+CANDIDATE_SPEC_SHA256= aed67b5ec9ae1b710ec3d96e1fcc2e15bd9c30fdd60e80cc68553d8fc3b597ca
+IMPLEMENTATION_SOURCE_AGGREGATE_SHA256= dbfd311f7b0290a29f546de57d494e77082516cff91ae7e4b5e82587d141356a
+IMPLEMENTATION_TEST_AGGREGATE_SHA256= b9ffac445641c007b83a0a8e71cd0d40cdff29ee3f968a07cbf7fe3bf675c275
+ENGINE_SHA256= abedee399c272eff858b109fb448cbda3ad3a49e40be4ba3f486650e3151a3e8
+COLLECTOR_SHA256= e924edc1b8348d9cc8e74a37eaa17e6bbc80116de29d2f7a00cd43444d1265a3
+candidate_axes= HZ=TZ; HG=G1; HC=C1; HB=B0; G1_THRESHOLD_SOURCE=TZ
+diagnostic_controls= HZ:T0; HG:G0; HC:C0; HB:B1
+diagnostic_controls_are_not_alternative_candidates=true post_NEW36_candidate_selection=FORBIDDEN
+================================================================
+3. APPENDIX B — CLOSED NEW36 INVENTORY
+================================================================
+NEW36_SESSION_IDS_ORDERED= 20260910T123759Z_5ab0c1b2; 20260911T040213Z_43a798b7; 20260911T081446Z_28b5a901; 20260911T113249Z_276d8c3b; 20260911T145009Z_37923a7a; 20260911T220737Z_5d45563e; 20260912T072730Z_adb96088; 20260912T163326Z_16b9ca74; 20260912T213151Z_9f9a0088; 20260914T050815Z_3b68aabf; 20260914T133522Z_6141ec8b; 20260914T192945Z_1b899057
+ASSETS=BTC;ETH QUANTILES=0.80;0.90;0.95 DIAGNOSTIC_HORIZONS_MS=1000;5000;30000
+HZ_FEATURES= bitget_ofi; bitget_trade_flow; depth_imbalance_l1; depth_imbalance_l5; external_ofi; external_trade_flow; fair_accel_100ms; fair_gap_reversion; leader_gap_100ms; leader_gap_200ms; leader_gap_500ms; leader_gap_1000ms
+HG_FAMILY=depthL1_extOFI HC_FAMILY=gap_depth_extOFI
+HB_FAMILIES= depth_imbalance_l1; gap_depthL1; gap_localOFI; bitget_ofi; depthL1_extOFI; gap_depth_extOFI
+HB_QUANTILE=0.90
+NEW36_BLOCK_COUNT=24 HZ_EXPECTED_ROWS=1728 HG_EXPECTED_ROWS=432 HC_EXPECTED_ROWS=432 HB_EXPECTED_ROWS=864 TOTAL_EXPECTED_ROWS=3456
+inventory_formula= 12_sessions * 2_assets = 24_blocks; HZ=241223=1728; HG=241233=432; HC=241233=432; HB=24621*3=864
+inventory_is_closed=true extra_or_missing_case=FAIL
+================================================================
+4. ARTIFACT CONTRACT
+================================================================
+artifact_pair= candidate_csv + candidate_manifest_json; reference_csv + reference_manifest_json
+canonical_row_key= session_id; asset; axis; feature_family; variant_id; quantile; horizon_ms
+row_key_must_be_unique=true
+canonical_sort= session_order_from_APPENDIX_B; asset_order=BTC_then_ETH; axis_order=HZ_then_HG_then_HC_then_HB; feature_order=order_declared_in_APPENDIX_B; variant_order= HZ:T0_then_TZ; HG:G0_then_G1; HC:C0_then_C1; HB:B0_then_B1; quantile_order=0.80_then_0.90_then_0.95; horizon_order=1000_then_5000_then_30000; HZ_horizon_ms=NULL
+csv_encoding=UTF-8 csv_line_terminator=LF null_serialization=empty_field float_serialization=repr(float) explicit_decimal_rounding=NONE
+required_row_fields_ordered= protocol_version; session_id; asset; axis; feature_family; variant_id; quantile; horizon_ms; threshold_domain_finite_n; threshold_domain_nonzero_n; zero_n; zero_fraction; nonzero_unique_value_n; hz_discrimination_class; gate_zero_n; calculated_threshold; spacing_steps; pre_overlap_n; exact_spacing_pair_n; accepted_n; overlap_dropped_n; accepted_positions_sha256; mean_signed_bps; hit_rate; mean_abs_move
+string_fields= protocol_version; session_id; asset; axis; feature_family; variant_id; hz_discrimination_class; accepted_positions_sha256
+integer_fields= horizon_ms; threshold_domain_finite_n; threshold_domain_nonzero_n; zero_n; nonzero_unique_value_n; gate_zero_n; spacing_steps; pre_overlap_n; exact_spacing_pair_n; accepted_n; overlap_dropped_n
+float_fields= quantile; zero_fraction; calculated_threshold; mean_signed_bps; hit_rate; mean_abs_move
+axis_inapplicable_fields_must_be_NULL=true threshold_None_serializes_as_NULL=true metric_when_accepted_n_zero=NULL
+accepted_positions_fingerprint= accepted grid_pos sorted ascending; cast each to signed little-endian int64; concatenate raw 8-byte representations without delimiter; SHA256; lowercase 64-character hexadecimal; empty set uses SHA256(empty_bytes)
+exact_spacing_pair_definition= count consecutive pairs in the sorted pre-overlap positions array whose difference equals spacing_steps
+IMPORTANT_exact_spacing_pair_definition= consecutive_pairs_only; not_all_unordered_pairs
+================================================================
+5. MANIFEST CONTRACT
+================================================================
+required_manifest_keys= protocol_version; implementation_role; runtime_source_commit; source_sha256; csv_sha256; csv_size_bytes; manifest_precomparison_sha256; session_ids; assets; axes; feature_sets_per_axis; variant_sets_per_axis; quantiles_per_axis; horizons_per_axis; expected_row_counts_per_axis; actual_row_counts_per_axis; expected_total_row_count; actual_total_row_count; collector_sha256; engine_sha256; candidate_spec_sha256; protocol_sha256; new36_inventory_id; golden_artifacts_read; old36_quantitative_data_read; frozen_analysis_engine_state; frozen_analysis_engine_accepts_input; fingerprint_encoding_definition; quantile_method; grid_ms
+implementation_role_values=CANDIDATE;REFERENCE golden_artifacts_read=false old36_quantitative_data_read=false frozen_analysis_engine_state=NOT_CONFIGURED frozen_analysis_engine_accepts_input=false quantile_method=TYPE7_LINEAR grid_ms=100
+manifest_serialization= UTF-8_JSON; sort_keys=true; indent=2; final_newline=true
+manifest_precomparison_sha256_definition= SHA256 of canonical manifest bytes with manifest_precomparison_sha256 set to NULL; after computing, write the digest into that field and serialize again
+candidate_and_reference_manifest_schema_must_be_identical=true
+================================================================
+6. S1 — INDEPENDENT IMPLEMENTATION EQUIVALENCE
+================================================================
+S1_scope=all_3456_rows_plus_required_manifest_semantics
+S1_string_comparison=EXACT S1_integer_comparison=EXACT S1_NULL_comparison=NULL_matches_NULL_only S1_fingerprint_comparison=EXACT_lowercase_hex
+S1_float_comparison= both_NULL OR both_finite_and_abs(candidate-reference)<=1e-12
+NaN_or_infinity_in_emitted_float_field=FAIL
+S1_row_key_set_must_match_exactly=true S1_row_count_must_match_exactly=true S1_canonical_sort_must_match=true
+S1_manifest_comparison= semantic fields defined by this protocol must match exactly except implementation_role, runtime_source_commit, source_sha256, csv_sha256, csv_size_bytes, manifest_precomparison_sha256, which are role-specific provenance fields and must each be valid.
+any_S1_disagreement=IMPLEMENTATION_DISAGREEMENT S1_disagreement_grace_or_averaging=FORBIDDEN
+================================================================
+7. APPENDIX A / S2 — CLOSED CANDIDATE INVARIANT LIST
+================================================================
+A01_INVENTORY= candidate emits exactly the closed Appendix-B inventory and 3456 rows.
+A02_UNIQUE_KEY= canonical row key is unique.
+A03_TZ_ZERO_EXCLUSION= TZ threshold domain is quality_admissible AND finite(signal) AND signal!=0.0.
+A04_THRESHOLD_NONE= fewer than two values in the applicable threshold domain yields calculated_threshold=NULL and event N=0 for the corresponding threshold-dependent computation.
+A05_HZ_COUNTS= finite_n>=nonzero_n>=0; zero_n=finite_n-nonzero_n; zero_fraction=NULL iff finite_n=0; otherwise zero_fraction=zero_n/finite_n and lies in [0,1].
+A06_ZERO_FREE_CONTROL= if zero_n=0, T0 and TZ calculated_threshold must be equal within 1e-12.
+A07_G1_THRESHOLD_SOURCE= every G1 threshold equals the corresponding TZ depth_imbalance_l1 threshold for the same session,asset,q within 1e-12.
+A08_G1_PARENT_SUBSET= G1 pre-overlap events are a subset of the parent depth_imbalance_l1 TZ gate.
+A09_G1_RAW_SIGN= G1 confirmation uses raw external_ofi_consensus_l1 sign and raw bitget_depth_imbalance_l1 sign; z-score confirmation is forbidden.
+A10_C1_GAP_THRESHOLD= C1 uses the frozen fair-gap threshold domain unchanged by HZ zero exclusion.
+A11_C1_GAP_SUBSET= C1 pre-overlap events are a subset of the shared fair-gap threshold-crossing parent set.
+A12_C1_RAW_SIGNS= C1 confirmation uses raw di_l1 and raw ext_ofi signs opposing gap; z_di_l1,z_ext_ofi,z_gap_d are forbidden from candidate confirmation.
+A13_SPACING= k=horizon_ms//100; spacing_steps=max(10,k).
+A14_B0= greedy earliest-first over ascending grid_pos; first event accepted; subsequent event accepted iff pos-last_accepted>=spacing_steps.
+A15_B1_CONTROL= B1 is diagnostic only and uses strict pos-last_accepted>spacing_steps. B1 can never replace B0.
+A16_COUNT_ACCOUNTING= pre_overlap_n=accepted_n+overlap_dropped_n.
+A17_ACCEPTED_ORDER= accepted positions are unique, ascending and a subset of pre-overlap positions.
+A18_FINGERPRINT= accepted_positions_sha256 follows the exact encoding in Section 4 and represents exactly accepted_n positions.
+A19_I11= paired B1.accepted_n<=B0.accepted_n.
+A20_I12= if exact_spacing_pair_n==0 then paired B0 and B1 accepted masks, accepted_n and accepted_positions_sha256 are identical.
+A21_EXACT_SPACING_DEFINITION= exact_spacing_pair_n uses consecutive pairs in the sorted pre-overlap position array only.
+A22_METRIC_EMPTY= accepted_n=0 implies mean_signed_bps=NULL, hit_rate=NULL and mean_abs_move=NULL.
+A23_HIT_RATE= zero signed return counts as a miss.
+A24_ASSET_INDEPENDENCE= BTC and ETH computations are independent.
+A25_GOLDEN_ISOLATION= candidate and reference generators read no golden artifacts.
+A26_OLD36_ISOLATION= candidate and reference generators read no OLD36 quantitative artifacts during V2 execution.
+A27_COLLECTOR= collector SHA equals the frozen COLLECTOR_SHA256.
+A28_FROZEN_ENGINE= FrozenAnalysisEngine remains NOT_CONFIGURED and accepts_input=false.
+A29_PROTOCOL_IDENTITY= protocol SHA, candidate spec SHA and engine SHA in manifests match their frozen values.
+A30_CONTROL_STATUS= T0,G0,C0,B1 remain diagnostic controls only and cannot trigger candidate substitution, tuning or a second candidate.
+all_A01_through_A30_are_fail_closed=true any_A01_through_A30_violation=S2_FAIL
+================================================================
+8. S3 — SPECIFICATION-DERIVED INTERNAL IDENTITIES
+================================================================
+S3_1= gap-family diagnostic thresholds that normatively inherit the frozen fair-gap gate must equal the corresponding fair_gap_reversion threshold within 1e-12.
+S3_2= a threshold defined without horizon dependence must remain identical across repeated diagnostic horizons for the same session,asset,feature,q within 1e-12.
+S3_3= G1 threshold equals TZ depth_imbalance_l1 threshold. classification=IMPLEMENTATION_FIDELITY; not_independent_empirical_falsification.
+S3_4= when HZ zero_n=0, T0 threshold equals TZ threshold. classification=IMPLEMENTATION_FIDELITY; not_independent_empirical_falsification.
+S3_failure=S3_FAIL
+================================================================
+9. S4 — INVENTORY VALIDATION
+================================================================
+S4_requires= exact 12 NEW36 session IDs in frozen order; exact assets BTC,ETH; exact axes/features/variants/quantiles/horizons; exact per-axis counts; exact total 3456; no duplicate canonical keys; no undeclared rows; no missing rows
+S4_failure=S4_FAIL
+================================================================
+10. S5 — DEGENERACY AND DIAGNOSTIC REPORTING
+================================================================
+hard_rules= threshold_NULL_implies_N_zero; accepted_n<=pre_overlap_n; counts_nonnegative; emitted_floats_finite_or_NULL
+empirical_empty_or_sparse_cells= permitted; must_be_reported; do_not_by_themselves_fail_validation
+no_empty_axis_expectation=WARNING_ONLY S5_hard_rule_violation=S5_FAIL
+================================================================
+11. REFERENCE IMPLEMENTATION INDEPENDENCE CONTRACT
+================================================================
+reference_must_be_authored_before_any_NEW36_application_execution=true
+reference_author_must_not_read= v1_2_candidate.py; candidate_generator_source; candidate_tests; candidate_outputs; v1_2_diagnostics.py; v1_2_stage2.py; v1_2_stage3.py; Stage1_Stage2_Stage3_tests; OLD36_diagnostic_CSVs_or_manifests
+reference_author_may_read= this_V2_protocol; V1_2_CANDIDATE_SPEC.txt; engine.py_only_for_explicitly_normative_V1_1_primitives; checkpoint_registry.py_only_for_frozen_NEW36_session_identity
+engine_access_disclosure= engine.py contains substantial V1.1 computation and is not merely constants. Any reference use of engine.py must be declared by exact imported symbol in the reference manifest/attestation.
+reference_author_independence= reference must be authored by an agent that has not authored or reviewed the candidate implementation and has not seen candidate NEW36 output.
+reference_design_rationale_from_candidate=PROHIBITED
+reference_source_must_be_preserved_and_hashed=true reference_tests_must_be_preserved_and_hashed=true independence_attestation_required=true
+================================================================
+12. COMPARATOR INDEPENDENCE AND HASH-BEFORE-COMPARE
+================================================================
+candidate_CSV_and_manifest= fully_written_then_SHA256_frozen_before_comparator_reads_them
+reference_CSV_and_manifest= fully_written_then_SHA256_frozen_before_comparator_reads_them
+comparator= authored_against_frozen_S1; frozen_and_hashed_before_NEW36_application_execution; reads_only_hashed_candidate_and_reference_artifacts; must_not_modify_either_artifact
+comparison_before_both_artifact_hashes_exist=INVALID_RUN
+change_to_generator_reference_comparator_or_protocol_after_application_start= INVALID_RUN
+================================================================
+13. ONE-SHOT CONTRACT
+================================================================
+APPLICATION_INVOCATION_COUNT_CANDIDATE_MAX=1 APPLICATION_INVOCATION_COUNT_REFERENCE_MAX=1
+application_invocation_definition= begins when application code first receives or reads any NEW36 quantitative input.
+ATTEMPT_COUNT= separately records process-launch attempts that fail before any application code receives or reads NEW36 quantitative input.
+infrastructure_retry_allowed_only_if_all_true= failure_is_strictly_process_launch_or_raw_IO_infrastructure; zero_application_NEW36_quantitative_code_executed; no_partial_candidate_or_reference_output_exists; all_frozen_hashes_and_environment_identity_unchanged; failure_evidence_and_retry_authorization_recorded_before_retry
+such_pre_application_retry= increments_ATTEMPT_COUNT; does_not_increment_APPLICATION_INVOCATION_COUNT
+once_application_invocation_begins= NEW36_is_consumed_for_V1_2; no_candidate_rerun; no_reference_rerun; no_protocol_change; no_tolerance_change; no_invariant_change; no_variant_change; no_NEW36_informed_fix_and_retry
+structural_or_equivalence_failure_after_application_start= V1_2_NEW36_PROTOCOL_FAIL; NEW36_CONSUMED_FOR_V1_2=true; RETRY_PERMITTED=false
+future_reconstruction_after_failure= must_be_new_version; NEW36_may_only_be_used_retrospectively; prospective_validation_requires_another_untouched_dataset
+================================================================
+14. PRE-EXECUTION FREEZE REQUIREMENTS
+================================================================
+before_NEW36_application_invocation_all_must_exist_and_be_hashed= this_protocol; candidate_spec; candidate_generator_source_and_tests; reference_source_and_tests; reference_independence_attestation; comparator_source_and_tests; candidate_artifact_schema; reference_artifact_schema; manifest_schema; preflight; runtime_git_anchor; collector_identity; engine_identity
+preflight_must_fail_closed_on_any_hash_drift=true historical_pipeline_SHA_gate=FORBIDDEN placeholder_pipeline_identity=FORBIDDEN
+================================================================
+15. VERDICT
+================================================================
+PASS_requires= S1_PASS; S2_PASS; S3_PASS; S4_PASS; S5_PASS; all_pre_execution_hash_and_safety_guards_pass
+otherwise_after_valid_application_execution= V1_2_NEW36_PROTOCOL_FAIL
+infrastructure_or_integrity_failure_after_quantitative_access= INVALID_RUN; NEW36_CONSUMED_FOR_V1_2=true; RETRY_PERMITTED=false
+pre_application_precondition_failure= PRECONDITION_FAIL; NEW36_not_consumed_if_and_only_if_no_quantitative_NEW36_input_was_read
+================================================================
+16. CLAIM BOUNDARY
+================================================================
+permitted_PASS_claim= A V2 PASS establishes that two independently authored implementations of the frozen V2 specification produced equivalent outputs on the NEW36 inventory under the frozen S1 comparison rules, and that the candidate emitted artifacts satisfy the closed S2 invariant list on that inventory.
+prohibited_PASS_claims= historical reconstruction correctness; historical source identity; event identity with an unavailable historical generator; uniqueness of the specification; profitability; alpha; predictive power; economic significance; production readiness; live trading readiness; generalization; correctness of OLD36-informed candidate choices
+================================================================
+17. TERMINATION
+================================================================
+NEW36_quantitative_access_authorized_by_this_document=NO implementation_authorized_by_this_document=NO reference_execution_authorized_by_this_document=NO candidate_execution_authorized_by_this_document=NO
+next_phase= freeze implementation architecture, independent reference, comparator and effective V2 preflight before any NEW36 execution
+document_terminates_here=true append_after_hash=FORBIDDEN
