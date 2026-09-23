@@ -1706,3 +1706,34 @@ def download_v2_amendment_001() -> FileResponse:
         media_type="text/plain; charset=utf-8",
         filename="V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_001.txt",
     )
+
+
+# ---------------------------------------------------------------------------
+# V2 Amendment 002 — read-only download endpoint
+# ---------------------------------------------------------------------------
+
+_AMENDMENT_002_PATH = Path(
+    "/app/backend/recovery/specs/V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_002.txt"
+)
+_AMENDMENT_002_EXPECTED_SHA256 = "9a335589a44df68de56804bce09d122308f01ba95403bcb10a764c0b3461df57"
+_AMENDMENT_002_EXPECTED_SIZE   = 7236
+
+
+@app.get("/api/handoff/v2-amendment-002")
+def download_v2_amendment_002() -> FileResponse:
+    """Serve the pre-existing, pre-verified V2 Amendment 002 txt file.
+    Read-only. File is not regenerated or modified."""
+    import hashlib as _hl
+
+    if not _AMENDMENT_002_PATH.exists():
+        raise HTTPException(status_code=404, detail="AMENDMENT_002_FILE_NOT_FOUND")
+    data = _AMENDMENT_002_PATH.read_bytes()
+    if len(data) != _AMENDMENT_002_EXPECTED_SIZE:
+        raise HTTPException(status_code=500, detail="AMENDMENT_002_SIZE_INTEGRITY_FAIL")
+    if _hl.sha256(data).hexdigest() != _AMENDMENT_002_EXPECTED_SHA256:
+        raise HTTPException(status_code=500, detail="AMENDMENT_002_SHA256_INTEGRITY_FAIL")
+    return FileResponse(
+        path=str(_AMENDMENT_002_PATH),
+        media_type="text/plain; charset=utf-8",
+        filename="V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_002.txt",
+    )
