@@ -1,0 +1,142 @@
+SUPERBOT_V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_002 amendment=002 status=NORMATIVE_MANIFEST_SCHEMA_CLARIFICATION
+parent_protocol_sha256=5ed8a8b12726d395d25262dc3e4073250be3de94f3d62e64e99167921380ef95 amendment_001_sha256=e64f1198e3f97f975d1f0f8ec7183b1f0c83786429e98cbd66819d98f640f0bf candidate_spec_sha256=aed67b5ec9ae1b710ec3d96e1fcc2e15bd9c30fdd60e80cc68553d8fc3b597ca
+purpose= close manifest-only determinacy ambiguities AMB-11, AMB-12 and AMB-13 without changing candidate semantics, artifact row semantics, acceptance logic, independence rules, or NEW36 inventory
+candidate_selection_unchanged=true row_schema_unchanged=true S1_numeric_rules_unchanged=true one_shot_rules_unchanged=true
+================================================================
+B1. NEW36 INVENTORY ID
+================================================================
+new36_inventory_id MUST be the exact JSON string:
+"NEW36_12SESSIONS_24BLOCKS_3456ROWS_V1"
+This literal is identical in candidate and reference manifests.
+It is an identifier, not a content hash.
+It refers exactly to the frozen Appendix-B NEW36 inventory in the parent V2 protocol:
+sessions=12 assets_per_session=2 session_asset_blocks=24 expected_total_rows=3456
+No implementation may derive or substitute another inventory identifier.
+================================================================
+B2. CANONICAL MANIFEST VALUE SHAPES
+================================================================
+The following manifest keys MUST have exactly the JSON types and structures defined below.
+session_ids: JSON array of strings. Exactly the 12 session IDs from parent V2 Appendix B, in the exact Appendix-B order.
+assets: JSON array of strings: ["BTC","ETH"]
+axes: JSON array of strings: ["HZ","HG","HC","HB"]
+feature_sets_per_axis: JSON object exactly equivalent to:
+{
+  "HZ": [
+    "bitget_ofi",
+    "depth_imbalance_l1",
+    "gap_to_fair_bps",
+    "spread_bps",
+    "microprice_offset_bps",
+    "local_ofi_l1",
+    "external_ofi_consensus_l1",
+    "leader_gap_1000ms",
+    "leader_gap_5000ms",
+    "leader_gap_30000ms",
+    "bitget_depth_imbalance_l5",
+    "external_depth_imbalance_consensus_l1"
+  ],
+  "HG": ["depthL1_extOFI"],
+  "HC": ["gap_depth_extOFI"],
+  "HB": [
+    "depth_imbalance_l1",
+    "gap_depthL1",
+    "gap_localOFI",
+    "bitget_ofi",
+    "depthL1_extOFI",
+    "gap_depth_extOFI"
+  ]
+}
+
+IMPORTANT: The HZ feature strings MUST equal the exact 12 HZ feature-family identifiers frozen by the parent V2 Appendix B. If the textual spellings shown above differ in ANY character from the parent V2 Appendix-B identifiers, the parent V2 Appendix-B identifiers prevail verbatim.
+variant_sets_per_axis: JSON object:
+{
+  "HZ": ["T0","TZ"],
+  "HG": ["G0","G1"],
+  "HC": ["C0","C1"],
+  "HB": ["B0","B1"]
+}
+
+quantiles_per_axis: JSON object:
+{
+  "HZ": [0.8,0.9,0.95],
+  "HG": [0.8,0.9,0.95],
+  "HC": [0.8,0.9,0.95],
+  "HB": [0.9]
+}
+
+horizons_per_axis: JSON object:
+{
+  "HZ": [],
+  "HG": [1000,5000,30000],
+  "HC": [1000,5000,30000],
+  "HB": [1000,5000,30000]
+}
+
+expected_row_counts_per_axis: JSON object:
+{
+  "HZ": 1728,
+  "HG": 432,
+  "HC": 432,
+  "HB": 864
+}
+
+actual_row_counts_per_axis: JSON object with exactly the same four keys and integer values calculated from the produced artifact:
+{
+  "HZ": <integer>,
+  "HG": <integer>,
+  "HC": <integer>,
+  "HB": <integer>
+}
+
+No alternate representation is permitted.
+In particular, none of these plural fields may be serialized as: semicolon-delimited strings, comma-delimited strings, tuples, integer-indexed arrays, or differently keyed objects.
+JSON object key serialization remains governed by the parent V2 canonical JSON rule: sort_keys=true indent=2 UTF-8 LF final newline
+================================================================
+B3. FEATURE IDENTIFIER PRECEDENCE
+================================================================
+The parent V2 Appendix-B exact feature-family identifiers are normative.
+This Amendment does NOT rename any feature.
+If any illustrative feature spelling in B2 differs from the parent V2 Appendix-B exact literal, use the parent V2 literal verbatim.
+Candidate and reference MUST therefore use the same parent-V2 feature identifiers in both CSV rows and manifest arrays.
+================================================================
+B4. FINGERPRINT ENCODING DEFINITION
+================================================================
+The manifest key:
+fingerprint_encoding_definition
+MUST contain exactly this JSON string value:
+"sorted accepted grid_pos values encoded as signed little-endian int64 raw bytes, concatenated with no delimiter, then SHA256 lowercase hexadecimal; empty accepted set hashes empty bytes"
+No alternative wording is permitted.
+This field describes the already-frozen fingerprint semantics and does not alter them.
+================================================================
+B5. MANIFEST SCHEMA IDENTITY
+================================================================
+Candidate and reference manifests MUST contain the same required manifest-key set frozen by parent V2 §5.
+For every non-role-specific manifest field: JSON type MUST match; nested shape MUST match; value MUST match under the parent V2 S1 rules.
+Role-specific fields remain role-specific exactly as defined by the parent V2 and are NOT made equal by this Amendment.
+No extra implementation-specific manifest keys may be used in S1 comparison.
+If an implementation emits additional informational keys outside the required schema, the frozen comparator MUST ignore them for S1.
+================================================================
+B6. ACTUAL COUNTS
+================================================================
+actual_row_counts_per_axis is derived only after artifact generation.
+For a structurally valid artifact it MUST equal:
+{ "HZ": 1728, "HG": 432, "HC": 432, "HB": 864 }
+and total actual rows MUST equal 3456.
+A mismatch is a structural validation failure.
+No missing or duplicate row may be compensated by another axis.
+================================================================
+B7. NO SEMANTIC CHANGE
+================================================================
+This Amendment changes no numerical or candidate semantics.
+It does NOT change:
+HZ=TZ HG=G1 HC=C1 HB=B0 G1_THRESHOLD_SOURCE=TZ T0/G0/C0/B1 diagnostic-only status Amendment 001 semantics row-field order float comparison tolerance accepted-position fingerprint algorithm exact-spacing consecutive-pair rule NEW36 inventory collector identity engine identity reference independence rules one-shot rules claim boundary
+================================================================
+B8. INDEPENDENCE
+================================================================
+This Amendment may be supplied to the independent reference author as normative textual input.
+It does NOT authorize access to:
+candidate implementation candidate tests Stage1/Stage2/Stage3 source or tests OLD36 diagnostics golden artifacts candidate NEW36 output NEW36 quantitative data before the full V2 freeze is complete
+================================================================
+B9. TERMINATION
+================================================================
+document_terminates_here=true append_after_hash=FORBIDDEN
