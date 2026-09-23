@@ -1,0 +1,214 @@
+SUPERBOT_V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_003
+amendment=003
+status=NORMATIVE_METRIC_AND_DIAGNOSTIC_FIELD_CLARIFICATION
+
+parent_protocol_sha256=5ed8a8b12726d395d25262dc3e4073250be3de94f3d62e64e99167921380ef95
+amendment_001_sha256=e64f1198e3f97f975d1f0f8ec7183b1f0c83786429e98cbd66819d98f640f0bf
+amendment_002_sha256=9a335589a44df68de56804bce09d122308f01ba95403bcb10a764c0b3461df57
+candidate_spec_sha256=aed67b5ec9ae1b710ec3d96e1fcc2e15bd9c30fdd60e80cc68553d8fc3b597ca
+engine_sha256=abedee399c272eff858b109fb448cbda3ad3a49e40be4ba3f486650e3151a3e8
+
+purpose=
+close determinacy blockers AMB-14 and AMB-15 before any NEW36
+quantitative access
+
+candidate_selection_unchanged=true
+NEW36_informed=false
+
+================================================================
+
+C1. mean_abs_move — INHERITED V1.1 METRIC SEMANTICS
+
+================================================================
+
+classification=
+CLARIFICATION_OF_INHERITED_FROZEN_V1_1_METRIC_SEMANTICS
+
+For every HG, HC and HB emitted row for which mean_abs_move is
+defined as COMPUTED by Amendment 001:
+
+mean_abs_move_domain=
+quality_admissible AND isfinite(forward_return)
+
+mean_abs_move=
+arithmetic mean of abs(forward_return) over
+mean_abs_move_domain
+
+The domain is evaluated independently for each session, asset and
+horizon.
+
+mean_abs_move is FEATURE-INDEPENDENT within the same
+(session, asset, horizon).
+
+It does NOT depend on:
+
+threshold crossing
+pre-overlap membership
+accepted-event membership
+variant
+feature family
+event direction
+
+Therefore, where the same session, asset and horizon apply,
+HG/G0, HG/G1, HC/C0, HC/C1 and all HB/B0/B1 rows share the same
+mean_abs_move value.
+
+If mean_abs_move_domain contains zero rows:
+
+mean_abs_move=NULL
+
+IMPORTANT:
+
+The parent V2 generic rule
+"metric_when_accepted_n_zero=NULL"
+does NOT override this inherited feature-independent V1.1
+mean_abs_move definition.
+
+mean_signed_bps and hit_rate remain accepted-event metrics.
+mean_abs_move is not an accepted-event metric.
+
+This clause is a clarification of inherited frozen V1.1 semantics,
+not a NEW36-informed rule and not a new candidate variant.
+
+================================================================
+
+C2. gate_zero_n — PROSPECTIVE SPECIFICATION COMPLETION
+
+================================================================
+
+classification=
+PROSPECTIVE_SPECIFICATION_COMPLETION_BEFORE_NEW36
+
+gate_zero_n is COMPUTED only for HG/G1 rows, as already required by
+Amendment 001.
+
+For HG/G1:
+
+di_l1=bitget_depth_imbalance_l1
+
+gate_finite_domain=
+quality_admissible AND isfinite(di_l1)
+
+gate_zero_n=
+count(
+quality_admissible
+AND isfinite(di_l1)
+AND di_l1==0.0
+)
+
+Equivalent:
+
+gate_zero_n=
+count of exact-zero di_l1 observations inside the finite
+quality-admissible G1 gate population before TZ zero exclusion,
+threshold crossing, external-OFI confirmation, forward-return
+filtering, or overlap filtering.
+
+Positive zero and negative zero are both equal to 0.0 and therefore
+count as zero.
+
+NaN and +/-infinity do not count.
+
+gate_zero_n MUST NOT be computed from:
+
+TZ_threshold_domain after zero exclusion
+threshold-crossing events
+pre-overlap events
+accepted events
+external_ofi confirmation
+
+gate_zero_n is invariant across q and horizon for the same
+session and asset.
+
+This field is diagnostic metadata only.
+
+It does NOT modify:
+
+TZ threshold
+G1 event mask
+G1 direction
+pre-overlap set
+accepted set
+event metrics
+candidate selection
+
+This exact definition is frozen prospectively before NEW36 access.
+
+It MUST NOT later be represented as historically recovered behavior.
+
+================================================================
+
+C3. S1
+
+================================================================
+
+Candidate and reference MUST apply C1 and C2 identically.
+
+mean_abs_move remains a float field under the existing S1 tolerance.
+
+gate_zero_n remains an exact integer field.
+
+Any disagreement is an S1 implementation disagreement.
+
+================================================================
+
+C4. NO OTHER CHANGE
+
+================================================================
+
+This Amendment does NOT change:
+
+HZ=TZ
+HG=G1
+HC=C1
+HB=B0
+G1_THRESHOLD_SOURCE=TZ
+
+T0/G0/C0/B1 diagnostic-control semantics
+
+Amendment 001 definitions
+Amendment 002 manifest schema
+
+threshold domains
+quantile method
+forward-return construction
+event direction
+overlap filtering
+exact-spacing consecutive-pair definition
+accepted-position fingerprinting
+
+NEW36 inventory
+collector identity
+engine identity
+
+reference independence rules
+one-shot rules
+claim boundary
+
+================================================================
+
+C5. INDEPENDENCE
+
+================================================================
+
+This Amendment may be supplied to the independent reference author
+as normative textual input.
+
+It does NOT authorize access to:
+
+candidate implementation
+candidate tests
+Stage1/Stage2/Stage3 source or tests
+OLD36 diagnostics
+golden artifacts
+candidate NEW36 output
+NEW36 quantitative data before full V2 freeze
+
+================================================================
+
+C6. TERMINATION
+
+================================================================
+
+document_terminates_here=true
+append_after_hash=FORBIDDEN
