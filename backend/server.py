@@ -1675,3 +1675,34 @@ def download_reference_input() -> FileResponse:
         media_type="application/zip",
         filename="SUPERBOT_V1_2_INDEPENDENT_REFERENCE_INPUT.zip",
     )
+
+
+# ---------------------------------------------------------------------------
+# V2 Amendment 001 — read-only download endpoint
+# ---------------------------------------------------------------------------
+
+_AMENDMENT_PATH = Path(
+    "/app/backend/recovery/specs/V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_001.txt"
+)
+_AMENDMENT_EXPECTED_SHA256 = "e64f1198e3f97f975d1f0f8ec7183b1f0c83786429e98cbd66819d98f640f0bf"
+_AMENDMENT_EXPECTED_SIZE   = 13858
+
+
+@app.get("/api/handoff/v2-amendment-001")
+def download_v2_amendment_001() -> FileResponse:
+    """Serve the pre-existing, pre-verified V2 Amendment 001 txt file.
+    Read-only. File is not regenerated or modified."""
+    import hashlib as _hl
+
+    if not _AMENDMENT_PATH.exists():
+        raise HTTPException(status_code=404, detail="AMENDMENT_FILE_NOT_FOUND")
+    data = _AMENDMENT_PATH.read_bytes()
+    if len(data) != _AMENDMENT_EXPECTED_SIZE:
+        raise HTTPException(status_code=500, detail="AMENDMENT_SIZE_INTEGRITY_FAIL")
+    if _hl.sha256(data).hexdigest() != _AMENDMENT_EXPECTED_SHA256:
+        raise HTTPException(status_code=500, detail="AMENDMENT_SHA256_INTEGRITY_FAIL")
+    return FileResponse(
+        path=str(_AMENDMENT_PATH),
+        media_type="text/plain; charset=utf-8",
+        filename="V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_001.txt",
+    )
