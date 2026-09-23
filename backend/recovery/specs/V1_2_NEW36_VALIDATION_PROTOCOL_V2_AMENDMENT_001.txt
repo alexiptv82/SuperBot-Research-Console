@@ -1,0 +1,611 @@
+SUPERBOT_V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_001
+amendment=001
+status=NORMATIVE_CLARIFICATION
+parent_protocol_sha256=5ed8a8b12726d395d25262dc3e4073250be3de94f3d62e64e99167921380ef95
+candidate_spec_sha256=aed67b5ec9ae1b710ec3d96e1fcc2e15bd9c30fdd60e80cc68553d8fc3b597ca
+
+purpose=
+close reference-author determinacy ambiguities without changing the
+frozen candidate selection or introducing NEW36-informed semantics
+
+candidate_selection_unchanged=true
+candidate_selection=HZ:TZ;HG:G1;HC:C1;HB:B0
+diagnostic_controls_only=T0;G0;C0;B1
+
+precedence=
+this amendment clarifies the V2 artifact/control contract;
+it does not modify the frozen candidate semantics;
+where historical Stage3 diagnostic behavior differs from the frozen
+candidate contract, the frozen candidate contract and V2 prevail
+
+================================================================
+
+A1. PROTOCOL VERSION LITERAL
+
+================================================================
+
+protocol_version_literal=V1_2_NEW36_VALIDATION_PROTOCOL_V2
+
+CSV protocol_version MUST equal exactly:
+V1_2_NEW36_VALIDATION_PROTOCOL_V2
+
+manifest protocol_version MUST equal exactly:
+V1_2_NEW36_VALIDATION_PROTOCOL_V2
+
+================================================================
+
+A2. HZ / T0 CONTROL
+
+================================================================
+
+T0_role=DIAGNOSTIC_CONTROL_ONLY
+
+For raw simple-feature signal s:
+
+T0_threshold_domain=
+quality_admissible AND isfinite(s)
+
+TZ_threshold_domain=
+quality_admissible AND isfinite(s) AND s!=0.0
+
+T0_threshold=
+type7_quantile(abs(s[T0_threshold_domain]),q)
+if domain count>=2;
+otherwise NULL
+
+TZ_threshold=
+type7_quantile(abs(s[TZ_threshold_domain]),q)
+if domain count>=2;
+otherwise NULL
+
+HZ_is_threshold_only=true
+
+HZ does NOT compute events, forward returns, overlap filtering or event metrics.
+
+For BOTH T0 and TZ HZ rows:
+
+horizon_ms=NULL
+gate_zero_n=NULL
+spacing_steps=NULL
+pre_overlap_n=NULL
+exact_spacing_pair_n=NULL
+accepted_n=NULL
+overlap_dropped_n=NULL
+accepted_positions_sha256=NULL
+mean_signed_bps=NULL
+hit_rate=NULL
+mean_abs_move=NULL
+
+threshold_domain_finite_n=
+count(T0_threshold_domain)
+
+threshold_domain_nonzero_n=
+count(TZ_threshold_domain)
+
+zero_n=
+threshold_domain_finite_n-threshold_domain_nonzero_n
+
+zero_fraction=
+NULL if threshold_domain_finite_n==0;
+otherwise zero_n/threshold_domain_finite_n
+
+nonzero_unique_value_n=
+number of distinct Python-float values in
+abs(s[TZ_threshold_domain]);
+zero if TZ domain is empty
+
+hz_discrimination_class exact literals and predicates:
+
+if zero_n==0:
+ZERO_FREE_CONTROL
+
+else if T0_threshold != TZ_threshold using exact Python value equality
+with NULL==NULL treated as equal:
+HZ_DISCRIMINATING
+
+else:
+HZ_NONDISCRIMINATING_EQUAL_THRESHOLD
+
+================================================================
+
+A3. G0 CONTROL
+
+================================================================
+
+G0_role=DIAGNOSTIC_CONTROL_ONLY
+G0_family=depthL1_extOFI
+
+Define:
+
+derived_domain=
+quality_admissible
+AND isfinite(z_di_l1)
+AND isfinite(z_ext_ofi)
+
+D=
+(z_di_l1+z_ext_ofi)/2
+on derived_domain
+
+G0_threshold=
+type7_quantile(abs(D[derived_domain]),q)
+
+If fewer than 2 valid domain values:
+G0_threshold=NULL
+G0 pre-overlap set is empty
+
+Otherwise:
+
+G0_pre_overlap=
+derived_domain
+AND D!=0.0
+AND abs(D)>=G0_threshold
+AND isfinite(forward_return)
+
+G0_direction=sign(D)
+
+G0 overlap filter=B0 greedy >= spacing_steps
+
+G0 calculated_threshold=G0_threshold
+
+G0 fields:
+
+threshold_domain_finite_n=NULL
+threshold_domain_nonzero_n=NULL
+zero_n=NULL
+zero_fraction=NULL
+nonzero_unique_value_n=NULL
+hz_discrimination_class=NULL
+gate_zero_n=NULL
+exact_spacing_pair_n=NULL
+
+spacing_steps,pre_overlap_n,accepted_n,overlap_dropped_n,
+accepted_positions_sha256,mean_signed_bps,hit_rate,mean_abs_move
+are computed.
+
+================================================================
+
+A4. C0 CONTROL
+
+================================================================
+
+C0_role=DIAGNOSTIC_CONTROL_ONLY
+C0_family=gap_depth_extOFI
+
+gap=bitget_gap_to_fair_bps
+
+gap_threshold_domain=
+quality_admissible AND isfinite(gap)
+
+C0_threshold=
+type7_quantile(abs(gap[gap_threshold_domain]),q)
+
+D_ext=
+(z_di_l1+z_ext_ofi)/2
+where both z values are finite
+
+C0_confirmation=
+isfinite(D_ext)
+AND D_ext!=0.0
+AND sign(D_ext)==-sign(gap)
+
+If C0_threshold is NULL:
+C0 pre-overlap set is empty
+
+Otherwise:
+
+C0_pre_overlap=
+gap_threshold_domain
+AND isfinite(D_ext)
+AND gap!=0.0
+AND abs(gap)>=C0_threshold
+AND D_ext!=0.0
+AND sign(D_ext)==-sign(gap)
+AND isfinite(forward_return)
+
+C0_direction=-sign(gap)
+
+C0 overlap filter=B0 greedy >= spacing_steps
+
+C0 calculated_threshold=C0_threshold
+
+C0 fields:
+
+threshold_domain_finite_n=NULL
+threshold_domain_nonzero_n=NULL
+zero_n=NULL
+zero_fraction=NULL
+nonzero_unique_value_n=NULL
+hz_discrimination_class=NULL
+gate_zero_n=NULL
+exact_spacing_pair_n=NULL
+
+spacing_steps,pre_overlap_n,accepted_n,overlap_dropped_n,
+accepted_positions_sha256,mean_signed_bps,hit_rate,mean_abs_move
+are computed.
+
+================================================================
+
+A5. HB PRE-OVERLAP FAMILY MATRIX
+
+================================================================
+
+HB variants B0 and B1 operate on the SAME frozen baseline
+pre-overlap set for each family.
+Only the overlap inequality differs.
+
+HB quantile=0.90
+
+HB family=bitget_ofi:
+
+signal=FEATURE_MAP[bitget_ofi]
+domain=quality_admissible AND isfinite(signal)
+threshold=type7_quantile(abs(signal[domain]),0.90)
+
+pre_overlap=
+domain
+AND signal!=0.0
+AND abs(signal)>=threshold
+AND isfinite(forward_return)
+
+direction=sign(signal)
+
+This is the frozen baseline/T0 threshold domain.
+It is NOT the TZ threshold domain.
+
+HB family=depth_imbalance_l1:
+
+signal=FEATURE_MAP[depth_imbalance_l1]
+domain=quality_admissible AND isfinite(signal)
+threshold=type7_quantile(abs(signal[domain]),0.90)
+
+pre_overlap=
+domain
+AND signal!=0.0
+AND abs(signal)>=threshold
+AND isfinite(forward_return)
+
+direction=sign(signal)
+
+This is the frozen baseline/T0 threshold domain.
+It is NOT the TZ threshold domain.
+
+HB family=depthL1_extOFI:
+
+derived_domain=
+quality_admissible
+AND isfinite(z_di_l1)
+AND isfinite(z_ext_ofi)
+
+D=(z_di_l1+z_ext_ofi)/2
+
+threshold=type7_quantile(abs(D[derived_domain]),0.90)
+
+pre_overlap=
+derived_domain
+AND D!=0.0
+AND abs(D)>=threshold
+AND isfinite(forward_return)
+
+direction=sign(D)
+
+HB depthL1_extOFI therefore uses the frozen G0/V1.1 baseline
+pre-overlap semantics, NOT G1.
+
+HB family=gap_depthL1:
+
+gap=bitget_gap_to_fair_bps
+di_l1=bitget_depth_imbalance_l1
+
+threshold_domain=
+quality_admissible AND isfinite(gap)
+
+threshold=type7_quantile(abs(gap[threshold_domain]),0.90)
+
+pre_overlap=
+threshold_domain
+AND isfinite(di_l1)
+AND gap!=0.0
+AND abs(gap)>=threshold
+AND di_l1!=0.0
+AND sign(di_l1)==-sign(gap)
+AND isfinite(forward_return)
+
+direction=-sign(gap)
+
+HB family=gap_localOFI:
+
+gap=bitget_gap_to_fair_bps
+fair_ofi_alignment=bitget_fair_ofi_alignment
+
+threshold_domain=
+quality_admissible AND isfinite(gap)
+
+threshold=type7_quantile(abs(gap[threshold_domain]),0.90)
+
+pre_overlap=
+threshold_domain
+AND isfinite(fair_ofi_alignment)
+AND gap!=0.0
+AND abs(gap)>=threshold
+AND fair_ofi_alignment==1.0
+AND isfinite(forward_return)
+
+direction=-sign(gap)
+
+HB family=gap_depth_extOFI:
+
+gap=bitget_gap_to_fair_bps
+
+D_ext=
+(z_di_l1+z_ext_ofi)/2
+where both z values are finite
+
+threshold_domain=
+quality_admissible AND isfinite(gap)
+
+threshold=type7_quantile(abs(gap[threshold_domain]),0.90)
+
+pre_overlap=
+threshold_domain
+AND isfinite(D_ext)
+AND gap!=0.0
+AND abs(gap)>=threshold
+AND D_ext!=0.0
+AND sign(D_ext)==-sign(gap)
+AND isfinite(forward_return)
+
+direction=-sign(gap)
+
+HB gap_depth_extOFI therefore uses frozen C0/V1.1 baseline
+pre-overlap semantics, NOT C1.
+
+For every HB family:
+
+spacing_steps=max(10,horizon_ms//100)
+
+B0=
+greedy earliest-first ascending grid_pos;
+accept first;
+subsequently accept iff
+pos-last_accepted>=spacing_steps
+
+B1=
+same pre-overlap positions and direction;
+greedy earliest-first;
+subsequently accept iff
+pos-last_accepted>spacing_steps
+
+B1 remains diagnostic only.
+
+================================================================
+
+A6. EXACT-SPACING PRECEDENCE
+
+================================================================
+
+For V2, the normative definition is the frozen candidate definition:
+
+exact_spacing_pair_n=
+count of consecutive pairs in the sorted pre-overlap positions array
+whose difference equals spacing_steps
+
+Equivalent:
+
+sum(
+positions[i+1]-positions[i]==spacing_steps
+for i in range(len(positions)-1)
+)
+
+The older Stage3 diagnostic implementation that counted all unordered
+pairs at exact spacing is NOT normative for V2.
+
+V2/candidate consecutive-pair semantics prevail.
+
+================================================================
+
+A7. PER-AXIS NULL / COMPUTED MATRIX
+
+================================================================
+
+HZ:
+COMPUTED=
+protocol_version,session_id,asset,axis,feature_family,variant_id,
+quantile,
+threshold_domain_finite_n,
+threshold_domain_nonzero_n,
+zero_n,
+zero_fraction,
+nonzero_unique_value_n,
+hz_discrimination_class,
+calculated_threshold
+
+NULL=
+    horizon_ms,
+    gate_zero_n,
+    spacing_steps,
+    pre_overlap_n,
+    exact_spacing_pair_n,
+    accepted_n,
+    overlap_dropped_n,
+    accepted_positions_sha256,
+    mean_signed_bps,
+    hit_rate,
+    mean_abs_move
+
+HG/G0:
+COMPUTED=
+protocol_version,session_id,asset,axis,feature_family,variant_id,
+quantile,horizon_ms,calculated_threshold,spacing_steps,
+pre_overlap_n,accepted_n,overlap_dropped_n,
+accepted_positions_sha256,
+mean_signed_bps,hit_rate,mean_abs_move
+
+NULL=
+    threshold_domain_finite_n,
+    threshold_domain_nonzero_n,
+    zero_n,
+    zero_fraction,
+    nonzero_unique_value_n,
+    hz_discrimination_class,
+    gate_zero_n,
+    exact_spacing_pair_n
+
+HG/G1:
+same as G0 except gate_zero_n is COMPUTED.
+
+HC/C0 and HC/C1:
+COMPUTED=
+protocol_version,session_id,asset,axis,feature_family,variant_id,
+quantile,horizon_ms,calculated_threshold,spacing_steps,
+pre_overlap_n,accepted_n,overlap_dropped_n,
+accepted_positions_sha256,
+mean_signed_bps,hit_rate,mean_abs_move
+
+NULL=
+    threshold_domain_finite_n,
+    threshold_domain_nonzero_n,
+    zero_n,
+    zero_fraction,
+    nonzero_unique_value_n,
+    hz_discrimination_class,
+    gate_zero_n,
+    exact_spacing_pair_n
+
+HB/B0 and HB/B1:
+COMPUTED=
+protocol_version,session_id,asset,axis,feature_family,variant_id,
+quantile,horizon_ms,calculated_threshold,spacing_steps,
+pre_overlap_n,exact_spacing_pair_n,accepted_n,
+overlap_dropped_n,accepted_positions_sha256,
+mean_signed_bps,hit_rate,mean_abs_move
+
+NULL=
+    threshold_domain_finite_n,
+    threshold_domain_nonzero_n,
+    zero_n,
+    zero_fraction,
+    nonzero_unique_value_n,
+    hz_discrimination_class,
+    gate_zero_n
+
+================================================================
+
+A8. THRESHOLD NULL RULE
+
+================================================================
+
+For every threshold calculation in this amendment:
+
+if the threshold domain contains fewer than 2 finite values:
+calculated_threshold=NULL;
+corresponding pre-overlap set is empty;
+accepted_n=0 where event fields apply;
+overlap_dropped_n=0 where event fields apply;
+accepted_positions_sha256=SHA256(empty_bytes) where event fields apply;
+event metrics=NULL where event fields apply
+
+================================================================
+
+A9. V1.1 Z-SCORE / RANK SEMANTICS
+
+================================================================
+
+z_di_l1 and z_ext_ofi in G0/C0/HB baseline controls retain the
+frozen V1.1 semantics.
+
+They must be derived independently from the frozen V1.1 primitive
+semantics and MUST NOT be replaced by raw values.
+
+No OLD36 or golden artifact may be used to reconstruct them.
+
+================================================================
+
+A10. REFERENCE ENGINE SYMBOL ALLOWLIST
+
+================================================================
+
+The independent reference author may inspect/use only the following
+engine.py symbols:
+
+GRID_MS
+FEATURE_MAP
+SIMPLE_FEATURES
+QUANTILES
+HORIZONS_SIMPLE_MS
+HORIZONS_COMPOSITE_MS
+build_canonical_grid
+_quality_admissible_mask
+_rank_signed_uniform
+_quantile_type7
+_build_forward_return_array
+_greedy_overlap_filter
+
+The independent reference MUST NOT call or import:
+
+reconstruct_block
+_compute_simple_feature
+_compute_derived_composite
+_compute_gap_composite
+_compute_leader1000_extofi
+aggregate_blocks
+aggregate_dispersion_states
+
+or any other high-level candidate/composite reconstruction routine.
+
+Reason=
+preserve independent implementation of the V2 calculations while
+permitting explicitly inherited low-level V1.1 primitives.
+
+Every actually imported/reused engine symbol must be listed in
+REFERENCE_INDEPENDENCE_ATTESTATION.txt.
+
+================================================================
+
+A11. INDEPENDENCE / NO CONTAMINATION
+
+================================================================
+
+This amendment does NOT authorize the reference author to inspect:
+
+v1_2_candidate.py
+candidate tests
+v1_2_diagnostics.py
+v1_2_stage2.py
+v1_2_stage3.py
+Stage1/Stage2/Stage3 tests
+OLD36 diagnostics
+golden artifacts
+candidate NEW36 output
+
+The reference author receives this amendment as textual normative input.
+
+NEW36 quantitative access remains forbidden until the complete V2
+implementation/reference/comparator/preflight freeze is finished.
+
+================================================================
+
+A12. SUPERSESSION SCOPE
+
+================================================================
+
+This amendment closes only specification-determinacy ambiguities for
+diagnostic/control artifact production.
+
+It does NOT change:
+
+HZ candidate=TZ
+HG candidate=G1
+HC candidate=C1
+HB candidate=B0
+G1_THRESHOLD_SOURCE=TZ
+NEW36 inventory
+S1 tolerance
+S2 candidate invariants
+one-shot rules
+claim boundary
+collector identity
+engine identity
+candidate source/test aggregate hashes
+
+document_terminates_here=true
+append_after_hash=FORBIDDEN
