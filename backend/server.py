@@ -1649,3 +1649,29 @@ def download_v2_frozen_source_handoff() -> FileResponse:
         media_type="application/zip",
         filename="SUPERBOT_V1_2_V2_FROZEN_SOURCE_HANDOFF.zip",
     )
+
+
+# ---------------------------------------------------------------------------
+# Independent Reference Input Package — read-only download endpoint
+# ---------------------------------------------------------------------------
+
+_REF_INPUT_PATH = Path("/app/SUPERBOT_V1_2_INDEPENDENT_REFERENCE_INPUT.zip")
+_REF_INPUT_EXPECTED_SHA256 = "259a0a547905bed709355624c7185181ee21504192cb86078db54f2de34f7709"
+
+
+@app.get("/api/handoff/reference-input")
+def download_reference_input() -> FileResponse:
+    """Serve the pre-existing, pre-verified independent reference input ZIP.
+    Read-only. File is not regenerated or modified."""
+    import hashlib as _hashlib
+
+    if not _REF_INPUT_PATH.exists():
+        raise HTTPException(status_code=404, detail="REFERENCE_INPUT_FILE_NOT_FOUND")
+    actual = _hashlib.sha256(_REF_INPUT_PATH.read_bytes()).hexdigest()
+    if actual != _REF_INPUT_EXPECTED_SHA256:
+        raise HTTPException(status_code=500, detail="REFERENCE_INPUT_SHA256_INTEGRITY_FAIL")
+    return FileResponse(
+        path=str(_REF_INPUT_PATH),
+        media_type="application/zip",
+        filename="SUPERBOT_V1_2_INDEPENDENT_REFERENCE_INPUT.zip",
+    )
