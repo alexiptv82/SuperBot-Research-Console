@@ -1,0 +1,376 @@
+SUPERBOT_V1_2_ACCEPTANCE_AMENDMENT_001
+AMENDMENT_ID = V1_2_ACCEPTANCE_AMENDMENT_001
+AMENDMENT_TYPE = PRE_NEW36_PROTOCOL_AMENDMENT
+BASE_ACCEPTANCE_DOCUMENT = V1_2_ACCEPTANCE_CRITERIA.txt
+BASE_ACCEPTANCE_SHA256 = 3da3564fd40ba55a153e5c979bc7f1ed2a2ee32a1ba6baac9ef326b7a969feef
+PRE_AMENDMENT_ANCHOR = 71812a3b58b5cfd8802bc20c32a2678b146a37d8
+AMENDMENT_CREATED_PRE_NEW36_EXPOSURE = true
+editing_policy = IMMUTABLE_AFTER_HASH
+
+# =====================================================================
+# SECTION A — SCOPE AND RELATIONSHIP TO BASE DOCUMENT
+# =====================================================================
+amendment_scope=
+    This document amends the BASE acceptance document identified above.
+    It resolves the unresolvable pipeline-identity precondition identified
+    in the SUPERBOT V1.2 PIPELINE PROVENANCE RECOVERY AUDIT conducted
+    pre-NEW36-exposure at anchor 71812a3b58b5cfd8802bc20c32a2678b146a37d8.
+    It does NOT alter candidate semantics, quantitative acceptance criteria,
+    numerical tolerances, or any other clause of the BASE document.
+supersedes_clauses=
+    BASE SECTION I pipeline_sha equality check only.
+    All other BASE clauses remain in full force.
+does_not_supersede=
+    BASE SECTION I collector_sha equality check (remains hard gate).
+    BASE SECTION B through SECTION L quantitative criteria.
+    BASE SECTION J numerical constants.
+    All BASE invariants.
+
+# =====================================================================
+# SECTION B — HISTORICAL PIPELINE IDENTITY
+# =====================================================================
+HISTORICAL_PIPELINE_IDENTITY = UNAVAILABLE
+
+historical_pipeline_identity_basis=
+    A completed pre-NEW36 forensic audit of the entire repository history,
+    all git blobs, all committed provenance manifests, all session audit
+    sidecars (session_audit_24h.csv, session_audit_new12.csv,
+    session_audit_36h.csv), all checkpoint reports (CHECKPOINT_24H_REPORT.md,
+    CHECKPOINT_36H_REPORT.md), all stage manifests (stage1/2/3_manifest.json),
+    the database qa_runs table metadata, and the recovered manifest
+    (recovered/MANIFEST.md) found:
+    a) No Python source, Jupyter notebook, YAML/JSON configuration, or
+       analysis script that produced the CP24/CP36 golden outputs exists
+       anywhere in the repository history or filesystem.
+    b) No pipeline_sha256, generator_sha256, analysis_sha256, or equivalent
+       column appears in any session audit sidecar file.
+    c) No provenance manifest, checkpoint report, or metadata sidecar
+       records a SHA256 or version identifier for the analysis/scoring
+       pipeline used to produce the historical golden CSV outputs.
+    d) The V1_2_ACCEPTANCE_CRITERIA.txt BASE document Section I defines a
+       pipeline_sha check but supplies no frozen expected reference value.
+       The test suite uses only synthetic placeholders
+       ("PIPE_SHA_STUB", "P", "p") — no real hash has ever been registered.
+    e) The RECONSTRUCTION engine (engine.py, first committed 2026-09-20)
+       postdates the CP36 golden production and is a methodology
+       reconstruction, not the original generator. Its SHA cannot serve
+       as the historical pipeline identity.
+    This finding does NOT imply source equivalence between the
+    reconstruction engine and the original generator.
+
+# =====================================================================
+# SECTION C — COLLECTOR IDENTITY (UNCHANGED HARD PRECONDITION)
+# =====================================================================
+CANONICAL_COLLECTOR_SHA256 =
+    e924edc1b8348d9cc8e74a37eaa17e6bbc80116de29d2f7a00cd43444d1265a3
+
+collector_identity_basis=
+    Six independent historical sources confirm uniform collector identity
+    across ALL CP24, CP36, and NEW36 sessions:
+    - audit/collector.py git blob 830d32cebcb8a660515f99bee61d99cc25e58749
+    - backend/recovery/goldens/collector_reference.py (hash-verified identical)
+    - session_audit_24h.csv collector_sha256 column: all 7 rows identical
+    - session_audit_new12.csv collector_sha256 column: all 4 rows identical
+    - session_audit_36h.csv collector_sha256 column: all 11 rows identical
+    - qa_runs.collector_sha256 DISTINCT value: single value across all 23 sessions
+
+collector_mismatch_handling=
+    BASE SECTION I collector_sha mismatch handling is UNCHANGED:
+    before_any_quantitative_NEW36_access:
+        if collector_sha_mismatch:
+            verdict = PRECONDITION_FAIL
+            run MUST NOT start
+            one_shot_authorization = NOT_CONSUMED
+    after_one_shot_started_or_any_quantitative_NEW36_access:
+        if collector_sha_mismatch:
+            verdict = INVALID_RUN
+            no analytical retry
+            one_shot_authorization = CONSUMED_INVALID
+
+# =====================================================================
+# SECTION D — REMOVAL OF VACUOUS PIPELINE EQUALITY CHECK
+# =====================================================================
+pipeline_sha_equality_check_removed = true
+
+rationale=
+    With HISTORICAL_PIPELINE_IDENTITY = UNAVAILABLE, any pipeline_sha
+    equality check would require supplying a synthetic, placeholder,
+    current-engine, reconstructed-engine, or substitute value as the
+    expected hash. Such a check would be vacuous: it would test equality
+    against an invented reference with no historical grounding, creating
+    a false appearance of integrity verification.
+
+prohibition=
+    The following are PROHIBITED as pipeline_sha expected values:
+    a) Any placeholder string (e.g., "PIPE_SHA_STUB", "P", sentinel values).
+    b) SHA256 of backend/recovery/engine.py or any V1.2 reconstruction file.
+    c) SHA256 of any V1.1 engine or spec file.
+    d) SHA256 of any file created after the CP36 golden production date
+       (2026-09-09, the date of the last NEW12 session).
+    e) Any value synthesized, inferred, or derived from the golden CSV
+       contents.
+
+effective_pipeline_gate=
+    The effective combined protocol (BASE + this AMENDMENT) MUST NOT
+    perform a pipeline-SHA equality check.
+    A placeholder equality MUST NOT produce a passing integrity check.
+    The pipeline_sha field in BASE SECTION I is superseded by the
+    GENERATOR STRUCTURAL CONSISTENCY DIAGNOSTIC defined in SECTION F
+    of this document.
+
+# =====================================================================
+# SECTION E — FAIL ATTRIBUTION
+# =====================================================================
+fail_classification_rule=
+    A FAIL verdict under the frozen quantitative criteria of BASE
+    SECTIONS C–L is classified as:
+        FAILED_VALIDATION
+
+fail_reclassification_prohibition=
+    After NEW36 quantitative exposure, the absence of historical pipeline
+    identity MUST NOT be used to reclassify FAILED_VALIDATION as:
+    - INVALID_RUN
+    - UNVERIFIABLE
+    - PARTIAL
+    Missing historical pipeline identity may be reported as a contextual
+    limitation in the validation report but does not alter the verdict.
+
+retry_prohibition=
+    A FAILED_VALIDATION verdict MUST NOT authorize a retry.
+
+exception=
+    The GENERATOR STRUCTURAL CONSISTENCY DIAGNOSTIC (SECTION F) is the
+    sole mechanism that may produce an INVALID_RUN consequence. Its
+    INVALID_RUN outcome is governed exclusively by SECTION F.G and is
+    structurally distinct from a quantitative FAIL.
+
+# =====================================================================
+# SECTION F — GENERATOR STRUCTURAL CONSISTENCY DIAGNOSTIC
+# =====================================================================
+diagnostic_id = GENERATOR_STRUCTURAL_CONSISTENCY_V1
+diagnostic_timing=
+    This diagnostic is evaluated ONLY:
+    a) AFTER the NEW36 candidate artifact has been completely generated.
+    b) AFTER that candidate artifact has been SHA256 hashed and frozen.
+    c) DURING the separate offline golden-comparison phase.
+    This diagnostic MUST NOT influence candidate generation.
+    This diagnostic MUST NOT be evaluated before candidate artifact freeze.
+
+# F.A — Horizon invariance
+horizon_invariance_check=
+    For every tuple (session, asset, feature, q) where the historical
+    golden schema provides horizon-repeated threshold values:
+    all golden threshold values within that tuple must be identical
+    across horizons.
+    Equality tolerance: abs(threshold_h1 - threshold_h2) <= 1e-12
+    for all horizon pairs (h1, h2) within the same (session, asset,
+    feature, q).
+
+# F.B — gap composite threshold identity
+gap_composite_threshold_identity_check=
+    For every applicable gap_* composite feature:
+    golden composite threshold must equal the golden fair_gap_reversion
+    threshold for the corresponding structural key
+    (session, asset, q [, horizon where applicable]).
+    Equality tolerance: abs(gap_composite_threshold -
+                            fair_gap_reversion_threshold) <= 1e-12
+    Applicable gap_* composites: gap_depthBoth, gap_depthL1,
+    gap_depth_extOFI, gap_extOFI, gap_leader1000, gap_localOFI,
+    gap_localTrade (subject to presence in the golden schema).
+
+# F.C — leader threshold identity
+leader_threshold_identity_check=
+    Golden leader1000_extOFI threshold must equal the golden
+    leader_gap_1000ms threshold for the corresponding structural key
+    (session, asset, q [, horizon where applicable]).
+    Equality tolerance: abs(leader1000_extOFI_threshold -
+                            leader_gap_1000ms_threshold) <= 1e-12
+
+# F.D — Schema identity
+schema_identity_check=
+    Golden schema feature set must equal the predeclared blind inventory:
+    simple features = {bitget_ofi, bitget_trade_flow, depth_imbalance_l1,
+                       depth_imbalance_l5, external_ofi, external_trade_flow,
+                       fair_accel_100ms, fair_gap_reversion, leader_gap_100ms,
+                       leader_gap_200ms, leader_gap_500ms, leader_gap_1000ms}
+    composite features = {depthBoth, depthL1_extOFI, gap_depthBoth,
+                          gap_depthL1, gap_depth_extOFI, gap_extOFI,
+                          gap_leader1000, gap_localOFI, gap_localTrade,
+                          leader1000_extOFI}
+    quantile set = {0.8, 0.9, 0.95}
+    Any deviation from the predeclared blind inventory triggers
+    HISTORICAL_PIPELINE_HETEROGENEITY_DETECTED = true.
+
+# =====================================================================
+# SECTION G — EXPLICIT EXCLUSION FROM DIAGNOSTIC
+# =====================================================================
+excluded_from_diagnostic=
+    The following identity MUST NOT be used as generator-consistency
+    evidence in the SECTION F diagnostic:
+        depthL1_extOFI threshold == depth_imbalance_l1 threshold
+    Rationale: this identity belongs to the RECONSTRUCTION hypothesis
+    and acceptance criterion (BASE SECTION E HG_component_2). Using it
+    simultaneously as an independent generator-consistency diagnostic
+    would create a circular dependency between the structural validation
+    criterion and its own verification evidence.
+
+# =====================================================================
+# SECTION H — DIAGNOSTIC CONSEQUENCE
+# =====================================================================
+diagnostic_fail_consequence=
+    If ANY generator structural consistency condition F.A through F.D
+    fails:
+        HISTORICAL_PIPELINE_HETEROGENEITY_DETECTED = true
+        OVERALL_RESULT = INVALID_RUN
+        RETRY_PERMITTED = false
+    This INVALID_RUN is final. It does not consume the one-shot
+    authorization if raised before quantitative NEW36 data is accessed
+    (pre-access PRECONDITION_FAIL path); it consumes the authorization
+    if raised after quantitative access begins.
+
+diagnostic_pass_consequence=
+    If ALL applicable conditions F.A through F.D hold:
+        GENERATOR_STRUCTURAL_CONSISTENCY = HELD
+    The original frozen quantitative verdict architecture of BASE
+    SECTIONS C–L applies unchanged.
+    No new empirical tolerance is introduced by this diagnostic.
+    The 1e-12 tolerance applied here is exclusively for exact structural
+    identity checks (threshold repetition / threshold equality across
+    composites / schema membership). It is not a new quantitative
+    acceptance tolerance.
+
+# =====================================================================
+# SECTION I — SEALED GOLDEN ARTIFACT INTEGRITY
+# =====================================================================
+sealed_golden_integrity_protocol=
+    Before the future candidate run, but NOT during this current task:
+    a) Every sealed NEW36 golden file used for comparison must have its
+       SHA256 computed from raw bytes only.
+    b) Quantitative values inside those files MUST NOT be parsed or
+       inspected during the sealing step.
+    c) The resulting SHA256 values become the immutable golden-artifact
+       identity for the run.
+    d) Any mismatch between the pre-run sealed SHA256 and the SHA256
+       computed during comparison triggers INVALID_RUN.
+    Implementation of this sealing step is deferred to the future
+    preflight update task described in SECTION K.
+
+# =====================================================================
+# SECTION J — EFFECTIVE PROTOCOL IDENTITY
+# =====================================================================
+EFFECTIVE_ACCEPTANCE_PROTOCOL =
+    BASE_ACCEPTANCE_CRITERIA (V1_2_ACCEPTANCE_CRITERIA.txt)
+    + V1_2_ACCEPTANCE_AMENDMENT_001 (this document)
+
+effective_protocol_binding=
+    Before any future NEW36 authorization, BOTH hashes must be verified:
+        BASE_ACCEPTANCE_SHA256 =
+            3da3564fd40ba55a153e5c979bc7f1ed2a2ee32a1ba6baac9ef326b7a969feef
+        AMENDMENT_SHA256 = (computed from this file after write — see
+                            post-commit report)
+    Mismatch of either hash:
+        after NEW36 execution has started: INVALID_RUN
+        before NEW36 execution starts: PRECONDITION_FAIL
+
+# =====================================================================
+# SECTION K — PREFLIGHT UPDATE REQUIREMENT (DOCUMENTATION ONLY)
+# =====================================================================
+preflight_update_required = true
+preflight_update_deferred = true
+preflight_update_implemented_in_this_task = false
+
+current_preflight_pipeline_sha_behavior=
+    v1_2_preflight.py (frozen, part of IMPLEMENTATION_SOURCE_AGGREGATE)
+    currently requires a caller-supplied pipeline_sha in
+    PreflightExpectations and compares it against
+    RuntimeSnapshot.actual_pipeline_sha.
+    Because v1_2_preflight.py is part of the frozen source aggregate
+    (SHA256 5c37ca02b771f1c43e2d7aaf4f1b9903dc96aba77d38d6e79e60ab3a87904ba4),
+    it MUST NOT be edited in this task.
+
+required_future_preflight_changes=
+    A subsequent dedicated preflight-update task must make EXACTLY the
+    following minimal changes to v1_2_preflight.py and its callers:
+    1. Remove the pipeline_sha field from PreflightExpectations and the
+       corresponding PIPELINE_SHA_DRIFT failure check from run_preflight().
+       No placeholder, synthetic, or substitute pipeline_sha value may
+       remain. A placeholder equality MUST NOT produce a passing check.
+    2. Add AMENDMENT_SHA256 verification: PreflightExpectations must
+       include the expected AMENDMENT_SHA256; run_preflight() must
+       recompute it from
+       backend/recovery/specs/V1_2_ACCEPTANCE_AMENDMENT_001.txt and
+       compare. Mismatch: AMENDMENT_SHA_DRIFT failure.
+    3. Retain collector_sha as a hard gate (unchanged).
+    4. Retain BASE_ACCEPTANCE_SHA256 verification (unchanged, already
+       present via ACCEPTANCE_CRITERIA_SHA_DRIFT check).
+    5. Add the GENERATOR_STRUCTURAL_CONSISTENCY diagnostic call-site
+       scaffolding (SECTION F of this document) so it is invoked in the
+       correct post-generation, post-freeze, pre-comparison phase.
+    These changes must be accompanied by updated tests and a new
+    frozen source aggregate SHA256.
+    The effective preflight after this update must:
+    - NOT accept placeholder pipeline equality.
+    - Recognize HISTORICAL_PIPELINE_IDENTITY = UNAVAILABLE.
+    - Verify BASE SHA.
+    - Verify AMENDMENT SHA.
+    - Preserve collector SHA as a hard gate.
+
+# =====================================================================
+# SECTION L — PRESERVATION OF UNCHANGED ELEMENTS
+# =====================================================================
+CANDIDATE_SEMANTICS_CHANGED = NO
+QUANTITATIVE_ACCEPTANCE_CRITERIA_CHANGED = NO
+NUMERICAL_ACCEPTANCE_TOLERANCES_CHANGED = NO
+BASE_ACCEPTANCE_DOCUMENT_CHANGED = NO
+OLD36_RERUN_REQUIRED = NO
+
+preservation_note=
+    The only tolerance introduced or referenced by this amendment is
+    1e-12, applied exclusively to the GENERATOR STRUCTURAL CONSISTENCY
+    DIAGNOSTIC (SECTION F) for exact structural identity checks.
+    This tolerance was already approved by the methodology arbitration
+    and is not a new empirical quantitative acceptance tolerance.
+    It does not alter BASE SECTION J or any other BASE tolerance clause.
+
+# =====================================================================
+# SECTION M — PERMANENT DISCLOSURE OBLIGATION
+# =====================================================================
+disclosure_required_in_every_new36_report=
+    Every NEW36 validation report produced under the effective protocol
+    (BASE + this AMENDMENT) must explicitly state ALL of the following:
+    a) Historical analysis/generator source identity is unavailable.
+    b) Source-level identity with the original historical generator
+       cannot be established.
+    c) Validation tests behavioral reconstruction consistency against
+       sealed historical golden outputs.
+    d) No NEW36 outcome can retroactively establish historical source
+       identity.
+
+# =====================================================================
+# SECTION N — CLAIM BOUNDARY
+# =====================================================================
+claim_boundary=
+    A successful validation under the effective protocol may support:
+        behavioral reconstruction consistency on the sealed NEW36
+        historical set.
+    A successful validation MUST NOT be described as proof of:
+    - historical source-code identity
+    - OLD36/NEW36 generator source identity
+    - event identity (the specific rows selected as events by the
+      original generator)
+    - profitability
+    - alpha or predictive power
+    - live-trading readiness
+    - production readiness
+    - generalization beyond the evaluated historical set
+
+# =====================================================================
+# SECTION O — CONTAMINATION STATE AT AMENDMENT CREATION
+# =====================================================================
+NEW36_QUANTITATIVE_DATA_INSPECTED = NO
+NEW36_GOLDEN_CONTENT_INSPECTED = NO
+NEW36_CANDIDATE_RUN_COUNT = 0
+OLD36_RERUN_COUNT = 0
+
+document_terminates_here=true
+append_after_hash=FORBIDDEN
