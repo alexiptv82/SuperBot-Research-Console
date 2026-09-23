@@ -26,6 +26,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session as OrmSession
@@ -1622,3 +1623,29 @@ def overview(db: OrmSession = Depends(get_db), _: str = Depends(require_auth)) -
         "engine": engine_status().__dict__,
         "collector_sha256": FROZEN_COLLECTOR_SHA256,
     }
+
+
+# ---------------------------------------------------------------------------
+# V2 Frozen Source Handoff — read-only download endpoint
+# ---------------------------------------------------------------------------
+
+_HANDOFF_PATH = Path("/app/SUPERBOT_V1_2_V2_FROZEN_SOURCE_HANDOFF.zip")
+_HANDOFF_EXPECTED_SHA256 = "eaabac7bfd0b28271fb8a93e7d976780ef7b0d7ccaf38776a19a4fe31b7f0566"
+
+
+@app.get("/api/handoff/v2-frozen-source")
+def download_v2_frozen_source_handoff() -> FileResponse:
+    """Serve the pre-existing, pre-verified frozen V2 source handoff ZIP.
+    Read-only. File is not regenerated or modified."""
+    import hashlib
+
+    if not _HANDOFF_PATH.exists():
+        raise HTTPException(status_code=404, detail="HANDOFF_FILE_NOT_FOUND")
+    actual = hashlib.sha256(_HANDOFF_PATH.read_bytes()).hexdigest()
+    if actual != _HANDOFF_EXPECTED_SHA256:
+        raise HTTPException(status_code=500, detail="HANDOFF_SHA256_INTEGRITY_FAIL")
+    return FileResponse(
+        path=str(_HANDOFF_PATH),
+        media_type="application/zip",
+        filename="SUPERBOT_V1_2_V2_FROZEN_SOURCE_HANDOFF.zip",
+    )
