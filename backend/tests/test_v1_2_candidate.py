@@ -7,7 +7,9 @@ the frozen candidate semantics and the acceptance evaluator in isolation.
 from __future__ import annotations
 
 import ast
+import dataclasses
 import hashlib
+import inspect
 import math
 from pathlib import Path
 from typing import Sequence
@@ -431,7 +433,11 @@ class TestMedian:
 
 
 # =====================================================================
-# Collector / pipeline mismatch (Section I)
+# Collector / pipeline mismatch (Section I of BASE acceptance)
+# NOTE: acc.collector_mismatch_verdict is in v1_2_acceptance.py (frozen).
+# These tests verify the acceptance module behaviour and are preserved.
+# The pipeline_sha parameters here test the *acceptance module* only;
+# the preflight no longer performs a pipeline-SHA equality check.
 # =====================================================================
 
 
@@ -462,7 +468,8 @@ class TestCollectorMismatch:
 
 
 # =====================================================================
-# Preflight: golden-path prohibition
+# Preflight: golden-path prohibition + base hash gates
+# (Updated for effective protocol: BASE + AMENDMENT)
 # =====================================================================
 
 
@@ -471,23 +478,25 @@ class TestPreflightGoldenProhibition:
         # Must not raise
         pf.verify_no_golden_imports_in_candidate()
 
-    def test_preflight_report_all_ok(self, tmp_path):
+    def test_preflight_report_all_ok(self):
+        """Correct state: matching BASE + AMENDMENT hashes => ok=True.
+        No pipeline_sha field is required or accepted.
+        """
         src_agg = pf.aggregate_sha256(pf.IMPL_SOURCE_PATHS)
         tst_agg = pf.aggregate_sha256(pf.IMPL_TEST_PATHS)
         head = pf.current_git_head()
         exp = pf.PreflightExpectations(
             candidate_spec_sha256=pf.sha256_of_file(pf.CANDIDATE_SPEC_PATH),
             acceptance_criteria_sha256=pf.sha256_of_file(pf.ACCEPTANCE_CRITERIA_PATH),
+            amendment_sha256=pf.sha256_of_file(pf.ACCEPTANCE_AMENDMENT_PATH),
             implementation_source_aggregate_sha256=src_agg,
             implementation_test_aggregate_sha256=tst_agg,
             expected_runtime_commit=head,
             collector_sha="COLL_SHA_STUB",
-            pipeline_sha="PIPE_SHA_STUB",
         )
         snap = pf.RuntimeSnapshot(
             actual_runtime_commit=head,
             actual_collector_sha="COLL_SHA_STUB",
-            actual_pipeline_sha="PIPE_SHA_STUB",
             firewall_active=True,
             frozen_analysis_engine_configured=False,
             frozen_analysis_engine_accepts_input=False,
@@ -502,14 +511,15 @@ class TestPreflightGoldenProhibition:
         exp = pf.PreflightExpectations(
             candidate_spec_sha256="deadbeef" * 8,  # wrong
             acceptance_criteria_sha256=pf.sha256_of_file(pf.ACCEPTANCE_CRITERIA_PATH),
+            amendment_sha256=pf.sha256_of_file(pf.ACCEPTANCE_AMENDMENT_PATH),
             implementation_source_aggregate_sha256=src_agg,
             implementation_test_aggregate_sha256=tst_agg,
             expected_runtime_commit=head,
-            collector_sha="C", pipeline_sha="P",
+            collector_sha="C",
         )
         snap = pf.RuntimeSnapshot(
             actual_runtime_commit=head,
-            actual_collector_sha="C", actual_pipeline_sha="P",
+            actual_collector_sha="C",
             firewall_active=True,
             frozen_analysis_engine_configured=False,
             frozen_analysis_engine_accepts_input=False,
@@ -525,14 +535,15 @@ class TestPreflightGoldenProhibition:
         exp = pf.PreflightExpectations(
             candidate_spec_sha256=pf.sha256_of_file(pf.CANDIDATE_SPEC_PATH),
             acceptance_criteria_sha256=pf.sha256_of_file(pf.ACCEPTANCE_CRITERIA_PATH),
+            amendment_sha256=pf.sha256_of_file(pf.ACCEPTANCE_AMENDMENT_PATH),
             implementation_source_aggregate_sha256=src_agg,
             implementation_test_aggregate_sha256=tst_agg,
             expected_runtime_commit=head,
-            collector_sha="C", pipeline_sha="P",
+            collector_sha="C",
         )
         snap = pf.RuntimeSnapshot(
             actual_runtime_commit=head,
-            actual_collector_sha="C", actual_pipeline_sha="P",
+            actual_collector_sha="C",
             firewall_active=False,           # off
             frozen_analysis_engine_configured=True,  # bad
             frozen_analysis_engine_accepts_input=True,  # bad
@@ -621,3 +632,159 @@ class TestThresholdComponent:
     def test_unverifiable_when_all_none(self):
         pairs = [(None, 1.0), (1.0, None)]
         assert acc.threshold_component_verdict(pairs) == acc.VERDICT_UNVERIFIABLE
+
+
+# =====================================================================
+# Effective preflight protocol tests (\u00a78A-I)
+# Verify the amendment is correctly enforced by the updated preflight.
+# =====================================================================
+
+
+class TestPreflightEffectiveProtocol:
+    """Tests \u00a78A-I: amendment hash gate, pipeline_sha removal, and all
+    preserved fail-closed gates.
+    """
+
+    def _valid_exp(self) -> pf.PreflightExpectations:
+        return pf.PreflightExpectations(
+            candidate_spec_sha256=pf.sha256_of_file(pf.CANDIDATE_SPEC_PATH),
+            acceptance_criteria_sha256=pf.sha256_of_file(pf.ACCEPTANCE_CRITERIA_PATH),
+            amendment_sha256=pf.sha256_of_file(pf.ACCEPTANCE_AMENDMENT_PATH),
+            implementation_source_aggregate_sha256=pf.aggregate_sha256(pf.IMPL_SOURCE_PATHS),
+            implementation_test_aggregate_sha256=pf.aggregate_sha256(pf.IMPL_TEST_PATHS),
+            expected_runtime_commit=pf.current_git_head(),
+            collector_sha="COLL_STUB",
+        )
+
+    def _valid_snap(self) -> pf.RuntimeSnapshot:
+        return pf.RuntimeSnapshot(
+            actual_runtime_commit=pf.current_git_head(),
+            actual_collector_sha="COLL_STUB",
+            firewall_active=True,
+            frozen_analysis_engine_configured=False,
+            frozen_analysis_engine_accepts_input=False,
+        )
+
+    # \u00a78A: matching BASE + matching AMENDMENT => ok=True, failures=()
+    def test_A_correct_state_passes(self):
+        report = pf.run_preflight(self._valid_exp(), self._valid_snap())
+        assert report.ok, report.failures
+        assert report.failures == ()
+
+    # \u00a78B: wrong amendment hash => AMENDMENT_SHA_DRIFT
+    def test_B_wrong_amendment_hash_fails(self):
+        exp = dataclasses.replace(
+            self._valid_exp(),
+            amendment_sha256="deadbeef" * 8,
+        )
+        report = pf.run_preflight(exp, self._valid_snap())
+        assert not report.ok
+        assert "AMENDMENT_SHA_DRIFT" in report.failures
+
+    # \u00a78C: pipeline_sha placeholder can no longer participate in PASS.
+    # PreflightExpectations must have no pipeline_sha field.
+    # RuntimeSnapshot must have no actual_pipeline_sha field.
+    def test_C_pipeline_sha_field_absent(self):
+        # Field must not exist on the dataclass
+        assert not hasattr(pf.PreflightExpectations, "pipeline_sha"), (
+            "pipeline_sha must not be a field of PreflightExpectations"
+        )
+        assert not hasattr(pf.RuntimeSnapshot, "actual_pipeline_sha"), (
+            "actual_pipeline_sha must not be a field of RuntimeSnapshot"
+        )
+        # Constructing with pipeline_sha kwarg must raise TypeError
+        with pytest.raises(TypeError):
+            pf.PreflightExpectations(
+                candidate_spec_sha256="x",
+                acceptance_criteria_sha256="x",
+                amendment_sha256="x",
+                implementation_source_aggregate_sha256="x",
+                implementation_test_aggregate_sha256="x",
+                expected_runtime_commit="x",
+                collector_sha="x",
+                pipeline_sha="PIPE_SHA_STUB",   # must be rejected
+            )
+        # Constructing RuntimeSnapshot with actual_pipeline_sha must also fail
+        with pytest.raises(TypeError):
+            pf.RuntimeSnapshot(
+                actual_runtime_commit="x",
+                actual_collector_sha="x",
+                actual_pipeline_sha="PIPE_SHA_STUB",  # must be rejected
+                firewall_active=True,
+                frozen_analysis_engine_configured=False,
+                frozen_analysis_engine_accepts_input=False,
+            )
+
+    # \u00a78D: PIPELINE_SHA_DRIFT is never emitted by run_preflight.
+    def test_D_pipeline_sha_drift_never_emitted(self):
+        # Must not appear in run_preflight source code
+        src = inspect.getsource(pf.run_preflight)
+        assert "PIPELINE_SHA_DRIFT" not in src, (
+            "PIPELINE_SHA_DRIFT token must not appear in run_preflight source"
+        )
+        # Must not appear under correct state
+        report = pf.run_preflight(self._valid_exp(), self._valid_snap())
+        assert "PIPELINE_SHA_DRIFT" not in report.failures
+        # Must not appear even under amendment drift (a different failure)
+        exp_bad_amend = dataclasses.replace(
+            self._valid_exp(), amendment_sha256="x" * 64,
+        )
+        r2 = pf.run_preflight(exp_bad_amend, self._valid_snap())
+        assert "PIPELINE_SHA_DRIFT" not in r2.failures
+        # Must not appear under collector mismatch
+        snap_bad_coll = dataclasses.replace(
+            self._valid_snap(), actual_collector_sha="wrong",
+        )
+        r3 = pf.run_preflight(self._valid_exp(), snap_bad_coll)
+        assert "PIPELINE_SHA_DRIFT" not in r3.failures
+
+    # \u00a78E: collector mismatch still fails closed
+    def test_E_collector_mismatch_fails(self):
+        snap = dataclasses.replace(
+            self._valid_snap(), actual_collector_sha="wrong_collector_sha",
+        )
+        report = pf.run_preflight(self._valid_exp(), snap)
+        assert not report.ok
+        assert "COLLECTOR_SHA_DRIFT" in report.failures
+
+    # \u00a78F: wrong runtime commit still fails
+    def test_F_runtime_commit_mismatch_fails(self):
+        exp = dataclasses.replace(
+            self._valid_exp(),
+            expected_runtime_commit="0000000000000000000000000000000000000000",
+        )
+        report = pf.run_preflight(exp, self._valid_snap())
+        assert not report.ok
+        assert "RUNTIME_COMMIT_DRIFT" in report.failures
+
+    # \u00a78G: firewall off still fails
+    def test_G_firewall_off_fails(self):
+        snap = dataclasses.replace(self._valid_snap(), firewall_active=False)
+        report = pf.run_preflight(self._valid_exp(), snap)
+        assert not report.ok
+        assert "FIREWALL_NOT_ACTIVE" in report.failures
+
+    # \u00a78H: FrozenAnalysisEngine configured / accepts_input still fails
+    def test_H_frozen_engine_gates_active(self):
+        snap = dataclasses.replace(
+            self._valid_snap(),
+            frozen_analysis_engine_configured=True,
+            frozen_analysis_engine_accepts_input=True,
+        )
+        report = pf.run_preflight(self._valid_exp(), snap)
+        assert not report.ok
+        assert "FROZEN_ANALYSIS_ENGINE_CONFIGURED" in report.failures
+        assert "FROZEN_ANALYSIS_ENGINE_ACCEPTS_INPUT" in report.failures
+
+    # \u00a78I: candidate golden-import prohibition remains active
+    def test_I_golden_import_prohibition_active(self):
+        # Must not raise — candidate is clean
+        pf.verify_no_golden_imports_in_candidate()
+
+    # Additional: HISTORICAL_PIPELINE_IDENTITY constant is present and correct
+    def test_historical_pipeline_identity_constant(self):
+        assert pf.HISTORICAL_PIPELINE_IDENTITY == "UNAVAILABLE"
+        # ACCEPTANCE_AMENDMENT_PATH must resolve to the frozen amendment file
+        assert pf.ACCEPTANCE_AMENDMENT_PATH.exists(), (
+            "ACCEPTANCE_AMENDMENT_PATH must point to the existing amendment file"
+        )

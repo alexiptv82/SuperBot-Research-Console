@@ -3,14 +3,18 @@
 Fail-closed synthetic preflight that must be satisfied BEFORE any future
 NEW36 execution. This module DOES NOT execute NEW36. It only:
 
-* Recomputes SHA256 for the frozen candidate spec, acceptance criteria,
-  and the frozen candidate/acceptance implementation modules.
+* Recomputes SHA256 for the frozen candidate spec, BASE acceptance criteria,
+  the acceptance AMENDMENT (V1_2_ACCEPTANCE_AMENDMENT_001), and the frozen
+  candidate/acceptance implementation modules.
 * Compares against a caller-supplied expected snapshot.
 * Verifies the runtime commit against an expected commit.
-* Verifies collector/pipeline identity matches expectation.
+* Verifies collector identity matches expectation.
 * Verifies the candidate generator does not import any golden path.
 * Verifies firewall/allowlist state and FrozenAnalysisEngine remains
   NOT_CONFIGURED.
+
+Historical pipeline identity is UNAVAILABLE (see HISTORICAL_PIPELINE_IDENTITY).
+No pipeline-SHA equality check is performed. See Amendment \u00a7D.
 
 All checks are read-only and side-effect free.
 """
@@ -18,11 +22,10 @@ from __future__ import annotations
 
 import ast
 import hashlib
-import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Sequence
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[2]
 
@@ -32,6 +35,9 @@ CANDIDATE_SPEC_PATH: Path = (
 ACCEPTANCE_CRITERIA_PATH: Path = (
     REPO_ROOT / "backend" / "recovery" / "specs" / "V1_2_ACCEPTANCE_CRITERIA.txt"
 )
+ACCEPTANCE_AMENDMENT_PATH: Path = (
+    REPO_ROOT / "backend" / "recovery" / "specs" / "V1_2_ACCEPTANCE_AMENDMENT_001.txt"
+)
 IMPL_SOURCE_PATHS: tuple[Path, ...] = (
     REPO_ROOT / "backend" / "recovery" / "v1_2_candidate.py",
     REPO_ROOT / "backend" / "recovery" / "v1_2_acceptance.py",
@@ -40,6 +46,13 @@ IMPL_SOURCE_PATHS: tuple[Path, ...] = (
 IMPL_TEST_PATHS: tuple[Path, ...] = (
     REPO_ROOT / "backend" / "tests" / "test_v1_2_candidate.py",
 )
+
+# Historical pipeline identity: a completed pre-NEW36 forensic audit found no
+# analysis/generator source SHA, version, manifest binding, sidecar binding,
+# or source file sufficient to establish source identity for the original
+# CP24/CP36 golden production pipeline.  DO NOT substitute any value for this
+# constant.  UNAVAILABLE != UNAVAILABLE must never be used as an equality gate.
+HISTORICAL_PIPELINE_IDENTITY: str = "UNAVAILABLE"
 
 # Suspicious string-constant substrings that would only appear if the
 # candidate module tried to *reference* a golden artifact by path or module
@@ -58,18 +71,23 @@ _GOLDEN_FORBIDDEN_STRING_TOKENS: tuple[str, ...] = (
 class PreflightExpectations:
     candidate_spec_sha256: str
     acceptance_criteria_sha256: str
+    amendment_sha256: str          # V1_2_ACCEPTANCE_AMENDMENT_001 — Amendment \u00a7D
     implementation_source_aggregate_sha256: str
     implementation_test_aggregate_sha256: str
     expected_runtime_commit: str
     collector_sha: str
-    pipeline_sha: str
+    # pipeline_sha is intentionally absent.
+    # Historical pipeline identity is UNAVAILABLE; no equality check is
+    # performed. Supplying any placeholder, synthetic, or substitute value
+    # as an expected pipeline SHA is prohibited (Amendment \u00a7D).
 
 
 @dataclass(frozen=True)
 class RuntimeSnapshot:
     actual_runtime_commit: str
     actual_collector_sha: str
-    actual_pipeline_sha: str
+    # actual_pipeline_sha is intentionally absent.
+    # No pipeline SHA is captured or compared (Amendment \u00a7D).
     firewall_active: bool
     frozen_analysis_engine_configured: bool
     frozen_analysis_engine_accepts_input: bool
@@ -155,14 +173,22 @@ def run_preflight(
 
     Returns a :class:`PreflightReport`. If any check fails, ``ok`` is False
     and ``failures`` enumerates the specific blockers. NEW36 must not run.
+
+    Pipeline identity is UNAVAILABLE (Amendment \u00a7B/D). No pipeline-SHA
+    equality check is performed, and no corresponding drift failure code
+    is ever emitted by this function.
     """
     failures: list[str] = []
 
-    # Spec + acceptance hashes.
+    # Spec + BASE acceptance hash.
     if sha256_of_file(CANDIDATE_SPEC_PATH) != expectations.candidate_spec_sha256:
         failures.append("CANDIDATE_SPEC_SHA_DRIFT")
     if sha256_of_file(ACCEPTANCE_CRITERIA_PATH) != expectations.acceptance_criteria_sha256:
         failures.append("ACCEPTANCE_CRITERIA_SHA_DRIFT")
+
+    # Amendment hash (effective protocol = BASE + AMENDMENT; both must match).
+    if sha256_of_file(ACCEPTANCE_AMENDMENT_PATH) != expectations.amendment_sha256:
+        failures.append("AMENDMENT_SHA_DRIFT")
 
     # Implementation aggregates.
     src_agg = aggregate_sha256(IMPL_SOURCE_PATHS)
@@ -176,11 +202,12 @@ def run_preflight(
     if snapshot.actual_runtime_commit != expectations.expected_runtime_commit:
         failures.append("RUNTIME_COMMIT_DRIFT")
 
-    # Collector / pipeline identity.
+    # Collector identity — hard gate (Amendment \u00a7C).
     if snapshot.actual_collector_sha != expectations.collector_sha:
         failures.append("COLLECTOR_SHA_DRIFT")
-    if snapshot.actual_pipeline_sha != expectations.pipeline_sha:
-        failures.append("PIPELINE_SHA_DRIFT")
+
+    # Pipeline identity: UNAVAILABLE. No equality check performed (Amendment \u00a7D).
+    # No corresponding drift failure code is ever emitted by this function.
 
     # Golden import prohibition.
     try:
@@ -201,8 +228,9 @@ def run_preflight(
 
 __all__ = [
     "REPO_ROOT",
-    "CANDIDATE_SPEC_PATH", "ACCEPTANCE_CRITERIA_PATH",
+    "CANDIDATE_SPEC_PATH", "ACCEPTANCE_CRITERIA_PATH", "ACCEPTANCE_AMENDMENT_PATH",
     "IMPL_SOURCE_PATHS", "IMPL_TEST_PATHS",
+    "HISTORICAL_PIPELINE_IDENTITY",
     "PreflightExpectations", "RuntimeSnapshot", "PreflightReport",
     "sha256_of_file", "size_of_file", "aggregate_sha256",
     "verify_no_golden_imports_in_candidate", "current_git_head",
