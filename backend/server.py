@@ -1867,16 +1867,3 @@ def download_reference_pack_a004_clean() -> FileResponse:
         media_type="application/zip",
         filename="REFERENCE_PACK_A004_CLEAN.zip",
     )
-
-# TEMPORARY DELIVERY ENDPOINT — NOT COMMITTED — HELD ACTIVE UNTIL USER CONFIRMS DOWNLOAD
-_A005_PACK_PATH = Path("/app/SUPERBOT_V1_2_REFERENCE_INPUT_PACK_A005.zip")
-
-@app.get("/api/handoff/reference-input-pack-a005")
-def download_reference_input_pack_a005() -> FileResponse:
-    if not _A005_PACK_PATH.exists():
-        raise HTTPException(status_code=404, detail="A005_PACK_NOT_FOUND")
-    return FileResponse(
-        path=str(_A005_PACK_PATH),
-        media_type="application/zip",
-        filename="SUPERBOT_V1_2_REFERENCE_INPUT_PACK_A005.zip",
-    )
