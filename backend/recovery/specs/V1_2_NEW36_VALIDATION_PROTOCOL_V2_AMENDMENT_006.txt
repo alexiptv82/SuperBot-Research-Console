@@ -1,0 +1,1368 @@
+SUPERBOT V1.2 — NEW36 VALIDATION PROTOCOL V2
+AUTHOR AMENDMENT 006 — FINAL DETERMINACY CLOSURE
+DOCUMENT: V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_006_DRAFT_FINAL2.txt
+
+STATUS: DRAFT — NOT FROZEN
+
+Authored by: independent protocol editor for Amendment 006.
+This document does not implement Candidate, does not implement Reference,
+does not execute quantitative analysis, does not modify the existing
+validator/harness, does not modify any prior frozen amendment, and does
+not alter any frozen scientific rule.
+
+============================================================
+§0  DOCUMENT STATUS AND EDITORIAL INPUTS
+============================================================
+
+0.1  This revision (FINAL2) is a targeted blocker-closure patch of
+     V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_006_DRAFT_FINAL.txt
+     (SIZE_BYTES=51750,
+     SHA256=abc4a6b5fed8de3309c23206e6e05cad175b4b29b09f0f1ff15a54cf7d2c9844).
+     It closes exactly the three blocking ambiguities B1, B2 and B3
+     found by the independent A006 final determinacy audit (§10.4) and
+     changes nothing else of substance. It remains a DRAFT. It MUST NOT
+     be treated as frozen until it has passed independent determinacy
+     audit and has been frozen by the separate freeze procedure.
+
+0.2  The editor worked from the following inputs, all supplied in full:
+
+     (1) the earlier A006 working draft (authoritative working base);
+     (2) AMENDMENT 006 DETERMINACY EVIDENCE AUDIT
+         (hereafter "the Audit");
+     (3) A006 EVIDENCE SUPPLEMENT — VERBATIM SOURCE CLOSURE
+         (hereafter "the Supplement");
+     (4) A006 FINAL MICRO-EVIDENCE CLOSURE
+         (hereafter "the Micro-Closure");
+     (5) A006 E4 FINAL SCHEMA CLOSURE
+         (hereafter "the Schema Closure");
+     (6) the A006 finalization instruction;
+     (7) the A006 FINAL DETERMINACY AUDIT of the DRAFT_FINAL revision
+         (hereafter "the Final Audit");
+     (8) the A006 TARGETED BLOCKER CLOSURE instruction (B1, B2, B3).
+
+0.3  No further evidence audit was performed by the editor. No NEW36,
+     OLD36, golden numerical content, Candidate output or Reference
+     output was read. Neither Candidate nor Reference was executed.
+
+0.4  Areas the Final Audit established as determinate (§4 AMB-R3,
+     NNC-4, and the non-blocking status of X1) are not reopened by this
+     revision and are unchanged.
+
+============================================================
+§1  SCOPE AND GOVERNING PRINCIPLE
+============================================================
+
+1.1  A006 has exactly five functions:
+
+     A. Codify the now-determinate EXISTING AMB-R3 behavior (sync-grid
+        part-coverage structural validity) precisely enough that
+        Candidate and an independently-authored Reference reach the same
+        structural-validity decision (§4).
+
+     B. Define the two Reference-role provenance validity rules that
+        close AMB-S1: runtime_source_commit (NNC-1, §5) and
+        source_sha256 with runtime HEAD binding (NNC-2, §6).
+
+     C. Require Candidate/Reference runtime environment equivalence,
+        including a normative pyarrow version, as a pre-application gate
+        (NNC-3, §7).
+
+     D. Require verified runtime uniqueness of sessions.session_id on the
+        actual runtime database as a pre-application gate (NNC-4, §8).
+
+     E. Define rejection of manifest JSON containing repeated object
+        member names, for both roles (NNC-5, §8A).
+
+1.2  A006 codifies; it does not repair. Existing behavior that appears
+     imperfect remains the normative behavior for this validation unless
+     a prior frozen amendment explicitly says otherwise. Anomalies
+     identified by the evidence are recorded in §4 as existing behavior.
+
+1.3  A006 introduces no new normative choice within AMB-R3:
+
+         A006_R3_NEW_NORMATIVE_CHOICES_COUNT=0
+
+     NNC-3 and NNC-4 are pre-application runtime preconditions under
+     which the codified AMB-R3 behavior executes. NNC-5 is a manifest
+     serialization-validity rule. None of them changes any AMB-R3 rule,
+     branch, string, counter or verdict.
+
+1.4  Prior frozen amendments, including A005 and its R1.3 choice, are
+     not modified by A006. The A005 R1.3 choice is not an A006 choice.
+
+============================================================
+§2  EVIDENCE BASIS AND PRECEDENCE
+============================================================
+
+2.1  Static evidence basis (raw-byte SHA256, no LF normalisation, as
+     recomputed in the Supplement §0 and re-confirmed as MATCH by the
+     Micro-Closure §1 and the Schema Closure §1):
+
+     backend/parquet_validator.py
+       SIZE_BYTES=14516
+       SHA256=3e367a414b222b2aee1be1c0bf459ff21d69dee6c3c5d2aceae363bc34636ee7
+
+     backend/recovery/harness.py
+       SIZE_BYTES=59414
+       SHA256=e97f2278b96b8154411de8f5a8c205273b217b65f33feada0986a78c69917e39
+
+     backend/constants.py
+       SIZE_BYTES=1993
+       SHA256=089c2f0251778dc9384730d694cc64feb2f0be67edd923d9df749f40b47a4e0f
+
+     Repository HEAD at evidence time (Audit, Micro-Closure, Schema
+     Closure):
+       2eabbd3a6ab1953d2444348fd552f666bba01108
+
+     A005 identity as confirmed by the Audit (informative; A005 is not
+     modified):
+       SIZE=29853
+       SHA256=0c2dc05bc37fc392f67b45fd8f7e3576b49be9d764ffca4be0679db22b8d2a00
+
+     These identities are provenance for the evidence basis of §4. They
+     are not, by themselves, a runtime requirement on Candidate or
+     Reference artifacts.
+
+2.2  Precedence, highest first:
+     (a) verbatim source text quoted in any supplied report;
+     (b) derived statements and tables in the supplied reports;
+     (c) any earlier paraphrase.
+
+     Where (b) or (c) conflicts with the control flow of (a), (a)
+     governs. Resolved conflicts of this kind are recorded in §10.2.
+
+2.3  The earlier paraphrase suggesting a conditional-expression
+     ambiguity in PAR1 reason construction is withdrawn; see §4.5.2.
+
+============================================================
+§3  NON-ADOPTION OF SUPPLEMENT §12 PROPOSALS
+============================================================
+
+3.1  The Supplement §12 proposed three changes (NC-1, NC-2, NC-3). None
+     is adopted. Each would alter existing behavior rather than codify
+     it.
+
+         SUPPLEMENT_NC1_ENFORCE_LO_EQ_0_ADOPTED=NO
+         SUPPLEMENT_NC2_EXPECTED_COUNT_NONE_HARD_FAIL_ADOPTED=NO
+         SUPPLEMENT_NC3_RESTRICT_SUBSTRING_FILTER_ADOPTED=NO
+
+3.2  The corresponding existing behaviors are codified as normative in
+     §4.6.2 (sequence anchor), §4.9 branch P4 (expected_count None), and
+     §4.9 branch P3 (substring filter).
+
+3.3  Neither Candidate nor Reference may implement any of NC-1, NC-2 or
+     NC-3 for this validation. An implementation that does so is
+     non-conformant with A006, because it can reach a different
+     structural verdict from the codified behavior.
+
+============================================================
+§4  AMB-R3 — CODIFIED EXISTING BEHAVIOR
+============================================================
+
+Notation: "entry" = a ZIP member; "filename" = the full ZIP member name
+(info.filename, including directory components); "basename" =
+Path(filename).name.
+
+------------------------------------------------------------
+§4.1  Constants
+------------------------------------------------------------
+
+DATASET_DIRS = ("sync_grid_100ms", "normalized_books", "normalized_trades")
+  An ordered tuple. The order is significant for §4.3.
+
+PARQUET_MAGIC = b"PAR1"   (hex 50 41 52 31; 4 bytes)
+
+_MIN_PARQUET_SIZE = 8
+
+------------------------------------------------------------
+§4.2  Entry selection
+------------------------------------------------------------
+
+An entry is a parquet entry iff:
+
+    filename.endswith(".parquet") and not filename.endswith("/")
+
+Every parquet entry enters all_entries. parquet_files_total =
+len(all_entries). No other entries are considered by the validator.
+
+------------------------------------------------------------
+§4.3  Directory classification
+------------------------------------------------------------
+
+For each parquet entry, iterate DATASET_DIRS in tuple order. For each d,
+let needle = d + "/". The entry is classified as d, and iteration stops,
+iff:
+
+    filename.startswith(needle) or ("/" + needle) in filename
+
+If no d matches, the entry is unassigned and is placed in the
+"_unassigned_" group.
+
+Normative consequences (existing behavior):
+
+(a) Nested match: "session_xyz/sync_grid_100ms/part-001.parquet" is
+    classified sync_grid_100ms.
+
+(b) Suffixed directory names do NOT match:
+    "sync_grid_100ms_old/part-000.parquet" and
+    "sync_grid_100ms_v2/part-000.parquet" are unassigned.
+
+(c) First-match precedence follows tuple order. An entry such as
+    "normalized_books/sync_grid_100ms/part-1.parquet" is classified
+    sync_grid_100ms, because sync_grid_100ms is tested first and
+    "/sync_grid_100ms/" occurs in the filename.
+
+------------------------------------------------------------
+§4.4  Part-index parsing
+------------------------------------------------------------
+
+    _PART_NAME_RE = r"(\d+)\.parquet$"
+
+Applied with .search() to the basename. If there is no match, the part
+index is None (unparseable). Otherwise the index is int(group(1));
+leading zeros are discarded ("0000269" -> 269). The ValueError branch is
+unreachable in practice and has no normative effect.
+
+Part-index parsing applies to classified (bucketed) entries only.
+Unassigned entries receive no part index and no sequence validation.
+
+------------------------------------------------------------
+§4.5  Per-entry structural checks (known DATASET_DIRS)
+------------------------------------------------------------
+
+§4.5.0  Per-directory result creation and files_seen (verbatim,
+        Micro-Closure §2)
+
+  For each d in DATASET_DIRS, in tuple order, a PerDirResult is created
+  and stored as result.per_dir[d], whether or not any entry is
+  classified d. PerDirResult defaults:
+
+      files_seen: int = 0
+      parts_expected: int | None = None
+      duplicate_parts = []
+      missing_parts = []
+      unparseable_names = []
+      sequence_ok: bool = True
+      sequence_detail: str = ""
+
+  For each bucketed entry of d, per_dir.files_seen += 1 is executed
+  FIRST, before the size check. Therefore files_seen counts every
+  bucketed entry of d, including undersized entries, entries failing
+  magic, entries failing metadata, and entries with unparseable names.
+
+§4.5.1  Bucketed entries, size < 8 (info.file_size < _MIN_PARQUET_SIZE)
+
+  - parquet_magic_checked += 1; parquet_magic_failed += 1
+  - failure appended: f"{filename}: size {file_size} < 8"
+  - parquet_metadata_checked += 1; parquet_metadata_failed += 1
+  - the metadata parser is NOT invoked
+  - the entry's part index is still routed: None -> unparseable_names
+    (the full filename is appended), otherwise -> indices. An undersized
+    entry therefore still participates in sequence validation.
+  - no further per-entry checks.
+
+§4.5.2  Bucketed entries, size >= 8
+
+  Magic:
+    head_ok = buf[:4]  == b"PAR1"
+    tail_ok = buf[-4:] == b"PAR1"
+    parquet_magic_checked += 1
+    Magic PASS iff head_ok AND tail_ok (parquet_magic_passed += 1).
+    Otherwise parquet_magic_failed += 1 and a reason list is built by
+    two INDEPENDENT statements (not elif):
+        if not head_ok: append "head"
+        if not tail_ok: append "tail"
+    and the failure appended is:
+        f"{filename}: PAR1 magic missing ({'+'.join(reason)})"
+    giving exactly one of:
+        head fail only -> "(head)"
+        tail fail only -> "(tail)"
+        both fail      -> "(head+tail)"
+    HEAD_PLUS_TAIL_REACHABLE=YES
+
+  Metadata (executed unconditionally, whether or not magic passed):
+    parquet_metadata_checked += 1
+    _check_metadata(buf) returns md_ok.
+    md_ok -> parquet_metadata_passed += 1
+    else  -> parquet_metadata_failed += 1 and failure appended:
+             f"{filename}: metadata unreadable ({md_err})"
+
+  _check_metadata semantics:
+    - pyarrow unavailable at module load -> not ok,
+      md_err = f"pyarrow not available: {_PYARROW_IMPORT_ERROR}"
+      (availability is determined at module load by the guarded
+      import of pyarrow.parquet; any exception during that import makes
+      pyarrow unavailable)
+    - pq.ParquetFile(io.BytesIO(buf)).metadata is None -> not ok,
+      md_err = "no metadata block"
+    - any exception during construction/access -> not ok,
+      md_err = f"{type(exc).__name__}: {exc}"
+    - otherwise ok.
+    Zero-row parquet is not rejected solely for having zero rows.
+    No schema or required-column check occurs here.
+
+  Post-validation part-index routing (verbatim, Micro-Closure §3),
+  executed unconditionally after magic and metadata:
+    if idx is None: unparseable_names.append(filename)
+    else:           indices.append(idx)
+  Magic failure does NOT suppress routing. Metadata failure does NOT
+  suppress routing.
+
+  Combined invariant: every bucketed entry of a known directory is
+  routed to exactly one of indices or unparseable_names, in both the
+  size < 8 branch and the size >= 8 branch, independently of the magic
+  and metadata results.
+
+§4.5.3  Unassigned entries
+
+  files_seen of the "_unassigned_" per-dir result += 1 per entry.
+  Size < 8:
+    magic checked+failed, metadata checked+failed (parser not invoked),
+    failure: f"{filename}: (unassigned dir) size < min"
+  Size >= 8:
+    magic as §4.5.2 but the failure text carries no head/tail reason:
+      f"{filename}: (unassigned dir) PAR1 missing"
+    metadata executed unconditionally; on failure:
+      f"{filename}: (unassigned dir) metadata: {md_err}"
+  After the loop: sequence_ok = True,
+  sequence_detail = "not enforced (unassigned)".
+
+  Magic/metadata failures of unassigned entries increment the same
+  global counters as bucketed entries and append to the same global
+  validation.failures list.
+
+------------------------------------------------------------
+§4.6  Sequence validation (known DATASET_DIRS only)
+------------------------------------------------------------
+
+§4.6.1  Inputs per known directory: indices (list of parsed ints,
+        duplicates retained) and unparseable (list of full filenames),
+        both populated per §4.5.1 and §4.5.2.
+
+§4.6.2  Rules, in source order:
+
+  1. unparseable_names := unparseable.
+     If unparseable is non-empty:
+         sequence_ok := False
+         sequence_detail := f"{M} entries not matching part-XXX.parquet"
+         (M = len(unparseable))
+
+  2. duplicate_parts := sorted distinct indices occurring more than
+     once. N_dup below is the number of DISTINCT duplicated indices,
+     not the number of extra copies.
+
+  3. If indices is non-empty:
+         lo := min(indices); hi := max(indices)
+         parts_expected := hi - lo + 1
+         missing_parts := sorted(set(range(lo, hi+1)) - set(indices))
+         If missing_parts or duplicate_parts:
+             sequence_ok := False
+             details := ["missing {N_miss}"] if missing, then
+                        ["duplicated {N_dup}"] if duplicates
+             sequence_detail := (prior detail + "; " if prior detail
+                                 non-empty else "") + ", ".join(details)
+         Else:
+             if sequence_detail is empty:
+                 sequence_detail := f"contiguous 0..{hi}"
+     Else (indices empty):
+         parts_expected := 0
+         sequence_ok := False
+         sequence_detail := "no parquet files present"   (OVERWRITES)
+
+  Sequence anchor (normative, existing behavior):
+    The expected set is range(lo, hi+1) where lo is the minimum
+    OBSERVED parsed index. There is NO requirement that lo == 0 or
+    lo == 1. Indices below lo are never reported missing. A parseable,
+    internally contiguous, duplicate-free sequence with lo > 0 is
+    sequence-valid. A single parseable part, otherwise clean, is
+    sequence-valid.
+
+  Diagnostic "contiguous 0..{hi}":
+    This existing string is emitted irrespective of lo and is
+    factually misleading when lo > 0. It is a diagnostic string only.
+    It MUST NOT be interpreted as a requirement that sequences start at
+    zero, and no implementation may derive a validity decision from it.
+
+§4.6.3  Resolved outcome table (derived from the verbatim control flow)
+
+  Case  Situation                                   sequence_ok  sequence_detail
+  ----  ------------------------------------------  -----------  ----------------------------------------------
+  S1    no entries in the directory                 False        "no parquet files present"
+  S2    unparseable only (M>0), no parsed index     False        "no parquet files present"
+  S3    parsed only, contiguous, no dups (any lo)   True         "contiguous 0..{hi}"
+  S4    parsed only, missing only                   False        "missing {N_miss}"
+  S5    parsed only, duplicates only                False        "duplicated {N_dup}"
+  S6    parsed only, missing + duplicates           False        "missing {N_miss}, duplicated {N_dup}"
+  S7    unparseable + parsed clean                  False        "{M} entries not matching part-XXX.parquet"
+  S8    unparseable + missing                       False        "{M} entries not matching part-XXX.parquet; missing {N_miss}"
+  S9    unparseable + duplicates                    False        "{M} entries not matching part-XXX.parquet; duplicated {N_dup}"
+  S10   unparseable + missing + duplicates          False        "{M} entries not matching part-XXX.parquet; missing {N_miss}, duplicated {N_dup}"
+
+  S2 supersedes the Supplement's earlier case table entry (its Case G),
+  which gave "{M} entries not matching part-XXX.parquet" for this
+  situation. Per the verbatim function, the final else branch (indices
+  empty) overwrites the earlier detail. The verbatim function is
+  authoritative. (Resolved historical discrepancy; see §10.2 R1.)
+
+  S3 with sequence_ok=True relies on the verbatim PerDirResult default
+  sequence_ok: bool = True (§4.5.0).
+
+§4.6.4  Counters and failure appends (per known directory d)
+
+  Only if not sequence_ok:
+    parquet_sequence_gaps   += len(missing_parts)
+    parquet_duplicate_parts += len(duplicate_parts)
+    if missing_parts:
+        failure: f"{d}: missing part indices sample={missing_parts[:10]}"
+    if duplicate_parts:
+        failure: f"{d}: duplicate part indices sample={duplicate_parts[:10]}"
+
+  Unparseable names produce NO failure string by themselves; they act
+  only through sequence_ok.
+
+------------------------------------------------------------
+§4.7  parquet_overall_status (informative)
+------------------------------------------------------------
+
+  FAIL if parquet_files_total == 0; FAIL if parquet_magic_failed > 0
+  (global, includes unassigned); FAIL if parquet_metadata_failed > 0
+  (global, includes unassigned); FAIL if any per-dir result whose
+  dataset_dir is in DATASET_DIRS has sequence_ok False; else PASS.
+  "_unassigned_" is excluded from the sequence gate only.
+
+  This function is recorded for completeness. The evidence does not
+  show that it participates in the AMB-R3 block decision; the AMB-R3
+  decision is governed by §4.9.
+
+------------------------------------------------------------
+§4.8  Scope distinction
+------------------------------------------------------------
+
+  Magic/metadata validation: ALL parquet entries (bucketed and
+  unassigned).
+  Sequence validation: known DATASET_DIRS only.
+  Sync-grid coverage evaluator (§4.9): reads only the sync_grid_100ms
+  per-dir result PLUS a substring test over the GLOBAL failures list.
+  The corruption test is therefore NOT scoped by directory object; it
+  is scoped by text.
+  The coverage verdict is session-level: it covers all parquet entries
+  of the session ZIP regardless of asset, including entries that the
+  asset loader would never select.
+
+------------------------------------------------------------
+§4.9  _evaluate_sync_grid_coverage(validation, expected_count)
+------------------------------------------------------------
+
+Branches are evaluated in the following order. The FIRST failing branch
+wins and determines the result.
+
+  P1  sync_dir = validation.per_dir.get("sync_grid_100ms")
+      if sync_dir is None or sync_dir.files_seen == 0:
+          -> (False, "sync_grid_100ms: no parquet parts present")
+
+  P2  if not sync_dir.sequence_ok:
+          -> (False, f"sync_grid_100ms: sequence invalid ({sync_dir.sequence_detail})")
+
+  P3  sync_failures = [f for f in validation.failures
+                       if "sync_grid_100ms" in f]
+      if sync_failures:
+          -> (False, <P3 reason string beginning "sync_grid_100ms: "
+                      and embedding sync_failures[:5]>)
+          The Supplement quotes the template
+            f"sync_grid_100ms: corrupt/truncated part(s) detected: {sync_failures[:5]}"
+          The Audit quotes the template
+            f"sync_grid_100ms: {len(sync_failures)} parquet failure(s): {sync_failures[:5]}"
+          See §10.3 X1. The P3 predicate, its position in the branch
+          order and its (False, ...) verdict are identical in both
+          quotations and are normative.
+
+  P4  if expected_count is not None and sync_dir.files_seen != expected_count:
+          -> (False, f"sync_grid_100ms: authoritative manifest expects {expected_count} parts, found {sync_dir.files_seen}")
+
+  P5  -> (True, None)
+
+The function calls no further functions; it reads only attributes
+pre-populated by validate_all_parquet (§4.2–§4.6).
+
+Normative consequences (existing behavior):
+
+(a) P1 precedes P4: when there are no sync parts, the no-parts result
+    is returned regardless of expected_count. Because the
+    sync_grid_100ms PerDirResult is always created (§4.5.0), P1 fires
+    via files_seen == 0 whenever no entry is classified
+    sync_grid_100ms.
+
+(b) P3 is a literal substring test over every string in the global
+    validation.failures list. ANY failure string containing
+    "sync_grid_100ms" triggers P3, including failures of entries
+    classified "_unassigned_" or classified into another dataset dir,
+    whenever the filename (or any other part of the failure text)
+    contains that substring. Example: a corrupt
+    "sync_grid_100ms_old/part-000.parquet" is unassigned (§4.3(b)),
+    yet its failure string
+    "sync_grid_100ms_old/part-000.parquet: (unassigned dir) PAR1 missing"
+    matches P3 and the sync-grid coverage verdict is FAIL. Neither
+    Candidate nor Reference may narrow this predicate.
+
+(c) P4 when expected_count is None: the comparison is skipped.
+    Unavailability of expected_count is NOT, by itself, a structural
+    failure. In that case whole-tail truncation and absent leading
+    parts (indices below lo) are not detected by this evaluator. This
+    is the existing, documented limitation.
+
+(d) P4 when expected_count == 0 and files_seen > 0: the ordinary
+    comparison executes and fails.
+
+(e) P4 compares against files_seen, not against parts_expected or the
+    count of distinct indices.
+
+------------------------------------------------------------
+§4.10  _validate_sync_grid_part_coverage(session_id) — production wrapper
+------------------------------------------------------------
+
+  1. If session_id is in _part_coverage_cache, return the cached result.
+  2. zf = open_reference_zip(session_id).
+     If FileNotFoundError is raised: result = (True, None); cache it;
+     return it. No coverage evaluation occurs. (This is the first step
+     of the existing session-not-imported path; the PENDING status
+     itself is produced downstream, see §4.11.)
+     Other exceptions are not caught by this wrapper.
+  3. stored_path = zf.filename; zf.close().
+  4. expected = _authoritative_sync_grid_count(session_id) (§4.10.2).
+  5. result = _sync_grid_coverage_from_path(stored_path, expected)
+     (§4.10.1); cache it; return it.
+
+  Caching: keyed by session_id; shared across all asset-block
+  evaluations of that session within one run (e.g. BTC and ETH blocks
+  of the same session share one verdict); cleared by run_regression()
+  at the start of a run. A cached (True, None) result from step 2
+  therefore persists for the remainder of the run.
+
+§4.10.1  _sync_grid_coverage_from_path (verbatim, Micro-Closure §4)
+
+    validation = validate_all_parquet(zip_path)
+    return _evaluate_sync_grid_coverage(validation, expected_count)
+
+§4.10.2  _authoritative_sync_grid_count (verbatim, Micro-Closure §4)
+
+    with SessionLocal() as db:
+        row = db.execute(
+            select(SessionModel).where(SessionModel.session_id == session_id)
+        ).scalars().first()
+        if row is None or row.current_qa_run_id is None:
+            return None
+        run = db.get(QARun, row.current_qa_run_id)
+        if run is None:
+            return None
+        return run.sync_grid_file_count
+
+  Outcomes (Micro-Closure §4, Schema Closure §5), given at most one
+  Session row per session_id:
+
+    zero matching Session rows                    -> None
+    one row, current_qa_run_id None               -> None
+    one row, referenced QARun not found           -> None
+    one row, sync_grid_file_count None            -> None
+    one row, sync_grid_file_count 0               -> 0
+    one row, sync_grid_file_count N > 0           -> N
+
+  db.get(QARun, ...) is a primary-key lookup (sessions.current_qa_run_id
+  references qa_runs.id, the QARun primary key) and returns at most one
+  row.
+
+  The query has no ORDER BY. Its result is determinate only when at most
+  one Session row matches. That condition is intended by the repository
+  schema and enforced for a freshly created database, but is not
+  guaranteed for a legacy pre-existing database; it is therefore made a
+  mandatory pre-application runtime precondition by NNC-4 (§8). A006
+  introduces NO rule for selecting among duplicate rows.
+
+------------------------------------------------------------
+§4.11  Structural classification and the PENDING path
+------------------------------------------------------------
+
+  Caller chain (verbatim, Micro-Closure §5):
+
+    _get_block_summary(session_id, asset):
+      coverage_ok, coverage_reason = _validate_sync_grid_part_coverage(session_id)
+      if not coverage_ok:
+          -> BlockSummary(... valid=False ...)        [returned]
+      try:
+          df = _load_grid_for_block(session_id, asset)
+      except FileNotFoundError:
+          _block_cache[key] = None
+          -> None                                      [returned]
+      except BlockDataUnavailableError:
+          -> BlockSummary(... valid=False ...)        [returned]
+      -> reconstruct_block(session_id, asset, df)
+
+    reproduce_row:
+      summary = _get_block_summary(session_id, asset)
+      if summary is None: -> {"status": PENDING}
+
+  Normative classification (existing behavior):
+
+  - A (False, reason) result produced by _evaluate_sync_grid_coverage
+    (branches P1–P4) makes the block STRUCTURALLY INVALID (HARD FAIL):
+    _get_block_summary returns BlockSummary(valid=False,
+    invalid_reason=<reason>) before any grid load. The first failing
+    branch of §4.9 determines the reason. A coverage failure is NEVER
+    PENDING.
+
+  - PENDING arises as follows: open_reference_zip raises
+    FileNotFoundError in §4.10 step 2, the wrapper returns (True, None);
+    _get_block_summary then calls _load_grid_for_block, which raises
+    FileNotFoundError again; _get_block_summary caches None and returns
+    None; reproduce_row maps None to {"status": PENDING}.
+
+  - A genuine coverage PASS also returns (True, None) from the wrapper;
+    _load_grid_for_block then succeeds and reconstruct_block returns a
+    BlockSummary.
+
+  - The wrapper's (True, None) value is therefore not by itself the
+    PENDING signal and is not distinguishable from PASS at the tuple
+    level. PENDING versus PASS is decided deterministically by the later
+    _load_grid_for_block outcome. Implementations MUST NOT treat the
+    wrapper's (True, None) as PENDING, and MUST NOT treat a coverage
+    failure on an available ZIP as PENDING.
+
+  - The BlockDataUnavailableError branch is recorded as shown in
+    evidence. It is outside AMB-R3 coverage evaluation and A006 does
+    not codify or alter it.
+
+------------------------------------------------------------
+§4.12  Diagnostic text and cross-role equality
+------------------------------------------------------------
+
+  The templates in §4.5 and §4.9 are recorded as evidenced. However,
+  md_err may embed environment-specific PyArrow/import/exception text.
+
+  A006 creates NO new cross-role requirement that Candidate and
+  Reference reproduce identical diagnostic or exception wording. The
+  normative AMB-R3 requirement is:
+    - the deterministic structural PASS/FAIL outcome; and
+    - the branch semantics of §4.5–§4.11, including which branch of
+      §4.9 decides.
+  Any text-equality requirement already imposed by the frozen protocol
+  is unaffected by A006.
+
+  Exception: the literal substring "sync_grid_100ms" and the inclusion
+  of the full filename in failure strings are behavior-bearing (they
+  drive §4.9 P3) and are therefore normative.
+
+  Environment-dependent divergence of the PASS/FAIL outcome itself
+  (e.g. pyarrow availability or version) is closed by NNC-3 (§7), not
+  by any text-equality rule.
+
+------------------------------------------------------------
+§4.13  Conformance cases (informative; derived from §4.3–§4.11)
+------------------------------------------------------------
+
+  C1  sync parts 5..394, all clean, expected_count None
+      -> S3, sequence_ok True, detail "contiguous 0..394";
+         P5 PASS. (Parts 0..4 not detected as missing.)
+
+  C2  As C1, expected_count 395
+      -> P4 FAIL ("... expects 395 parts, found 390").
+
+  C3  sync parts 0..389 clean, expected_count 400 -> P4 FAIL.
+      Same with expected_count None -> P5 PASS.
+
+  C4  sync parts 0..9 clean + corrupt
+      "sync_grid_100ms_old/part-000.parquet"
+      -> sync sequence S3 valid; P3 FAIL via substring match.
+
+  C5  sync parts 0..9, part 3 with head and tail magic both wrong
+      -> failure "...: PAR1 magic missing (head+tail)"; metadata also
+         evaluated; index 3 still routed to indices; P3 FAIL.
+
+  C6  sync part 3 of size 5 bytes, others clean
+      -> "...: size 5 < 8"; index 3 still counted in sequence;
+         sequence S3 valid; P3 FAIL.
+
+  C7  sync directory contains only unparseable names (e.g. "a.parquet")
+      -> S2: sequence_ok False, detail "no parquet files present";
+         files_seen > 0 (§4.5.0), so P1 does not fire; P2 FAIL with
+         "sequence invalid (no parquet files present)".
+
+  C8  "normalized_books/sync_grid_100ms/part-1.parquet"
+      -> classified sync_grid_100ms (§4.3(c)).
+
+  C9  open_reference_zip raises FileNotFoundError
+      -> wrapper (True, None), cached; _load_grid_for_block raises
+         FileNotFoundError; _get_block_summary returns None;
+         reproduce_row returns PENDING. Not a coverage failure.
+
+  C10 expected_count 0, sync parts 0..3 clean -> P4 FAIL.
+
+  C11 no entry classified sync_grid_100ms, expected_count 400
+      -> P1 FAIL ("sync_grid_100ms: no parquet parts present");
+         P4 not reached.
+
+  C12 sync parts 0..9 clean, one of them with valid magic but
+      unreadable metadata
+      -> "...: metadata unreadable (...)"; index still routed;
+         S3 valid; P3 FAIL. (md_err wording is not cross-role
+         normative, §4.12.)
+
+============================================================
+§5  NNC-1 — REFERENCE runtime_source_commit
+============================================================
+
+    A006_NEW_NORMATIVE_CHOICE_1=REFERENCE_RUNTIME_SOURCE_COMMIT_VALIDITY
+
+5.1  Nature. PROVENANCE-ONLY. It has no effect on any scientific,
+     quantitative or structural-validity decision.
+
+5.2  Applicability. Applies when implementation_role == "REFERENCE"
+     (the exact frozen V2 role literal; V2 §5 freezes
+     implementation_role_values=CANDIDATE;REFERENCE).
+
+5.3  Validity. runtime_source_commit MUST:
+     (a) be a JSON string;
+     (b) match exactly ^[0-9a-f]{40}$ (exactly 40 characters, lowercase
+         hexadecimal);
+     (c) equal the full output of `git rev-parse HEAD`, with leading and
+         trailing whitespace stripped;
+     (d) be resolved in the repository containing the Reference
+         implementation;
+     (e) be captured at Reference artifact generation time.
+
+5.4  Failure. Reference artifact generation MUST fail if:
+     (a) HEAD cannot be resolved; OR
+     (b) the resolved, whitespace-stripped value does not match
+         ^[0-9a-f]{40}$ (including, for example, a 64-character value
+         from a SHA-256 object-format repository, or an uppercase value).
+
+     No placeholder, abbreviation, null, synthesized value, or alternate
+     object identifier (e.g. tree id, tag name, branch name, describe
+     output, or a truncated or re-encoded commit id) is permitted.
+
+5.5  Independence. The value is role-specific provenance. It is NOT
+     required to equal:
+     - Candidate's runtime_source_commit;
+     - any protocol freeze commit;
+     - any amendment freeze commit.
+     A difference between these values is not, by itself, a validity
+     finding.
+
+5.6  Candidate. Candidate runtime_source_commit semantics (existing:
+     `git rev-parse HEAD`, whitespace stripped, in
+     backend/recovery/v1_2_diagnostics.py) are unchanged by A006.
+
+5.7  Evidence note. No runtime_source_commit creator, validator or
+     comparator exists in parquet_validator.py or harness.py at the §2.1
+     identities (Supplement §8). NNC-1 is therefore a new rule, not a
+     codification.
+
+============================================================
+§6  NNC-2 — REFERENCE source_sha256 AND RUNTIME HEAD BINDING
+============================================================
+
+    A006_NEW_NORMATIVE_CHOICE_2=
+      REFERENCE_SOURCE_SHA256_VALIDITY_AND_RUNTIME_HEAD_BINDING
+
+6.1  Nature. PROVENANCE-ONLY. It has no effect on any scientific,
+     quantitative or structural-validity decision.
+
+6.2  Applicability. Applies when implementation_role == "REFERENCE"
+     (the exact frozen V2 role literal; see §5.2).
+
+6.3  Structure. source_sha256 MUST be a JSON object containing EXACTLY
+     the following three keys, and no others:
+
+         backend/recovery/reference/v1_2_reference.py
+         backend/recovery/reference/tests/test_v1_2_reference.py
+         backend/recovery/reference/REFERENCE_INDEPENDENCE_ATTESTATION.txt
+
+     Keys are the exact repository-root-relative path strings shown,
+     using "/" separators, compared as exact strings. "Exactly" means
+     three members, one per listed key: a missing key, an additional
+     key, or a repeated key name does not satisfy §6.3.
+
+     When a manifest is validated, a repeated member name in
+     source_sha256 (as in any other JSON object of the manifest) is
+     detected on the serialized bytes and makes the manifest INVALID
+     under NNC-5 (§8A), before any mapping collapse.
+
+     JSON key order has no semantic meaning.
+
+6.4  Values. Each value MUST:
+     (a) be a JSON string matching ^[0-9a-f]{64}$ (exactly 64 lowercase
+         hexadecimal characters);
+     (b) equal the SHA256 of the exact raw working-tree bytes of the
+         corresponding file, read at Reference artifact generation time.
+
+     No newline normalization. No decoding or re-encoding. No aggregate
+     digest may be substituted for any per-file value, and no per-file
+     value may be replaced by a digest over more than one file.
+
+6.5  HEAD binding. Let C be the runtime_source_commit established under
+     NNC-1 (§5) for the same Reference artifact. For each of the three
+     exact paths P:
+
+     (1) P MUST exist at C as a committed file;
+     (2) the committed blob bytes of P at C MUST be obtained using
+             git show <C>:<P>
+         or a byte-equivalent Git operation (e.g.
+             git cat-file blob <C>:<P>);
+         the committed bytes are taken raw, with no textconv, no
+         end-of-line conversion and no other filter applied;
+     (3) SHA256 of those committed bytes MUST equal source_sha256[P]
+         (the working-tree value of §6.4(b)).
+
+6.6  Failure. Reference artifact generation MUST fail if any of the
+     following holds:
+     - §6.3 is not satisfied;
+     - any value fails §6.4(a);
+     - any working-tree file cannot be read, or its value does not equal
+       the SHA256 of its raw working-tree bytes (§6.4(b));
+     - NNC-1 has not produced a valid runtime_source_commit;
+     - any path does not exist at C (§6.5(1)), including a file that is
+       present in the working tree but untracked or not committed at C;
+     - any committed-bytes SHA256 differs from the corresponding
+       working-tree value (§6.5(3)).
+
+     Consequence (not an additional rule; editorial only): any
+     difference between the working-tree bytes of an in-scope Reference
+     file and that file's committed blob bytes at runtime_source_commit
+     causes generation to fail. The normative predicate is the
+     byte-equality of §6.4(b) and §6.5(3); the staged/unstaged state of
+     a file is not itself tested.
+
+6.7  Purpose. NNC-2 deliberately prevents dirty modifications of these
+     three exact Reference files from being attributed to a different
+     HEAD.
+
+6.8  Scope limit. NNC-2 does NOT impose a whole-repository clean-tree
+     requirement. Modified, staged or untracked files outside the three
+     exact paths do not invalidate Reference provenance solely under
+     NNC-2.
+
+6.9  Role separation.
+     - Candidate source_sha256 semantics remain unchanged (existing:
+       JSON dict mapping the hard-coded Candidate source paths to
+       raw-byte SHA256 values, backend/recovery/v1_2_stage3.py).
+     - Candidate and Reference source_sha256 are role-specific and are
+       NOT cross-role equality fields.
+     - A006 does not modify the existing
+       IMPLEMENTATION_SOURCE_AGGREGATE_SHA256 algorithm
+       (backend/recovery/v1_2_preflight.py) or where it is used. That
+       aggregate is not a substitute for the Reference source_sha256
+       object (§6.4).
+
+6.10 Evidence note. No source-file SHA256 creator, validator or
+     comparator, and no working-tree/commit byte binding or clean/dirty
+     tree rule, exists in parquet_validator.py or harness.py at the §2.1
+     identities (Supplement §8). NNC-2 is therefore a new rule, not a
+     codification.
+
+============================================================
+§7  NNC-3 — CANDIDATE/REFERENCE RUNTIME ENVIRONMENT EQUIVALENCE
+============================================================
+
+    A006_NEW_NORMATIVE_CHOICE_3=
+      CANDIDATE_REFERENCE_RUNTIME_ENVIRONMENT_EQUIVALENCE
+
+7.1  Nature. RUNTIME/REPRODUCIBILITY-ONLY. It is NOT a scientific or
+     quantitative rule and does not change any AMB-R3 rule (§1.3).
+
+7.2  Rule. The Candidate and Reference NEW36 application invocations
+     MUST execute under the SAME frozen runtime environment identity.
+
+7.3  Environment identity. Before either NEW36 application invocation,
+     preflight MUST establish and record the environment identity as
+     exactly one `runtime_environment_identity` object (§7.3.1),
+     constructed in the same interpreter that will execute the NEW36
+     application, together with its runtime_environment_identity_sha256
+     (§7.3.2).
+
+7.3.1  runtime_environment_identity. A JSON object containing EXACTLY
+     the following four members and no others:
+
+     (A) "python"
+         An object containing exactly the two members:
+           "implementation": the exact value of sys.implementation.name;
+           "version":        the exact value of sys.version.
+         Neither string is normalized or truncated.
+
+     (B) "installed_distributions"
+         An array constructed from EVERY installed Python distribution
+         returned by importlib.metadata.distributions() in the same
+         interpreter that will execute the NEW36 application. The scope
+         is ALL such distributions; it is not limited to packages named
+         in backend/requirements.txt and not to any implementer-selected
+         "validation stack".
+
+         For every returned distribution dist:
+         - Name := dist.metadata["Name"];
+         - version := dist.version;
+         - if Name or version is absent or empty, the environment
+           identity cannot be established and preflight fails closed
+           (§7.6).
+
+         Name normalization, exactly:
+           1. convert Name to lowercase (Python str.lower());
+           2. replace each maximal run matching the regular expression
+              [-_.]+ with a single "-".
+         The version string is NOT normalized.
+
+         Each distribution contributes exactly one two-element array:
+           [normalized_name, exact_version_string]
+         Duplicate records are retained if the runtime exposes duplicate
+         distributions.
+
+         The complete array is sorted lexicographically by
+         normalized_name, then by exact_version_string, comparing
+         strings by Unicode code point (the ordering produced by
+         Python's sorted() on these two-element string arrays).
+         Distribution enumeration order therefore has no semantic
+         meaning.
+
+     (C) "requirements_sha256"
+         The lowercase 64-character hexadecimal SHA256 of the exact raw
+         bytes of backend/requirements.txt, the repository dependency
+         specification governing this environment. No newline
+         normalization, no decoding or re-encoding.
+
+     (D) "pyarrow_version"
+         Before this member is constructed, `import pyarrow.parquet`
+         MUST succeed (the same import on which parquet_validator.py's
+         availability guard depends). The value is the exact value of
+         pyarrow.__version__ and MUST be exactly the string "17.0.0";
+         otherwise the gate fails (§7.6).
+
+7.3.2  Canonical serialization and digest. For recording and hashing,
+     runtime_environment_identity is serialized as JSON using exactly:
+     UTF-8; sort_keys=true; separators=(",", ":"); ensure_ascii=true;
+     no trailing whitespace; no final newline. (sort_keys orders object
+     member names only; the array of §7.3.1(B) keeps its sorted order.)
+
+         runtime_environment_identity_sha256 =
+           SHA256 of those exact serialized UTF-8 bytes, as lowercase
+           64-character hexadecimal.
+
+     Preflight MUST record BOTH the full runtime_environment_identity
+     object AND runtime_environment_identity_sha256.
+
+7.3.3  Exclusivity. No package subset, alternative name or version
+     normalization, pip-freeze representation, Python-version
+     truncation, or any other environment identity representation is
+     conforming.
+
+7.4  Equivalence. Candidate and Reference MUST use the same validated
+     environment identity. The identity recorded under §7.3 applies to
+     both roles. Environment equivalence means that the full
+     runtime_environment_identity objects compare exactly equal AND the
+     runtime_environment_identity_sha256 values compare exactly equal.
+     Each application invocation MUST execute under an interpreter whose
+     runtime_environment_identity, established per §7.3 for that
+     invocation, is equivalent in this sense to the recorded identity.
+     This MUST be verified before each application invocation begins.
+     A mismatch fails NNC-3 before the affected NEW36 application
+     invocation.
+
+7.5  pyarrow is normative. For this V2 validation, pyarrow MUST be
+     available in both roles and pyarrow.__version__ MUST equal
+     "17.0.0" in both. This matches the existing repository pin
+     `pyarrow==17.0.0` in backend/requirements.txt; A006 makes it
+     normative for this validation rather than merely metadata.
+
+     Other versions recorded in RECONSTRUCTION_V1.1_FREEZE_MANIFEST.json
+     runtime metadata (python=3.11.16, numpy=2.4.6, pandas=3.0.5) are
+     informative only. A006 does not make them normative values; they
+     are governed only through the equality requirement of §7.4.
+
+7.6  Failure. If any of the following holds:
+     - the Candidate and Reference environment identities are not
+       equivalent under §7.4;
+     - the runtime_environment_identity of an application invocation is
+       not equivalent under §7.4 to the recorded identity;
+     - `import pyarrow.parquet` does not succeed (§7.3.1(D));
+     - pyarrow.__version__ is not exactly "17.0.0";
+     - any distribution Name or version is absent or empty
+       (§7.3.1(B));
+     - any member of §7.3.1, or the digest of §7.3.2, cannot be
+       established;
+     then NEW36 application MUST NOT begin (or, for a later invocation,
+     that invocation MUST NOT begin).
+
+7.7  Classification and one-shot accounting. A §7.6 failure is a
+     PRE-APPLICATION structural/preflight failure. The environment gate
+     MUST complete and pass before any application quantitative code
+     receives or reads NEW36. Consequently a §7.6 failure does not
+     consume the one-shot NEW36 application invocation that it blocks,
+     because no application quantitative code may have received or read
+     NEW36 before the gate passes. An invocation that has already
+     executed is not restored by a later gate failure of the other role.
+
+7.8  No text equality. NNC-3 does NOT require identical
+     environment-dependent exception message text. Its purpose is to
+     prevent divergent parser/runtime semantics, not to compare
+     exception prose (§4.12 is unchanged).
+
+7.9  Relation to §4.5.2. NNC-3 does not alter §4.5.2. The
+     pyarrow-unavailable branch of _check_metadata remains codified
+     existing behavior.
+
+============================================================
+§8  NNC-4 — RUNTIME session_id UNIQUENESS PRECONDITION
+============================================================
+
+    A006_NEW_NORMATIVE_CHOICE_4=
+      SESSION_ID_UNIQUENESS_RUNTIME_PRECONDITION
+
+8.1  Nature. RUNTIME/STRUCTURAL-PROVENANCE-ONLY. It is NOT scientific or
+     quantitative and does not change any AMB-R3 rule (§1.3).
+
+8.2  Evidence basis (Schema Closure §2–§5). The current ORM declares
+
+         session_id: Mapped[str] = mapped_column(String, unique=True, index=True)
+
+     and fresh schema creation emits
+
+         CREATE UNIQUE INDEX ix_sessions_session_id ON sessions (session_id)
+
+     so a database freshly created through the current model / init_db
+     path enforces one Session row per session_id. However,
+     Base.metadata.create_all does not retrofit that index into a
+     pre-existing legacy sessions table, and the repository contains no
+     migrations. A006 therefore does NOT state that every possible
+     runtime database already enforces uniqueness.
+
+8.3  Rule. Before each NEW36 application invocation begins, preflight
+     MUST verify, on the ACTUAL runtime database that the invocation's
+     _authoritative_sync_grid_count lookup (§4.10.2) will query, BOTH:
+
+     A. No duplicate session_id rows exist: there is no session_id value
+        for which two or more rows of sessions satisfy equality with
+        that value under the live database's own equality semantics for
+        sessions.session_id (the same equality the §4.10.2 lookup uses).
+
+     B. The live schema enforces uniqueness of sessions.session_id,
+        through the expected unique index ix_sessions_session_id or a
+        semantically equivalent database uniqueness constraint. A
+        mechanism qualifies only if the database itself enforces it over
+        all rows on exactly the single column sessions.session_id (a
+        unique index or unique constraint whose key is exactly
+        (session_id), not partial/filtered and not composite).
+
+        Informative (SQLite): PRAGMA index_list('sessions') lists an
+        index with unique=1 and partial=0 whose PRAGMA index_info lists
+        exactly the column session_id.
+
+8.4  Failure. If A or B is false, or either cannot be established,
+     NEW36 application MUST NOT begin (or, for a later invocation, that
+     invocation MUST NOT begin).
+
+8.5  No duplicate resolution. A006 introduces NO duplicate-resolution
+     policy. Duplicates MUST NOT be resolved by taking an arbitrary
+     .first(), by sorting, by choosing the newest or oldest row, or by
+     selecting a QARun heuristically. The gate is a verification only
+     and MUST NOT itself modify the database (no row deletion, no index
+     creation). Any remediation of a failing database is outside A006
+     and prescribes no outcome.
+
+8.6  Effect. NNC-4 is a fail-closed precondition preserving the
+     existing _authoritative_sync_grid_count behavior (§4.10.2) under
+     the schema state it was written for. When the gate passes, B
+     ensures A continues to hold for the invocation, the lookup matches
+     at most one row, and the §4.10.2 outcome table is complete.
+
+8.7  Classification and one-shot accounting. A §8.4 failure is a
+     PRE-APPLICATION structural/preflight failure. As with NNC-3, the
+     gate MUST complete and pass before any application quantitative
+     code receives or reads NEW36, and its failure does not consume the
+     one-shot NEW36 application invocation that it blocks.
+
+============================================================
+§8A  NNC-5 — MANIFEST JSON DUPLICATE MEMBER REJECTION
+============================================================
+
+    A006_NEW_NORMATIVE_CHOICE_5=MANIFEST_JSON_DUPLICATE_MEMBER_REJECTION
+
+8A.1 Nature. SERIALIZATION / MANIFEST-VALIDITY ONLY. It is NOT
+     scientific and NOT quantitative. It is not an AMB-R3 choice and
+     does not change any AMB-R3 rule (§1.3).
+
+8A.2 Applicability. Applies to BOTH Candidate and Reference manifest
+     JSON.
+
+8A.3 Rule. Before semantic manifest validation, before S1 manifest
+     comparison, and before recomputation or validation of
+     manifest_precomparison_sha256, the original serialized UTF-8 JSON
+     bytes of the manifest MUST be parsed in a manner that preserves
+     object member pairs long enough to detect repeated member names.
+
+     For EVERY JSON object at EVERY nesting depth (the top-level
+     manifest object and every nested object):
+     (a) member-name escapes are decoded normally;
+     (b) the resulting member-name strings are compared by exact Unicode
+         string equality;
+     (c) if the same decoded member name occurs more than once in that
+         object, the manifest is INVALID.
+
+     Examples of invalid duplicate membership include:
+
+         {"runtime_source_commit":"A","runtime_source_commit":"B"}
+
+     and a source_sha256 object containing the same decoded path key
+     twice.
+
+8A.4 Forbidden parser conventions. Resolving duplicates by
+     first-value-wins, last-value-wins, or silently collapsing
+     duplicates is FORBIDDEN. Duplicate detection MUST occur before
+     conversion into any ordinary mapping that would discard
+     duplicate-member information.
+
+8A.5 Fail closed. If the validator/parser cannot establish whether
+     duplicate member names were present in the serialized manifest,
+     manifest validity cannot be established and validation MUST fail
+     closed.
+
+8A.6 No downstream processing. No manifest_precomparison_sha256
+     recomputation and no semantic S1 manifest comparison may proceed
+     from a duplicate-containing manifest.
+
+8A.7 Generation unchanged. NNC-5 does NOT alter canonical output
+     generation. A conforming canonical manifest contains unique object
+     member names.
+
+8A.8 Relation to NNC-2. §6.3 already requires exactly three distinct
+     keys in the Reference source_sha256 object at generation time.
+     NNC-5 governs validation of the serialized manifest bytes for both
+     roles; the two rules are consistent and neither weakens the other.
+
+8A.9 Consequence scope. NNC-5 defines manifest invalidity only. It
+     prescribes no consequence beyond that invalidity; the frozen
+     protocol's existing treatment of an invalid manifest applies
+     unchanged.
+
+8A.10 Informative. In Python, json.loads(..., object_pairs_hook=h),
+     where h receives the full member-pair list of each object before
+     any mapping is built and rejects a repeated name, satisfies
+     §8A.3–§8A.4.
+
+============================================================
+§9  CHOICE ACCOUNTING
+============================================================
+
+9.1  A006 introduces exactly FIVE new normative choices:
+
+     1. REFERENCE_RUNTIME_SOURCE_COMMIT_VALIDITY                 (§5)
+     2. REFERENCE_SOURCE_SHA256_VALIDITY_AND_RUNTIME_HEAD_BINDING (§6)
+     3. CANDIDATE_REFERENCE_RUNTIME_ENVIRONMENT_EQUIVALENCE      (§7)
+     4. SESSION_ID_UNIQUENESS_RUNTIME_PRECONDITION               (§8)
+     5. MANIFEST_JSON_DUPLICATE_MEMBER_REJECTION                 (§8A)
+
+     Choices 1–4 are provenance/runtime/reproducibility choices. Choice
+     5 is a serialization/manifest-validity choice. None is scientific,
+     quantitative or AMB-R3.
+
+     The canonicalization of the environment identity (§7.3.1–§7.3.3)
+     is a determinacy closure inside NNC-3 and is not separately
+     counted. The correction of the Reference role literal to
+     "REFERENCE" (§5.2, §6.2) is not a new choice.
+
+9.2  Counts:
+
+     A006_NEW_NORMATIVE_CHOICES_COUNT=5
+     A006_NEW_SCIENTIFIC_CHOICES_COUNT=0
+     A006_NEW_QUANTITATIVE_CHOICES_COUNT=0
+     A006_R3_NEW_NORMATIVE_CHOICES_COUNT=0
+
+9.3  The previously frozen A005 R1.3 choice is not an A006 choice.
+     §4 codifies existing behavior and contains no new choice.
+
+============================================================
+§10  EVIDENCE CLOSURE RECORD (NON-NORMATIVE)
+============================================================
+
+10.1  Former evidence gaps — all closed. None is an open blocker.
+
+  E1  files_seen: CLOSED. Verbatim known-dir loop (Micro-Closure §2)
+      increments files_seen for every bucketed entry before the size
+      check. Codified in §4.5.0.
+      E1_FILES_SEEN_DETERMINATE=YES
+
+  E2  PerDirResult defaults: CLOSED. Verbatim dataclass (Micro-Closure
+      §2): files_seen=0, sequence_ok=True, sequence_detail="".
+      Codified in §4.5.0; supports §4.6.3 S3.
+      E2_PERDIR_DEFAULTS_DETERMINATE=YES
+
+  E3  size >= 8 routing: CLOSED. Verbatim post-validation routing
+      (Micro-Closure §3) is unconditional. Codified in §4.5.2.
+      E3_SEQUENCE_ROUTING_DETERMINATE=YES
+
+  E4  authoritative count: CLOSED. _sync_grid_coverage_from_path and
+      _authoritative_sync_grid_count quoted verbatim (Micro-Closure §4);
+      schema uniqueness intended and enforced for fresh DBs (Schema
+      Closure). The legacy-DB caveat is closed normatively by NNC-4
+      (§8), not by assumption. Codified in §4.10.1, §4.10.2.
+      E4_AUTHORITATIVE_COUNT_DETERMINATE=YES (under NNC-4)
+
+  E5  PENDING vs PASS: CLOSED. Distinguished downstream by
+      _load_grid_for_block (Micro-Closure §5). Codified in §4.11.
+      E5_PENDING_VS_PASS_DETERMINATE=YES
+
+  E6  duplicated line number 320 in a Supplement excerpt: CLOSED as a
+      line-number transcription artefact; the quoted statements are
+      unaffected. Nonblocking.
+
+  E7  NNC-1 failure on a resolved but non-conforming HEAD value:
+      CLOSED by §5.4(b).
+
+  E8  pyarrow environment determinacy: CLOSED normatively by NNC-3
+      (§7). Evidence: requirements.txt pins pyarrow==17.0.0; the
+      existing V2 protocol did not require environment equivalence
+      (Micro-Closure §6).
+
+  E9  first evidence report not supplied: CLOSED. The Audit has been
+      supplied to the editor in full.
+
+10.2  Resolved historical discrepancies (retained for traceability).
+
+  R1  All-unparseable case. The Supplement's earlier Case G detail
+      "{M} entries not matching part-XXX.parquet" is superseded by the
+      verbatim function: final detail "no parquet files present"
+      (§4.6.3 S2). The Supplement §5 itself later states the same.
+
+  R2  Unparseable name form. The Audit's paraphrase "unparseable
+      basenames" is superseded by the verbatim routing
+      `unparseable_names.append(info.filename)` (full filename). Only
+      the count M enters sequence_detail; no verdict is affected.
+
+  R3  PAR1 reason construction. The earlier conditional-expression
+      paraphrase is withdrawn; independent appends make "(head+tail)"
+      reachable (§4.5.2).
+
+  R4  Supplement §12 NC-1/NC-2/NC-3: not adopted (§3).
+
+10.3  Retained evidence note (non-blocking for the structural verdict).
+
+  X1  P3 reason template. The Audit and the Supplement both claim a
+      verbatim quotation of _evaluate_sync_grid_coverage from
+      harness.py at the same SHA256
+      (e97f2278b96b8154411de8f5a8c205273b217b65f33feada0986a78c69917e39)
+      but give different P3 reason templates (§4.9 P3) and slightly
+      different line ranges (229–281 vs 229–280); the Audit's
+      quotation also contains comments absent from the Supplement's.
+      At most one can be byte-exact. Both agree on the P3 predicate,
+      the branch order, the "sync_grid_100ms: " prefix, the embedding
+      of sync_failures[:5], and the (False, ...) verdict. A006 makes no
+      cross-role text-equality requirement for this string (§4.12), so
+      the AMB-R3 PASS/FAIL outcome and deciding branch are unaffected.
+      If any frozen-protocol rule requires equality of the block
+      invalid_reason text, the exact P3 template should be re-verified
+      against the harness.py bytes during independent determinacy audit.
+      A006 makes no normative choice on this point.
+      The Final Audit established X1_BLOCKING=NO: the exact P3 reason
+      text affects neither S1, manifest validity, the structural
+      verdict, nor any other frozen normative output. X1 remains a
+      non-blocking note and is not settled by this revision.
+
+10.4  Final Audit blocker closure (FINAL2).
+
+  B1  NNC-3 environment identity not canonicalized: CLOSED inside NNC-3
+      by §7.3–§7.4 and §7.6 (exact Python identity; scope = all
+      distributions from importlib.metadata.distributions(); exact
+      per-distribution representation and sort; canonical JSON
+      serialization and SHA256; exact-equality comparison). Not a new
+      choice.
+
+  B2  Repeated JSON object member names undefined: CLOSED by the new,
+      explicitly counted NNC-5 (§8A), applying to both roles, with
+      detection on serialized bytes before mapping collapse.
+
+  B3  Reference role literal conflict: CLOSED by using the exact frozen
+      V2 literal "REFERENCE" in §5.2 and §6.2. Not a new choice.
+
+  Editorial: the §6.6 consequence sentence was reworded (non-normative);
+  the §6.4(b)/§6.5(3) byte-equality predicate is unchanged.
+
+============================================================
+§11  DETERMINACY FLAGS
+============================================================
+
+A006_STATUS=DRAFT_NOT_FROZEN
+A006_DRAFT_COMPLETE=YES
+
+A006_R3_NEW_NORMATIVE_CHOICES_COUNT=0
+SUPPLEMENT_NC1_ENFORCE_LO_EQ_0_ADOPTED=NO
+SUPPLEMENT_NC2_EXPECTED_COUNT_NONE_HARD_FAIL_ADOPTED=NO
+SUPPLEMENT_NC3_RESTRICT_SUBSTRING_FILTER_ADOPTED=NO
+
+PAR1_REASON_BEHAVIOR_CODIFIED=YES
+HEAD_PLUS_TAIL_REACHABLE=YES
+MAGIC_FAIL_SUPPRESSES_METADATA=NO
+MAGIC_FAILURE_SUPPRESSES_SEQUENCE_ROUTING=NO
+METADATA_FAILURE_SUPPRESSES_SEQUENCE_ROUTING=NO
+UNDERSIZED_ENTRY_PARTICIPATES_IN_SEQUENCE=YES
+FILES_SEEN_COUNTS_EVERY_BUCKETED_ENTRY=YES
+PERDIR_SEQUENCE_OK_DEFAULT=True
+SEQUENCE_ANCHOR=OBSERVED_MIN_INDEX
+SEQUENCE_REQUIRES_LO_EQ_0=NO
+CONTIGUOUS_0_DIAGNOSTIC_IS_NORMATIVE=NO
+ALL_UNPARSEABLE_FINAL_DETAIL="no parquet files present"
+SUPPLEMENT_CASE_G_SUPERSEDED_BY_VERBATIM=YES
+CLASSIFICATION_FIRST_MATCH_TUPLE_ORDER=YES
+SYNC_FAILURE_FILTER=LITERAL_SUBSTRING_OVER_GLOBAL_FAILURES
+CROSS_BUCKET_SUBSTRING_CAPTURE_IS_EXISTING_BEHAVIOR=YES
+EXPECTED_COUNT_NONE_IS_STRUCTURAL_FAILURE=NO
+EXPECTED_COUNT_ZERO_WITH_PARTS_FAILS=YES
+COVERAGE_BRANCH_ORDER=P1_NO_PARTS>P2_SEQUENCE>P3_SUBSTRING>P4_COUNT>P5_PASS
+COVERAGE_FAILURE_IS_PENDING=NO
+COVERAGE_FAILURE_CLASSIFICATION=STRUCTURAL_INVALID
+ZIP_FILENOTFOUND_IS_PENDING_PATH=YES
+PENDING_DECIDED_BY=_load_grid_for_block_FileNotFoundError
+COVERAGE_RESULT_CACHED_PER_SESSION_PER_RUN=YES
+NEW_CROSS_ROLE_DIAGNOSTIC_TEXT_EQUALITY=NO
+
+A006_NEW_NORMATIVE_CHOICE_1=REFERENCE_RUNTIME_SOURCE_COMMIT_VALIDITY
+A006_NNC1_STATUS=AUTHORED
+A006_NEW_NORMATIVE_CHOICE_2=REFERENCE_SOURCE_SHA256_VALIDITY_AND_RUNTIME_HEAD_BINDING
+A006_NNC2_STATUS=AUTHORED
+A006_NEW_NORMATIVE_CHOICE_3=CANDIDATE_REFERENCE_RUNTIME_ENVIRONMENT_EQUIVALENCE
+A006_NNC3_STATUS=AUTHORED
+A006_NEW_NORMATIVE_CHOICE_4=SESSION_ID_UNIQUENESS_RUNTIME_PRECONDITION
+A006_NNC4_STATUS=AUTHORED
+A006_NEW_NORMATIVE_CHOICE_5=MANIFEST_JSON_DUPLICATE_MEMBER_REJECTION
+A006_NNC5_STATUS=AUTHORED
+
+REFERENCE_ROLE_LITERAL="REFERENCE"
+
+REFERENCE_SOURCE_SHA256_KEYS_EXACT_COUNT=3
+REFERENCE_SOURCE_SHA256_HEAD_BINDING=REQUIRED
+REFERENCE_WHOLE_REPO_CLEAN_TREE_REQUIRED=NO
+SOURCE_SHA256_CROSS_ROLE_EQUALITY=NO
+RUNTIME_ENVIRONMENT_EQUIVALENCE_REQUIRED=YES
+PYARROW_VERSION_NORMATIVE=17.0.0
+NNC3_PYTHON_IDENTITY=sys.implementation.name+sys.version_EXACT
+NNC3_INSTALLED_DISTRIBUTION_SCOPE=ALL_importlib.metadata.distributions()
+NNC3_DISTRIBUTION_REPRESENTATION=[normalized_name,exact_version_string]_SORTED
+NNC3_ENVIRONMENT_SERIALIZATION=JSON_UTF8_SORT_KEYS_COMPACT_ENSURE_ASCII_NO_FINAL_NEWLINE
+NNC3_ENVIRONMENT_COMPARISON=FULL_OBJECT_EQUAL_AND_SHA256_EQUAL
+DUPLICATE_JSON_MEMBERS_REJECTED_BEFORE_MAPPING_COLLAPSE=YES
+DUPLICATE_JSON_RULE_APPLIES_TO_CANDIDATE_AND_REFERENCE=YES
+SESSION_ID_LIVE_UNIQUENESS_PREFLIGHT_REQUIRED=YES
+DUPLICATE_SESSION_RESOLUTION_POLICY=NONE
+PREAPPLICATION_GATE_FAILURE_CONSUMES_ONE_SHOT=NO
+
+A006_NEW_NORMATIVE_CHOICES_COUNT=5
+A006_NEW_SCIENTIFIC_CHOICES_COUNT=0
+A006_NEW_QUANTITATIVE_CHOICES_COUNT=0
+
+AMB_R3_CLOSED_BY_DRAFT=YES
+AMB_S1_CLOSED_BY_DRAFT=YES
+RUNTIME_ENVIRONMENT_CLOSED_BY_DRAFT=YES
+SESSION_ID_SCHEMA_RUNTIME_PRECONDITION_CLOSED_BY_DRAFT=YES
+MANIFEST_DUPLICATE_MEMBERS_CLOSED_BY_DRAFT=YES
+FINAL_AUDIT_B1_CLOSED=YES
+FINAL_AUDIT_B2_CLOSED=YES
+FINAL_AUDIT_B3_CLOSED=YES
+X1_BLOCKING=NO
+
+OPEN_EVIDENCE_GAPS=NONE
+RETAINED_NONBLOCKING_EVIDENCE_NOTES=X1
+
+END OF DRAFT — NOT FROZEN.
