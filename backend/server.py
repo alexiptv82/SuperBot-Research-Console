@@ -1826,3 +1826,31 @@ def download_amendment004_evidence_pack() -> FileResponse:
         media_type="application/zip",
         filename="SUPERBOT_V1_1_AMENDMENT004_EVIDENCE_PACK.zip",
     )
+
+
+# ---------------------------------------------------------------------------
+# Micro Audit Evidence Report — read-only download endpoint
+# ---------------------------------------------------------------------------
+
+_MICRO_AUDIT_PATH = Path("/app/SUPERBOT_V1_2_MICRO_AUDIT_EVIDENCE.txt")
+_MICRO_AUDIT_EXPECTED_SHA256 = "8da5ac2c2ecb7f4f8ca2398a1767cb02728064974a4ffdaf0b5a0de0dfb18d59"
+_MICRO_AUDIT_EXPECTED_SIZE   = 17934
+
+
+@app.get("/api/handoff/micro-audit-evidence")
+def download_micro_audit_evidence() -> FileResponse:
+    """Serve the pre-built micro audit evidence report. Read-only."""
+    import hashlib as _hl
+
+    if not _MICRO_AUDIT_PATH.exists():
+        raise HTTPException(status_code=404, detail="MICRO_AUDIT_FILE_NOT_FOUND")
+    data = _MICRO_AUDIT_PATH.read_bytes()
+    if len(data) != _MICRO_AUDIT_EXPECTED_SIZE:
+        raise HTTPException(status_code=500, detail="MICRO_AUDIT_SIZE_FAIL")
+    if _hl.sha256(data).hexdigest() != _MICRO_AUDIT_EXPECTED_SHA256:
+        raise HTTPException(status_code=500, detail="MICRO_AUDIT_SHA256_FAIL")
+    return FileResponse(
+        path=str(_MICRO_AUDIT_PATH),
+        media_type="text/plain; charset=utf-8",
+        filename="SUPERBOT_V1_2_MICRO_AUDIT_EVIDENCE.txt",
+    )

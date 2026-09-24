@@ -1,0 +1,420 @@
+SUPERBOT V1.2 — MICRO AUDIT EVIDENCE REPORT
+Five residual determinacy questions from the Amendment 004 draft audit.
+PRE_HEAD = faba511ab9dc954050a88d4dee56988f490861ee
+
+================================================================
+FILE REGISTRY — ALL CITED SOURCES
+================================================================
+F1  backend/recovery/specs/V1_2_NEW36_VALIDATION_PROTOCOL_V2.txt
+    SHA256 = 5ed8a8b12726d395d25262dc3e4073250be3de94f3d62e64e99167921380ef95
+    SIZE   = 19392
+
+F2  backend/recovery/specs/V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_001.txt
+    SHA256 = e64f1198e3f97f975d1f0f8ec7183b1f0c83786429e98cbd66819d98f640f0bf
+    SIZE   = 13858
+
+F3  backend/recovery/specs/V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_003.txt
+    SHA256 = cee61f2ea2b5d592deddb0fa6d2215c77039c365006ecb0bc7caf1d32075bea7
+    SIZE   = 5209
+
+F4  backend/recovery/specs/V1_2_CANDIDATE_SPEC.txt
+    SHA256 = aed67b5ec9ae1b710ec3d96e1fcc2e15bd9c30fdd60e80cc68553d8fc3b597ca
+    SIZE   = 6738
+
+F5  backend/recovery/engine.py
+    SHA256 = abedee399c272eff858b109fb448cbda3ad3a49e40be4ba3f486650e3151a3e8
+    SIZE   = 58268
+
+F6  backend/recovery/harness.py
+    SHA256 = e97f2278b96b8154411de8f5a8c205273b217b65f33feada0986a78c69917e39
+    SIZE   = 59414
+
+================================================================
+Q1 — S1 COMPARISON SEMANTICS
+================================================================
+
+Q1_STATUS = RESOLVED (with one sub-gap: -0.0 vs 0.0 under float comparison)
+
+SOURCE_1:
+PATH     = backend/recovery/specs/V1_2_NEW36_VALIDATION_PROTOCOL_V2.txt
+SHA256   = 5ed8a8b12726d395d25262dc3e4073250be3de94f3d62e64e99167921380ef95
+SECTION  = §6 S1 — INDEPENDENT IMPLEMENTATION EQUIVALENCE (lines 60-67)
+EXACT_EXCERPT =
+  S1_scope=all_3456_rows_plus_required_manifest_semantics
+  S1_string_comparison=EXACT
+  S1_integer_comparison=EXACT
+  S1_NULL_comparison=NULL_matches_NULL_only
+  S1_fingerprint_comparison=EXACT_lowercase_hex
+  S1_float_comparison= both_NULL OR both_finite_and_abs(candidate-reference)<=1e-12
+  NaN_or_infinity_in_emitted_float_field=FAIL
+  S1_row_key_set_must_match_exactly=true
+  S1_row_count_must_match_exactly=true
+  S1_canonical_sort_must_match=true
+  S1_manifest_comparison= semantic fields defined by this protocol must match
+    exactly except implementation_role, runtime_source_commit, source_sha256,
+    csv_sha256, csv_size_bytes, manifest_precomparison_sha256, which are
+    role-specific provenance fields and must each be valid.
+  any_S1_disagreement=IMPLEMENTATION_DISAGREEMENT
+  S1_disagreement_grace_or_averaging=FORBIDDEN
+
+SOURCE_2:
+PATH     = backend/recovery/specs/V1_2_NEW36_VALIDATION_PROTOCOL_V2.txt
+SHA256   = 5ed8a8b12726d395d25262dc3e4073250be3de94f3d62e64e99167921380ef95
+SECTION  = §4 ARTIFACT CONTRACT (lines 38-51, field-type classification)
+EXACT_EXCERPT =
+  string_fields= protocol_version; session_id; asset; axis; feature_family;
+    variant_id; hz_discrimination_class; accepted_positions_sha256
+  integer_fields= horizon_ms; threshold_domain_finite_n;
+    threshold_domain_nonzero_n; zero_n; nonzero_unique_value_n; gate_zero_n;
+    spacing_steps; pre_overlap_n; exact_spacing_pair_n; accepted_n;
+    overlap_dropped_n
+  float_fields= quantile; zero_fraction; calculated_threshold;
+    mean_signed_bps; hit_rate; mean_abs_move
+
+PER-FIELD S1 RULES DERIVED FROM THE ABOVE:
+
+  STRING FIELDS (8):
+    protocol_version, session_id, asset, axis, feature_family, variant_id,
+    hz_discrimination_class, accepted_positions_sha256
+    Rule: S1_string_comparison=EXACT (character-for-character equality)
+
+  INTEGER FIELDS (11):
+    horizon_ms, threshold_domain_finite_n, threshold_domain_nonzero_n,
+    zero_n, nonzero_unique_value_n, gate_zero_n, spacing_steps,
+    pre_overlap_n, exact_spacing_pair_n, accepted_n, overlap_dropped_n
+    Rule: S1_integer_comparison=EXACT
+    NULL semantics: S1_NULL_comparison=NULL_matches_NULL_only
+
+  FLOAT FIELDS (6):
+    quantile, zero_fraction, calculated_threshold,
+    mean_signed_bps, hit_rate, mean_abs_move
+    Rule: both_NULL OR both_finite_and_abs(candidate-reference)<=1e-12
+    NaN or infinity in any emitted float field = FAIL (S5 hard rule also)
+
+  FINGERPRINT FIELD (1 — classified under string_fields):
+    accepted_positions_sha256
+    Rule: S1_fingerprint_comparison=EXACT_lowercase_hex
+    (subset of EXACT string rule; called out separately for emphasis)
+
+CSV BYTE IDENTITY:
+  S1 does NOT require CSV byte identity between candidate and reference.
+  The comparison operates field-by-field per the rules above.
+  csv_sha256 is a role-specific provenance field (not S1-compared).
+  NORMATIVE_FROZEN: V2 §6 "role-specific provenance fields...
+    must each be valid" — they are NOT required to match each other.
+
+-0.0 vs 0.0 UNDER FLOAT COMPARISON:
+  The V2 protocol and all amendments contain NO explicit statement on
+  whether float(-0.0) and float(0.0) are equal under S1.
+  Under IEEE 754 and Python: abs(-0.0 - 0.0) == 0.0 <= 1e-12.
+  Therefore, -0.0 and 0.0 pass the 1e-12 float rule numerically.
+  However: no normative document explicitly confirms this.
+  Amendment 003 C2 addresses gate_zero_n (an INTEGER field) only:
+    "Positive zero and negative zero are both equal to 0.0..."
+  This does NOT extend to the float fields under S1.
+  GAP: No frozen normative statement on -0.0 vs 0.0 for FLOAT fields.
+
+================================================================
+Q2 — FIELD TYPES / NON-FINITE VALUES
+================================================================
+
+Q2_STATUS = RESOLVED
+
+SOURCE_1:
+PATH     = backend/recovery/specs/V1_2_NEW36_VALIDATION_PROTOCOL_V2.txt
+SHA256   = 5ed8a8b12726d395d25262dc3e4073250be3de94f3d62e64e99167921380ef95
+SECTION  = §4 ARTIFACT CONTRACT (field classification)
+EXACT_EXCERPT =
+  string_fields= protocol_version; session_id; asset; axis; feature_family;
+    variant_id; hz_discrimination_class; accepted_positions_sha256
+  integer_fields= horizon_ms; threshold_domain_finite_n;
+    threshold_domain_nonzero_n; zero_n; nonzero_unique_value_n; gate_zero_n;
+    spacing_steps; pre_overlap_n; exact_spacing_pair_n; accepted_n;
+    overlap_dropped_n
+  float_fields= quantile; zero_fraction; calculated_threshold;
+    mean_signed_bps; hit_rate; mean_abs_move
+
+  axis_inapplicable_fields_must_be_NULL=true
+  threshold_None_serializes_as_NULL=true
+  metric_when_accepted_n_zero=NULL
+
+SOURCE_2:
+PATH     = backend/recovery/specs/V1_2_NEW36_VALIDATION_PROTOCOL_V2.txt
+SHA256   = 5ed8a8b12726d395d25262dc3e4073250be3de94f3d62e64e99167921380ef95
+SECTION  = §10 S5 — DEGENERACY AND DIAGNOSTIC REPORTING
+EXACT_EXCERPT =
+  hard_rules= threshold_NULL_implies_N_zero; accepted_n<=pre_overlap_n;
+    counts_nonnegative; emitted_floats_finite_or_NULL
+  S5_hard_rule_violation=S5_FAIL
+
+NORMATIVE TYPE/DOMAIN PER FIELD:
+
+  BOOLEAN: NO field is typed boolean. The 25 CSV fields are exclusively
+    string, integer, or float (including NULL). Boolean is not a
+    permitted type in any position.
+
+  NaN IN FLOAT FIELDS:
+    FORBIDDEN. S5 hard rule: emitted_floats_finite_or_NULL.
+    S1: NaN_or_infinity_in_emitted_float_field=FAIL.
+    An emitted float field must be either NULL (empty CSV cell) or a
+    finite float value.
+
+  +inf / -inf IN FLOAT FIELDS:
+    FORBIDDEN. Same rules: emitted_floats_finite_or_NULL (S5);
+    NaN_or_infinity_in_emitted_float_field=FAIL (S1).
+
+  NULL DISTINGUISHED FROM NON-FINITE FLOAT:
+    NULL = empty CSV field (null_serialization=empty_field, §4).
+    NaN / inf = non-finite Python float — these are NOT permitted as
+    emitted values; they cause S2/S5/S1 FAIL.
+    NULL is the ONLY permitted "absent" value encoding;
+    non-finite floats are never a valid substitute.
+
+  INTEGER FIELDS: cannot be NaN, inf, or boolean. NULL is permitted
+    where axis_inapplicable_fields_must_be_NULL=true applies.
+
+  hz_discrimination_class SPECIAL CASE:
+    Classified under string_fields. Exact literals defined in
+    Amendment 001 A2: "ZERO_FREE_CONTROL", "HZ_DISCRIMINATING",
+    "HZ_NONDISCRIMINATING_EQUAL_THRESHOLD".
+    NULL where HZ axis inapplicable.
+    No boolean encoding.
+
+================================================================
+Q3 — FLOAT COMPUTATION
+================================================================
+
+Q3_STATUS = PARTIAL (S1 tolerance is frozen; log/mean implementation is NOT frozen normatively)
+
+SOURCE_1 — S1 tolerance (NORMATIVE_FROZEN):
+PATH     = backend/recovery/specs/V1_2_NEW36_VALIDATION_PROTOCOL_V2.txt
+SHA256   = 5ed8a8b12726d395d25262dc3e4073250be3de94f3d62e64e99167921380ef95
+SECTION  = §6
+EXACT_EXCERPT =
+  S1_float_comparison= both_NULL OR both_finite_and_abs(candidate-reference)<=1e-12
+
+SOURCE_2 — forward return formula (IMPLEMENTATION_ONLY in engine):
+PATH     = backend/recovery/engine.py
+SHA256   = abedee399c272eff858b109fb448cbda3ad3a49e40be4ba3f486650e3151a3e8
+LINES    = 296-307 (_build_forward_return_array loop body)
+EXACT_EXCERPT =
+  for i in range(L):
+      ep = i + k
+      if ep > last_index:
+          continue
+      m0 = base_mid[i]
+      m1 = base_mid[ep]
+      if (
+          math.isfinite(m0) and m0 > 0.0
+          and math.isfinite(m1) and m1 > 0.0
+      ):
+          ret[i] = math.log(m1 / m0) * 10000.0
+
+  Implementation uses Python standard-library math.log (scalar, per element).
+  NOT np.log. This is IMPLEMENTATION_ONLY — no normative doc mandates math.log.
+
+SOURCE_3 — mean_signed_bps / hit_rate / mean_abs_move (IMPLEMENTATION_ONLY):
+PATH     = backend/recovery/engine.py
+SHA256   = abedee399c272eff858b109fb448cbda3ad3a49e40be4ba3f486650e3151a3e8
+LINES    = 423-424, 437
+EXACT_EXCERPT =
+  mean_sret   = float(np.mean(signed_returns))
+  hit_rate    = float(np.mean(signed_returns > 0.0))
+  mean_abs_move = float(np.mean(finite_mam))
+
+  Implementation uses numpy.mean (vectorised). IMPLEMENTATION_ONLY.
+
+SOURCE_4 — Amendment 003 C1 (NORMATIVE_FROZEN):
+PATH     = backend/recovery/specs/V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_003.txt
+SHA256   = cee61f2ea2b5d592deddb0fa6d2215c77039c365006ecb0bc7caf1d32075bea7
+SECTION  = C1
+EXACT_EXCERPT =
+  mean_abs_move=
+    arithmetic mean of abs(forward_return) over mean_abs_move_domain
+
+  mean_signed_bps and hit_rate remain accepted-event metrics.
+  mean_abs_move is not an accepted-event metric.
+
+FINDINGS:
+
+  math.log vs numpy.log:
+    NO_FROZEN_RULE_FOUND in any normative spec document.
+    The engine uses math.log (scalar per element). For IEEE 754
+    double-precision inputs, math.log and np.log produce
+    numerically identical results on standard platforms.
+    The 1e-12 S1 tolerance covers any residual ULP difference.
+
+  Arithmetic-mean implementation:
+    Amendment 003 C1 normatively requires "arithmetic mean" for
+    mean_abs_move. No normative document mandates a specific
+    implementation (numpy vs Python sum/len vs math.fsum).
+    The engine uses float(np.mean(...)). IMPLEMENTATION_ONLY.
+
+  Summation / evaluation order:
+    NO_FROZEN_RULE_FOUND. No normative document specifies
+    summation order, pairwise summation, or compensated summation.
+
+  ULP impact on PASS/FAIL:
+    The 1e-12 tolerance is approximately 4500 ULPs for a value
+    near 1.0 bps (machine epsilon ~2.2e-16). In practice, the
+    tolerance is wide enough to absorb scalar-vs-vectorised log
+    differences and np.mean vs compensated-sum differences.
+    However, for very large accepted_n or unusual return magnitudes,
+    accumulation errors could theoretically exceed 1e-12.
+    NO normative rule prevents this; the 1e-12 is the only frozen gate.
+
+================================================================
+Q4 — ASSET RESOLUTION
+================================================================
+
+Q4_STATUS = RESOLVED
+
+SOURCE_1:
+PATH     = backend/recovery/harness.py
+SHA256   = e97f2278b96b8154411de8f5a8c205273b217b65f33feada0986a78c69917e39
+LINES    = 341-415 (_load_grid_for_block)
+EXACT_EXCERPT =
+  def _load_grid_for_block(session_id: str, asset: str) -> pd.DataFrame:
+      ...
+      # Primary filter: filename contains asset string
+      grid_names = sorted(
+          n for n in zf.namelist()
+          if "sync_grid_100ms" in n and n.endswith(".parquet")
+          and asset in n
+      )
+      # Fallback: if no filename match, load ALL sync_grid_100ms parquets
+      if not grid_names:
+          grid_names = sorted(
+              n for n in zf.namelist()
+              if "sync_grid_100ms" in n and n.endswith(".parquet")
+          )
+      ...
+      for name in grid_names:
+          ...
+          df = pd.read_parquet(buf)
+          # Filter to this asset by "asset" column in the DataFrame
+          if "asset" in df.columns:
+              df = df[df["asset"] == asset].copy()
+          dfs.append(df)
+
+CLASSIFICATION = IMPLEMENTATION_ONLY (harness.py is not a standalone normative spec)
+
+FINDINGS:
+  Mechanism: two-stage asset resolution.
+
+  Stage 1 — filename filter:
+    Parquet entry path strings inside the session ZIP are filtered by
+    whether the asset string ("BTC" or "ETH") appears as a substring
+    in the entry name. This is the primary mechanism.
+
+  Stage 2 — DataFrame column filter:
+    After loading each parquet, if an "asset" column is present in the
+    DataFrame, rows are filtered to df["asset"] == asset (string equality,
+    exact case match "BTC" or "ETH").
+
+  Fallback behaviour:
+    If Stage 1 finds no parquet entries containing the asset string in
+    the filename, ALL sync_grid_100ms parquet entries are loaded, and
+    asset selection relies entirely on Stage 2.
+
+  Asset string values:
+    Derived from V2 §3 Appendix B: ASSETS=BTC;ETH
+    (exact strings "BTC" and "ETH", uppercase, no prefix).
+
+  No normative standalone spec explicitly defines the DataFrame column name
+  or the fallback logic. The only frozen evidence is harness.py
+  (IMPLEMENTATION_ONLY) and V2 Appendix B asset enumeration (NORMATIVE_FROZEN).
+
+================================================================
+Q5 — MULTIPLE PARQUET PAYLOADS
+================================================================
+
+Q5_STATUS = RESOLVED
+
+SOURCE_1:
+PATH     = backend/recovery/harness.py
+SHA256   = e97f2278b96b8154411de8f5a8c205273b217b65f33feada0986a78c69917e39
+LINES    = 356-412 (_load_grid_for_block — part iteration and concat)
+EXACT_EXCERPT =
+  Part concatenation order: filename_ascending (spec: part_concat_order).
+  Part coverage policy: caller (harness) detects missing parts by
+  checking availability_snapshot() before calling this function.
+  ...
+  grid_names = sorted(...)   # filename-ascending sort
+  dfs = []
+  for name in grid_names:
+      ...
+      df = pd.read_parquet(buf)
+      if "asset" in df.columns:
+          df = df[df["asset"] == asset].copy()
+      dfs.append(df)
+  combined = pd.concat(dfs, ignore_index=True)
+
+SOURCE_2:
+PATH     = backend/recovery/harness.py
+SHA256   = e97f2278b96b8154411de8f5a8c205273b217b65f33feada0986a78c69917e39
+LINES    = 200-243 (_authoritative_sync_grid_count and _evaluate_sync_grid_coverage)
+EXACT_EXCERPT =
+  def _authoritative_sync_grid_count(session_id: str) -> int | None:
+      """Fetch the authoritative expected sync_grid_100ms part count for
+      session_id from its import-time QA manifest metadata
+      (models.QARun.sync_grid_file_count — parsed once at ingest time by
+      qa_engine.py from the collector manifest, NOT guessed from the
+      observed parquet listing).
+      Returns None if unavailable — callers MUST NOT invent a fallback."""
+      ...
+
+  def _evaluate_sync_grid_coverage(validation, expected_count):
+      """Spec (part_coverage_policy=HARD_FAIL_if_any_expected_part_missing_
+      or_truncated):
+      - filenames/part indices must be parseable
+      - no duplicate part index
+      - no missing part in the expected contiguous sequence
+      - each expected part must be readable as valid parquet
+      - truncated/corrupt expected part => structural INVALID / HARD FAIL
+      """
+      if expected_count is not None and sync_dir.files_seen != expected_count:
+          return False, (
+              "sync_grid_100ms: authoritative manifest expects "
+              f"{expected_count} parts, found {sync_dir.files_seen}"
+          )
+
+CLASSIFICATION = IMPLEMENTATION_ONLY (harness.py); with spec-comment references
+                 indicating a normative rule was intended to be encoded here.
+
+FINDINGS:
+  YES — a canonical session ZIP CAN contain multiple parquet payloads
+  for the same asset under sync_grid_100ms.
+
+  Frozen rule for combining:
+  1. Enumerate all ZIP entries whose path contains "sync_grid_100ms"
+     and ends with ".parquet" (and optionally contains the asset name).
+  2. Sort entries by filename ascending
+     (spec annotation: "part_concat_order").
+  3. Load each parquet file, filter rows by asset column if present.
+  4. Concatenate all per-part DataFrames with pd.concat(ignore_index=True).
+     Resulting combined DataFrame has contiguous 0-based integer index.
+  5. Pass combined DataFrame to build_canonical_grid() for sort + grid_pos.
+
+  Part-count validation:
+  The authoritative expected part count is sourced from the collector
+  manifest (qa_engine ingest, NOT from the observed parquet listing).
+  HARD_FAIL if any expected part is missing, corrupt, or duplicated.
+  This is a precondition gate, not part of the reconstruction itself.
+
+  Note: The reference author's loader need not replicate the full
+  harness part-coverage validation, but MUST implement the
+  filename-ascending concat rule before build_canonical_grid().
+
+================================================================
+POST_HEAD  = faba511ab9dc954050a88d4dee56988f490861ee
+HEAD_CHANGED = NO
+SOURCE_DELTA = 0
+================================================================
+NEW36_QUANTITATIVE_ACCESS      = NO
+OLD36_QUANTITATIVE_ACCESS      = NO
+GOLDEN_NUMERICAL_CONTENT_READ  = NO
+CANDIDATE_EXECUTION            = 0
+REFERENCE_EXECUTION            = 0
+SOURCE_MODIFICATIONS           = 0
+================================================================
