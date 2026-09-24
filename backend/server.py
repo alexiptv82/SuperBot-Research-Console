@@ -1854,3 +1854,16 @@ def download_micro_audit_evidence() -> FileResponse:
         media_type="text/plain; charset=utf-8",
         filename="SUPERBOT_V1_2_MICRO_AUDIT_EVIDENCE.txt",
     )
+
+# TEMPORARY DELIVERY ENDPOINT — NOT COMMITTED — HELD ACTIVE UNTIL USER CONFIRMS DOWNLOAD
+_A004_CLEAN_HOLD_PATH = Path("/app/SUPERBOT_V1_2_REFERENCE_INPUT_PACK_A004.zip")
+
+@app.get("/api/handoff/reference-pack-a004-clean")
+def download_reference_pack_a004_clean() -> FileResponse:
+    if not _A004_CLEAN_HOLD_PATH.exists():
+        raise HTTPException(status_code=404, detail="A004_PACK_NOT_FOUND")
+    return FileResponse(
+        path=str(_A004_CLEAN_HOLD_PATH),
+        media_type="application/zip",
+        filename="REFERENCE_PACK_A004_CLEAN.zip",
+    )
