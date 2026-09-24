@@ -1768,3 +1768,32 @@ def download_v2_amendment_003() -> FileResponse:
         media_type="text/plain; charset=utf-8",
         filename="V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_003.txt",
     )
+
+
+# ---------------------------------------------------------------------------
+# Reference Input Pack — read-only download endpoint
+# ---------------------------------------------------------------------------
+
+_REF_PACK_PATH = Path("/app/SUPERBOT_V1_2_REFERENCE_INPUT_PACK.zip")
+_REF_PACK_EXPECTED_SHA256 = "b504075f47af186a58b9dab0d6136b5cab9afed2065a62d688b3dbe4a363ae1f"
+_REF_PACK_EXPECTED_SIZE   = 34734
+
+
+@app.get("/api/handoff/reference-input-pack")
+def download_reference_input_pack() -> FileResponse:
+    """Serve the pre-built, pre-verified V1.2 Reference Input Pack ZIP.
+    Read-only. File is not regenerated or modified."""
+    import hashlib as _hl
+
+    if not _REF_PACK_PATH.exists():
+        raise HTTPException(status_code=404, detail="REFERENCE_INPUT_PACK_NOT_FOUND")
+    data = _REF_PACK_PATH.read_bytes()
+    if len(data) != _REF_PACK_EXPECTED_SIZE:
+        raise HTTPException(status_code=500, detail="REFERENCE_INPUT_PACK_SIZE_INTEGRITY_FAIL")
+    if _hl.sha256(data).hexdigest() != _REF_PACK_EXPECTED_SHA256:
+        raise HTTPException(status_code=500, detail="REFERENCE_INPUT_PACK_SHA256_INTEGRITY_FAIL")
+    return FileResponse(
+        path=str(_REF_PACK_PATH),
+        media_type="application/zip",
+        filename="SUPERBOT_V1_2_REFERENCE_INPUT_PACK.zip",
+    )
