@@ -1,0 +1,515 @@
+SUPERBOT V1.1 — AMENDMENT 004 EVIDENCE REPORT
+Generated for: independent V1.2 reference author determinacy questions R-01 through R-06
+Source repository: alexiptv82/SuperBot-Research-Console
+
+================================================================
+CITED FILE REGISTRY
+================================================================
+FILE_1: backend/recovery/engine.py
+  SHA256 = abedee399c272eff858b109fb448cbda3ad3a49e40be4ba3f486650e3151a3e8
+  SIZE   = 58268
+
+FILE_2: backend/recovery/specs/V1_2_CANDIDATE_SPEC.txt
+  SHA256 = aed67b5ec9ae1b710ec3d96e1fcc2e15bd9c30fdd60e80cc68553d8fc3b597ca
+  SIZE   = 6738
+
+FILE_3: backend/recovery/harness.py
+  SHA256 = e97f2278b96b8154411de8f5a8c205273b217b65f33feada0986a78c69917e39
+  SIZE   = 59414
+
+FILE_4: backend/constants.py
+  SHA256 = 089c2f0251778dc9384730d694cc64feb2f0be67edd923d9df749f40b47a4e0f
+  SIZE   = 1993
+
+FILE_5: backend/recovery/v1_2_stage3.py
+  SHA256 = 342b359988a8e464429cce6cff3093d8ffd530956e08c6230173529da9145506
+  SIZE   = 64379
+
+FILE_6: backend/recovery/reports/v1_2/stage3_manifest.json
+  SHA256 = b9c07038efded04173a1ad565aecb81a6b0628ca2aa60e2cc0053fbb0c5cef8c
+  SIZE   = 2695
+
+================================================================
+R-01: CANONICAL_MID SUPPLIED TO _build_forward_return_array
+================================================================
+
+QUESTION:
+What exact price series/column is normatively supplied as "canonical_mid"
+to "_build_forward_return_array(...)" in the frozen V1.1 semantics?
+
+EVIDENCE_FOUND: YES
+
+SOURCE_1:
+PATH           = backend/recovery/engine.py
+SHA256         = abedee399c272eff858b109fb448cbda3ad3a49e40be4ba3f486650e3151a3e8
+LINES          = 271-308 (_build_forward_return_array definition); 783-784 (call site)
+CLASSIFICATION = IMPLEMENTATION_ONLY (code encodes the frozen V1.1 behavior; no
+                 separate normative spec document names the column explicitly)
+EXCERPT =
+  # Lines 271-308 — function signature and spec comment:
+  def _build_forward_return_array(
+      canonical_mid: np.ndarray,
+      k: int,
+  ) -> np.ndarray:
+      """Build forward log-return array (bps) for every grid_pos.
+
+      Spec:
+          target=ln(canonical_mid[grid_pos+H/100]/canonical_mid[grid_pos])*10000
+          forward_endpoint_validity_rule=canonical_mid[grid_pos+k]finite_AND_gt_0_only;
+              full_gate_not_reapplied;NEW_ASSUMPTION
+          session_end=drop_if(grid_pos+k>last_index);per_horizon_independent
+
+      Returns array of length L (same as canonical_mid).
+      NaN at grid_pos i if:
+        - grid_pos + k > last_index  (session-end truncation)
+        - canonical_mid[grid_pos+k] is not finite or <= 0
+        - canonical_mid[grid_pos] is not finite or <= 0 (base)
+      """
+
+  # Lines 783-784 — the only call site in the frozen engine (inside reconstruct_block):
+  canonical_mid = grid["bitget_mid"].to_numpy(dtype=float)
+  ...
+  fwd = _build_forward_return_array(canonical_mid, k)
+
+SOURCE_2:
+PATH           = backend/recovery/engine.py
+SHA256         = abedee399c272eff858b109fb448cbda3ad3a49e40be4ba3f486650e3151a3e8
+LINES          = 195-215 (_quality_admissible_mask, establishes "bitget_mid" as
+                 the price column whose finiteness and positivity are required)
+CLASSIFICATION = IMPLEMENTATION_ONLY
+EXCERPT =
+  def _quality_admissible_mask(df: pd.DataFrame) -> pd.Series:
+      """
+      Spec: quality_gate=(adjusted_fair_venue_count>=2)
+                         AND(bitget_book_age_recv_ms<=1000)
+                         AND(bitget_mid finite)AND(bitget_mid>0)
+          quality_gate_scope=base_row_only;NOT_reapplied_at_forward_endpoint
+      """
+      col_mid = "bitget_mid"
+      ...
+      mid_finite_pos = (
+          df[col_mid].notna() & np.isfinite(df[col_mid]) & (df[col_mid] > 0.0)
+      )
+
+WHAT_THE_EVIDENCE_EXPLICITLY_ESTABLISHES =
+  The frozen engine's reconstruct_block() assigns canonical_mid from
+  grid["bitget_mid"], dtype=float, immediately after build_canonical_grid().
+  There is exactly one call site. The column name is "bitget_mid".
+  The quality admissibility spec also references "bitget_mid" as the
+  price column that must be finite and > 0.
+
+WHAT_REMAINS_UNSPECIFIED =
+  No standalone normative specification document explicitly states
+  "canonical_mid = bitget_mid column". The evidence is entirely
+  implementation-encoded in the frozen engine source.
+
+================================================================
+R-02: fair_gap_reversion THRESHOLD DOMAIN — TZ OR T0?
+================================================================
+
+QUESTION:
+For "fair_gap_reversion", does the frozen V1.1/V1.2 lineage establish
+whether the TZ threshold domain excludes zero values, or whether
+fair-gap semantics remain T0-equivalent?
+
+EVIDENCE_FOUND: YES
+
+SOURCE_1:
+PATH           = backend/recovery/specs/V1_2_CANDIDATE_SPEC.txt
+SHA256         = aed67b5ec9ae1b710ec3d96e1fcc2e15bd9c30fdd60e80cc68553d8fc3b597ca
+LINES          = 37-39
+CLASSIFICATION = NORMATIVE_FROZEN
+EXCERPT =
+  HZ_fair_gap_threshold_semantics_unchanged=true
+
+  C1_gap_threshold=frozen_fair_gap_threshold_type7_quantile;domain_unchanged_by_HZ_zero_rule
+
+SOURCE_2:
+PATH           = backend/recovery/engine.py
+SHA256         = abedee399c272eff858b109fb448cbda3ad3a49e40be4ba3f486650e3151a3e8
+LINES          = 360-395 (_compute_simple_feature showing threshold domain for all
+                 simple features including fair_gap_reversion; and gap_thresh_domain
+                 inside reconstruct_block ~line 820)
+CLASSIFICATION = IMPLEMENTATION_ONLY
+EXCERPT =
+  # Lines 368-373 — threshold domain applied uniformly to ALL simple features
+  # including fair_gap_reversion (quality_admissible AND isfinite, NO zero exclusion):
+  simple_domain_mask = quality_mask & np.isfinite(signal.astype(float))
+  thresh_vals = np.abs(signal.astype(float)[simple_domain_mask])
+  threshold = _quantile_type7(thresh_vals, q)
+
+  # Lines 379-381 — event_mask adds zero exclusion only at the EVENT level:
+  event_mask = (
+      simple_domain_mask
+      & (signal.astype(float) != 0.0)   # TZ: zero exclusion at event, NOT at threshold
+      & (gate >= threshold)               # threshold from T0-equivalent domain
+  )
+
+  # Composite / gap threshold domain (lines ~820-826 in reconstruct_block):
+  gap_thresh_domain = quality_mask & np.isfinite(gap_raw)
+  gap_thresh_per_q[q_val] = _quantile_type7(
+      np.abs(gap_raw[gap_thresh_domain]), q_val
+  )
+  # gap_thresh_domain = T0-equivalent (quality AND finite; NO zero exclusion)
+
+SOURCE_3:
+PATH           = backend/recovery/specs/V1_2_CANDIDATE_SPEC.txt
+SHA256         = aed67b5ec9ae1b710ec3d96e1fcc2e15bd9c30fdd60e80cc68553d8fc3b597ca
+LINES          = 50-54 (HC=C1 section)
+CLASSIFICATION = NORMATIVE_FROZEN
+EXCERPT =
+  C1_gap_feature=bitget_gap_to_fair_bps
+  C1_gap_threshold=frozen_fair_gap_threshold_type7_quantile;domain_unchanged_by_HZ_zero_rule
+
+WHAT_THE_EVIDENCE_EXPLICITLY_ESTABLISHES =
+  (a) The frozen candidate spec explicitly states
+      "HZ_fair_gap_threshold_semantics_unchanged=true" and
+      "domain_unchanged_by_HZ_zero_rule".
+  (b) The frozen engine uses quality_admissible AND isfinite(signal) as
+      the threshold domain for fair_gap_reversion — the T0-equivalent
+      domain (zero values are NOT excluded from the threshold computation).
+  (c) Zero exclusion for gap_reversion is applied only at the EVENT mask
+      level (signal != 0.0), not at the threshold quantile computation level.
+
+WHAT_REMAINS_UNSPECIFIED =
+  No standalone normative V1.1 spec document uses the phrase
+  "T0-equivalent" for fair_gap_reversion; this characterization is
+  derived from reading the frozen implementation against the candidate spec.
+
+================================================================
+R-03: LOADER / INPUT CONTRACT
+================================================================
+
+QUESTION:
+Is there a pre-existing frozen loader/input contract defining session
+storage format; BTC/ETH partitioning; DataFrame construction before
+build_canonical_grid; missing-column handling; CorruptGridError handling?
+
+EVIDENCE_FOUND: PARTIAL
+
+SOURCE_1:
+PATH           = backend/recovery/engine.py
+SHA256         = abedee399c272eff858b109fb448cbda3ad3a49e40be4ba3f486650e3151a3e8
+LINES          = 88-98 (CorruptGridError); 138-195 (build_canonical_grid spec comment)
+CLASSIFICATION = IMPLEMENTATION_ONLY
+EXCERPT =
+  class CorruptGridError(ValueError):
+      """Raised when a hard-fail invariant is violated in build_canonical_grid."""
+
+  def build_canonical_grid(df: pd.DataFrame) -> pd.DataFrame:
+      """Sort the grid, validate duplicate-key policy, assign immutable grid_pos.
+
+      Spec lines:
+          row_sort_primary=local_ts_ms_asc
+          row_sort_secondary=sample_monotonic_ns_asc
+          row_sort_algorithm=stable
+          row_sort_tie_on_both_keys=CORRUPT_GRID_HARD_FAIL
+          duplicate_key_policy=CORRUPT_GRID_HARD_FAIL_on(local_ts_ms,sample_monotonic_ns)_exact_duplicate
+          duplicate_timestamp_different_monotonic_ns=VALID_NOT_A_VIOLATION
+          grid_pos_assignment=once_immediately_after_stable_sort;range=0..L-1;immutable
+          invalid_block_conditions=[duplicate_sort_key_exact, duplicate_full_row]
+      """
+      if df.empty:
+          raise CorruptGridError("Empty DataFrame supplied to build_canonical_grid")
+      out = df.sort_values(
+          by=["local_ts_ms", "sample_monotonic_ns"],
+          ascending=[True, True], kind="stable",
+      ).reset_index(drop=True)
+
+SOURCE_2:
+PATH           = backend/recovery/engine.py
+SHA256         = abedee399c272eff858b109fb448cbda3ad3a49e40be4ba3f486650e3151a3e8
+LINES          = 787-795 (missing-column handling inside reconstruct_block)
+CLASSIFICATION = IMPLEMENTATION_ONLY
+EXCERPT =
+  # _col() helper: missing column returns full-NaN array, does NOT raise:
+  def _col(col_name: str) -> np.ndarray:
+      if col_name not in grid.columns:
+          return np.full(L, np.nan, dtype=float)
+      return grid[col_name].to_numpy(dtype=float)
+
+SOURCE_3:
+PATH           = backend/recovery/harness.py
+SHA256         = e97f2278b96b8154411de8f5a8c205273b217b65f33feada0986a78c69917e39
+LINES          = 341-430 (_load_grid_for_block — session ZIP loader)
+CLASSIFICATION = IMPLEMENTATION_ONLY
+EXCERPT =
+  def _load_grid_for_block(session_id: str, asset: str) -> pd.DataFrame:
+      """Load and concatenate the parquet grid parts for one (session_id, asset).
+
+      Raises:
+      - FileNotFoundError: session RAW ZIP not yet imported (case A).
+      - BlockDataUnavailableError: ZIP opened but no matching sync_grid_100ms
+        parquet entry (case B), empty part list (case C), zero rows after asset
+        selection (case D).
+      Part concatenation order: filename_ascending.
+      """
+      zf = open_reference_zip(session_id)   # opens the session ZIP
+      with zf:
+          grid_names = sorted(
+              n for n in zf.namelist()
+              if "sync_grid_100ms" in n and n.endswith(".parquet") and asset in n
+          )
+          # Fallback: try without asset filter
+          if not grid_names:
+              grid_names = sorted(
+                  n for n in zf.namelist()
+                  if "sync_grid_100ms" in n and n.endswith(".parquet")
+              )
+          dfs = []
+          for name in grid_names:
+              with zf.open(name) as f: buf = io.BytesIO(f.read())
+              df = pd.read_parquet(buf)
+              if "asset" in df.columns:
+                  df = df[df["asset"] == asset].copy()
+              dfs.append(df)
+      combined = pd.concat(dfs, ignore_index=True)
+
+SOURCE_4:
+PATH           = backend/constants.py
+SHA256         = 089c2f0251778dc9384730d694cc64feb2f0be67edd923d9df749f40b47a4e0f
+LINES          = 50-56
+CLASSIFICATION = NORMATIVE_FROZEN
+EXCERPT =
+  DATASET_DIRS = (
+      "sync_grid_100ms",
+      "normalized_books",
+      "normalized_trades",
+  )
+
+WHAT_THE_EVIDENCE_EXPLICITLY_ESTABLISHES =
+  (a) Session data is stored as ZIP files containing parquet parts under
+      the "sync_grid_100ms" directory path.
+  (b) BTC/ETH partitioning is done by filtering on an "asset" column in
+      the parquet DataFrame. The asset name is also matched in the parquet
+      entry filename as a secondary check.
+  (c) Part concatenation order is filename-ascending; combined with
+      pd.concat(ignore_index=True).
+  (d) Missing columns in the DataFrame are handled by returning a
+      full-NaN array — NOT raising an error (_col() in reconstruct_block).
+  (e) CorruptGridError is raised by build_canonical_grid on: empty
+      DataFrame; duplicate (local_ts_ms, sample_monotonic_ns) sort key;
+      exact duplicate full rows.
+  (f) Sort key columns: local_ts_ms (ascending primary),
+      sample_monotonic_ns (ascending secondary), stable algorithm.
+
+WHAT_REMAINS_UNSPECIFIED =
+  No standalone normative spec document explicitly defines the
+  BTC/ETH asset partitioning contract or the ZIP/parquet format.
+  The harness.py loader is IMPLEMENTATION_ONLY. The reference author
+  must independently implement an equivalent loader. The Amendment 001
+  A10 prohibit list excludes reconstruct_block and aggregate_blocks but
+  permits build_canonical_grid and _quality_admissible_mask directly.
+
+================================================================
+R-04: EXACT FORMULAS FOR mean_signed_bps AND hit_rate
+================================================================
+
+QUESTION:
+What are the exact frozen formulas/domains for mean_signed_bps and hit_rate?
+
+EVIDENCE_FOUND: YES
+
+SOURCE_1:
+PATH           = backend/recovery/specs/V1_2_CANDIDATE_SPEC.txt
+SHA256         = aed67b5ec9ae1b710ec3d96e1fcc2e15bd9c30fdd60e80cc68553d8fc3b597ca
+LINES          = 35
+CLASSIFICATION = NORMATIVE_FROZEN
+EXCERPT =
+  hit_rate_convention=zero_is_a_miss
+
+SOURCE_2:
+PATH           = backend/recovery/engine.py
+SHA256         = abedee399c272eff858b109fb448cbda3ad3a49e40be4ba3f486650e3151a3e8
+LINES          = 414-424 (simple features); 568-571 (composite features)
+CLASSIFICATION = IMPLEMENTATION_ONLY
+EXCERPT =
+  # Simple features (HZ / HB base path), lines 414-424:
+  accept_mask      = _greedy_overlap_filter(candidate_positions, spacing)
+  accepted_returns = candidate_returns[accept_mask]
+  accepted_dirs    = candidate_dirs[accept_mask]
+  signed_returns   = accepted_dirs * accepted_returns
+  N = int(len(signed_returns))
+  if N == 0:
+      mean_sret = None
+      hit_rate  = None
+  else:
+      mean_sret = float(np.mean(signed_returns))
+      hit_rate  = float(np.mean(signed_returns > 0.0))
+
+  # Composite features (HG/HC), lines 568-571:
+  "mean_signed_bps": float(np.mean(signed_returns)) if N > 0 else None,
+  "hit_rate":        float(np.mean(signed_returns > 0)) if N > 0 else None,
+
+  # Direction encoding for simple features (lines ~372-376):
+  # fair_gap_reversion: raw_dir = -np.sign(signal)
+  # all other simple features: raw_dir = +np.sign(signal)
+  # For G1: direction = sign(di_l1) (raw di_l1 sign, not z-score)
+  # For G0: direction = sign(D), D = (z_di_l1+z_ext_ofi)/2
+
+WHAT_THE_EVIDENCE_EXPLICITLY_ESTABLISHES =
+  mean_signed_bps:
+    = mean(direction * forward_return_bps) over accepted events
+    = None when accepted_n == 0
+    direction is +sign(signal) for simple features except fair_gap_reversion
+    which uses -sign(gap); sign(di_l1) for G1; sign(D) for G0.
+    forward_return_bps = ln(mid[pos+k] / mid[pos]) * 10000.
+
+  hit_rate:
+    = mean(signed_return > 0.0) over accepted events
+    = fraction of accepted events where (direction * forward_return_bps) > 0.0
+    = None when accepted_n == 0
+    Zero signed return counts as a MISS (zero is not > 0.0).
+    NORMATIVELY confirmed: hit_rate_convention=zero_is_a_miss (candidate spec).
+
+  Domain for both: accepted events (post overlap-filter).
+  N = 0 yields None for both (parent V2 §4: metric_when_accepted_n_zero=NULL).
+
+WHAT_REMAINS_UNSPECIFIED =
+  No standalone V1.1 spec document gives an explicit formula; evidence is
+  candidate spec (one-liner convention) + engine implementation.
+  The per-family direction sign for HB is IMPLEMENTATION_ONLY; each family
+  is described in Amendment 001 A5.
+
+================================================================
+R-05: CSV SERIALIZATION CONTRACT
+================================================================
+
+QUESTION:
+Is there a pre-existing frozen CSV serialization contract defining
+header present/absent; delimiter; quoting/escaping; line endings; encoding?
+
+EVIDENCE_FOUND: YES
+
+SOURCE_1:
+PATH           = backend/recovery/v1_2_stage3.py
+SHA256         = 342b359988a8e464429cce6cff3093d8ffd530956e08c6230173529da9145506
+LINES          = 294-312 (_csv_bytes function)
+CLASSIFICATION = IMPLEMENTATION_ONLY (no separate normative spec doc;
+                 Stage3 behavior is frozen through its hash in stage3_manifest.json)
+EXCERPT =
+  def _csv_bytes(rows: list[dict]) -> bytes:
+      """Serialize rows to UTF-8 CSV bytes.
+
+      Fixed 25-column schema, lineterminator='\n'.
+      Integer fields: decimal integer strings.
+      Float fields: repr(float).
+      None: empty CSV field.
+      """
+      buf = io.StringIO(newline="")
+      writer = csv.writer(buf, lineterminator="\n")
+      writer.writerow(list(_STAGE3_CSV_COLUMNS))   # header row written first
+      for row in rows:
+          writer.writerow([_format_field(row.get(col)) for col in _STAGE3_CSV_COLUMNS])
+      return buf.getvalue().encode("utf-8")
+
+SOURCE_2:
+PATH           = backend/recovery/reports/v1_2/stage3_manifest.json
+SHA256         = b9c07038efded04173a1ad565aecb81a6b0628ca2aa60e2cc0053fbb0c5cef8c
+CLASSIFICATION = NORMATIVE_FROZEN (Stage3 manifest is a frozen artifact)
+EXCERPT =
+  "threshold_exact_tolerance": "None==None exact; float: exact Python float equality"
+  "quantile_method": "linear_type7"
+  "fingerprint_encoding_definition": "SHA256 of accepted positions sorted ascending,
+    encoded as raw concatenated 8-byte little-endian signed int64 bytes;
+    empty set hashes empty bytes"
+
+WHAT_THE_EVIDENCE_EXPLICITLY_ESTABLISHES =
+  encoding          = UTF-8
+  line_terminator   = LF (\n) — explicit lineterminator="\n" in writer call
+  delimiter         = comma (Python csv.writer default; no dialect override)
+  header            = PRESENT (first row is column names)
+  quoting           = Python csv.writer default (QUOTE_MINIMAL)
+  null_value        = empty field (no literal "NULL" or "None")
+  float_format      = repr(float) (Python repr(), no explicit rounding)
+  integer_format    = decimal integer string
+  column_count      = 25 (fixed schema)
+  These are consistent with parent V2 §4 normative requirements:
+    csv_encoding=UTF-8, csv_line_terminator=LF, null_serialization=empty_field,
+    float_serialization=repr(float), explicit_decimal_rounding=NONE
+
+WHAT_REMAINS_UNSPECIFIED =
+  No standalone normative V1.1 spec document defines the CSV contract.
+  Stage3 source is frozen by its hash in stage3_manifest.json.
+  The parent V2 §4 also codifies these as normative for the NEW36 artifact.
+
+================================================================
+R-06: MANIFEST FIELDS protocol_sha256 AND collector_sha256
+================================================================
+
+QUESTION:
+Is there pre-existing frozen evidence defining the exact manifest
+meaning/value of "protocol_sha256" and "collector_sha256"?
+
+EVIDENCE_FOUND: PARTIAL
+
+SOURCE_1:
+PATH           = backend/constants.py
+SHA256         = 089c2f0251778dc9384730d694cc64feb2f0be67edd923d9df749f40b47a4e0f
+LINES          = 9-12
+CLASSIFICATION = NORMATIVE_FROZEN
+EXCERPT =
+  FROZEN_COLLECTOR_SHA256 = (
+      "e924edc1b8348d9cc8e74a37eaa17e6bbc80116de29d2f7a00cd43444d1265a3"
+  )
+
+SOURCE_2:
+PATH           = backend/recovery/reports/v1_2/stage3_manifest.json
+SHA256         = b9c07038efded04173a1ad565aecb81a6b0628ca2aa60e2cc0053fbb0c5cef8c
+CLASSIFICATION = NORMATIVE_FROZEN
+EXCERPT =
+  The stage3_manifest.json does NOT contain a "collector_sha256" key.
+  It does NOT contain a "protocol_sha256" key.
+  Keys present: actual_row_counts_per_axis, actual_total_row_count,
+  assets, axes, diagnostic_version, expected_row_counts_per_axis,
+  expected_total_row_count, feature_sets_per_axis,
+  fingerprint_encoding_definition, frozen_analysis_engine_state,
+  golden_artifacts_read_by_generator, horizons_per_axis, new36_opened,
+  quantile_method, quantiles_per_axis, runtime_source_commit,
+  session_ids, source_sha256, stage3_diagnostics_sha256,
+  stage3_diagnostics_size, threshold_exact_tolerance,
+  v1_1_stage1_stage2_modified, variant_sets_per_axis.
+
+SOURCE_3:
+PATH           = backend/recovery/specs/V1_2_NEW36_VALIDATION_PROTOCOL_V2.txt
+SHA256         = 5ed8a8b12726d395d25262dc3e4073250be3de94f3d62e64e99167921380ef95
+LINES          = §2 FROZEN CANDIDATE IDENTITY; §5 MANIFEST CONTRACT
+CLASSIFICATION = NORMATIVE_FROZEN
+EXCERPT =
+  # §2 — frozen identities:
+  COLLECTOR_SHA256 = e924edc1b8348d9cc8e74a37eaa17e6bbc80116de29d2f7a00cd43444d1265a3
+  ENGINE_SHA256    = abedee399c272eff858b109fb448cbda3ad3a49e40be4ba3f486650e3151a3e8
+
+  # §5 — required_manifest_keys includes:
+  collector_sha256; engine_sha256; candidate_spec_sha256; protocol_sha256;
+  ...
+  # §2 invariant A29 (from §7 S2):
+  A29_PROTOCOL_IDENTITY = protocol SHA, candidate spec SHA and engine SHA
+  in manifests match their frozen values.
+
+WHAT_THE_EVIDENCE_EXPLICITLY_ESTABLISHES =
+  collector_sha256:
+    Frozen value = "e924edc1b8348d9cc8e74a37eaa17e6bbc80116de29d2f7a00cd43444d1265a3"
+    (FROZEN_COLLECTOR_SHA256 in constants.py; identifies the MultiVenue
+    Microstructure Collector V2 binary/pipeline that produced the session ZIPs).
+    V2 §2 repeats this same literal under COLLECTOR_SHA256.
+
+  protocol_sha256:
+    No equivalent field existed in the Stage3 manifest (V1.1 artifact).
+    The field is prospectively required by V2 §5.
+    Its normative value is the SHA256 of the frozen V2 protocol document:
+    5ed8a8b12726d395d25262dc3e4073250be3de94f3d62e64e99167921380ef95
+    (SHA256 of backend/recovery/specs/V1_2_NEW36_VALIDATION_PROTOCOL_V2.txt).
+    Invariant A29 confirms this must match in both candidate and reference
+    manifests.
+
+WHAT_REMAINS_UNSPECIFIED =
+  No V1.1 spec document defined "protocol_sha256" as a manifest field;
+  it is entirely a V2-introduced concept. "collector_sha256" appears in
+  constants.py and was used internally in the QA engine but was not a
+  Stage3 manifest output field; its meaning as a V2 manifest field is
+  prospectively introduced by V2 §5.
+
+================================================================
+END OF REPORT
+================================================================

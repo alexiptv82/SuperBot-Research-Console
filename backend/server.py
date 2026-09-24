@@ -1797,3 +1797,32 @@ def download_reference_input_pack() -> FileResponse:
         media_type="application/zip",
         filename="SUPERBOT_V1_2_REFERENCE_INPUT_PACK.zip",
     )
+
+
+# ---------------------------------------------------------------------------
+# Amendment 004 Evidence Pack — read-only download endpoint
+# ---------------------------------------------------------------------------
+
+_AMD004_PACK_PATH = Path("/app/SUPERBOT_V1_1_AMENDMENT004_EVIDENCE_PACK.zip")
+_AMD004_PACK_EXPECTED_SHA256 = "5a103066ae684ea0647736100392985774151323c6b847639f4fb603eeed53ca"
+_AMD004_PACK_EXPECTED_SIZE   = 54465
+
+
+@app.get("/api/handoff/amendment004-evidence-pack")
+def download_amendment004_evidence_pack() -> FileResponse:
+    """Serve the pre-built, pre-verified Amendment 004 Evidence Pack ZIP.
+    Read-only. File is not regenerated or modified."""
+    import hashlib as _hl
+
+    if not _AMD004_PACK_PATH.exists():
+        raise HTTPException(status_code=404, detail="AMENDMENT004_PACK_NOT_FOUND")
+    data = _AMD004_PACK_PATH.read_bytes()
+    if len(data) != _AMD004_PACK_EXPECTED_SIZE:
+        raise HTTPException(status_code=500, detail="AMENDMENT004_PACK_SIZE_FAIL")
+    if _hl.sha256(data).hexdigest() != _AMD004_PACK_EXPECTED_SHA256:
+        raise HTTPException(status_code=500, detail="AMENDMENT004_PACK_SHA256_FAIL")
+    return FileResponse(
+        path=str(_AMD004_PACK_PATH),
+        media_type="application/zip",
+        filename="SUPERBOT_V1_1_AMENDMENT004_EVIDENCE_PACK.zip",
+    )
