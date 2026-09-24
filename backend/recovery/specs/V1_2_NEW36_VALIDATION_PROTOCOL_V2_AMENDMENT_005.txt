@@ -1,0 +1,676 @@
+SUPERBOT V1.2 — NEW36 VALIDATION PROTOCOL V2 — AMENDMENT 005
+
+STATUS: DRAFT — REQUIRES INDEPENDENT DETERMINACY AUDIT BEFORE FREEZE
+
+======================================================================
+0. DOCUMENT CONTROL
+======================================================================
+
+0.1 Base specification:
+    V1_2_NEW36_VALIDATION_PROTOCOL_V2
+    + AMENDMENT 001 (A001)
+    + AMENDMENT 002 (A002)
+    + AMENDMENT 003 (A003)
+    + AMENDMENT 004 (A004)
+
+0.2 Evidence basis:
+    Read-only repository evidence audit at PRE_HEAD 4f0708e
+    ("Candidate Amendment 005 Determinacy Evidence"), which cites:
+      A001 Section A2 (HZ / T0 CONTROL), lines 41-108;
+      A004 Section 4 (R-02), lines 93-119;
+      A004 Section 10.2 (non-regression), lines 456-480;
+      backend/recovery/harness.py lines 195-414
+        (_authoritative_sync_grid_count, _evaluate_sync_grid_coverage,
+         _load_grid_for_block, _get_block_summary);
+      backend/qa_engine.py lines 240-280;
+      backend/zip_security.py lines 182-191 (list_dir_entries);
+      backend/manifest_parser.py lines 36-97 (FIELD_ALIASES);
+      backend/models.py line 98 (QARun.sync_grid_file_count).
+    Supplemented by the read-only micro-audit "A005 R2.7" at PRE_HEAD
+    4f0708e, which cites backend/recovery/harness.py
+    _load_grid_for_block lines 360-414 and _get_block_summary
+    lines 418-463.
+    Further supplemented by the read-only micro-audit "A005 R2.10" at
+    PRE_HEAD 4f0708e, which cites backend/recovery/harness.py
+    _evaluate_sync_grid_coverage lines 229-278 and
+    _sync_grid_coverage_from_path; backend/parquet_validator.py
+    _is_parquet_entry lines 135-136, _classify_dir lines 139-145,
+    PerDirResult lines 73-82, validate_all_parquet lines 227-371;
+    backend/constants.py DATASET_DIRS lines 62-65.
+
+0.3 Authoring constraints observed:
+    No NEW36 or OLD36 quantitative access. No golden numerical content.
+    No candidate implementation or candidate output. No Stage1/2/3
+    diagnostics. No quantitative execution. No numerical value of any
+    kind is stated or implied by this amendment.
+
+======================================================================
+1. PURPOSE AND SCOPE
+======================================================================
+
+1.1 The independent clean-room reference-authoring audit returned
+    REFERENCE_SPEC_DETERMINACY=FAIL with exactly two blockers:
+
+      R1: HZ "fair_gap_reversion" count/class semantics under A004 R-02.
+      R2: Exact loader entry-selection / asset-selection /
+          expected-part-count semantics.
+
+1.2 This amendment resolves R1 and R2 and nothing else.
+
+1.3 Every clause of this amendment carries exactly one of the following
+    classifications:
+
+    EXPLICIT_CODIFICATION_OF_EXISTING_BEHAVIOR
+      The clause states behavior already determined by the frozen
+      specification (V2+A001..A004) and/or the frozen source code cited
+      in 0.2. It introduces no new behavior. Where it corrects earlier
+      wording, it corrects the DESCRIPTION of behavior, not the behavior.
+
+    NEW_NORMATIVE_CHOICE
+      The clause selects one resolution where existing evidence admits
+      more than one. It MUST NOT be read or cited as pre-existing
+      behavior.
+
+1.4 This amendment contains exactly ONE NEW_NORMATIVE_CHOICE:
+    Clause R1.3 ("fair_gap_reversion hz_discrimination_class diagnostic
+    TZ-threshold interpretation"). All other clauses are
+    EXPLICIT_CODIFICATION_OF_EXISTING_BEHAVIOR.
+
+======================================================================
+2. R1 — fair_gap_reversion HZ COUNT / CLASS SEMANTICS
+======================================================================
+
+----------------------------------------------------------------------
+R1.1 NOTATION AND ACTUAL THRESHOLD (UNCHANGED)
+Classification: EXPLICIT_CODIFICATION_OF_EXISTING_BEHAVIOR
+----------------------------------------------------------------------
+
+For "fair_gap_reversion" throughout this Section 2:
+
+  s = raw_gap_signal
+
+  T0_domain = quality_admissible AND isfinite(raw_gap_signal)
+              (zero values ARE included)
+
+  TZ_domain = quality_admissible AND isfinite(raw_gap_signal)
+              AND raw_gap_signal != 0.0
+
+The ACTUAL threshold used by "fair_gap_reversion" is, exactly as frozen
+by A004 R-02:
+
+  T0_threshold = type7_quantile(abs(raw_gap_signal[T0_domain]), q)
+
+T0_threshold is the only threshold consumed wherever the frozen
+fair-gap threshold is consumed by candidate or reference event
+semantics. A005 does not modify T0_threshold, its domain, its quantile
+method, or q.
+
+----------------------------------------------------------------------
+R1.2 FIVE HZ COUNT / FRACTION FIELDS
+Classification: EXPLICIT_CODIFICATION_OF_EXISTING_BEHAVIOR
+----------------------------------------------------------------------
+
+For "fair_gap_reversion" the following five HZ fields retain their
+frozen A001 Section A2 definitions unchanged. A004 R-02 does not alter
+them (A004 Section 10.2). They are restated here for determinacy only:
+
+  (1) threshold_domain_finite_n
+        = count(T0_domain)
+        = count(quality_admissible AND isfinite(raw_gap_signal))
+
+  (2) threshold_domain_nonzero_n
+        = count(TZ_domain)
+        = count(quality_admissible AND isfinite(raw_gap_signal)
+                AND raw_gap_signal != 0.0)
+
+  (3) zero_n
+        = threshold_domain_finite_n - threshold_domain_nonzero_n
+
+  (4) zero_fraction
+        = NULL                                   if threshold_domain_finite_n == 0
+        = zero_n / threshold_domain_finite_n     otherwise
+
+  (5) nonzero_unique_value_n
+        = number of distinct Python-float values in
+          abs(raw_gap_signal[TZ_domain]);
+        = 0 when TZ_domain is empty.
+
+These five fields are NOT redefined by A005. Should any restatement
+above be found to differ from A001 Section A2, A001 Section A2 governs
+for these five fields.
+
+----------------------------------------------------------------------
+R1.3 hz_discrimination_class
+Classification: NEW_NORMATIVE_CHOICE
+Identifier: "fair_gap_reversion hz_discrimination_class diagnostic
+             TZ-threshold interpretation"
+----------------------------------------------------------------------
+
+R1.3.1 Reason a choice is required.
+  A004 Section 4.4 states that the TZ zero exclusion SHALL NOT be
+  applied "when forming the threshold-domain quantile". Existing
+  evidence does not determine whether that prohibition also forbids
+  computing a zero-excluding quantile solely for the A001
+  hz_discrimination_class comparison (evidence audit Readings X and Y).
+  Both readings are textually compatible with A004. This clause selects
+  Reading X, preserving the diagnostic meaning of the A001 comparison.
+  This selection is NOT pre-existing behavior.
+
+R1.3.2 Diagnostic counterfactual threshold.
+  SOLELY for computing hz_discrimination_class for "fair_gap_reversion",
+  compute:
+
+    TZ_diagnostic_threshold
+        = type7_quantile(abs(raw_gap_signal[TZ_domain]), q)
+
+  using the same q and the same type7_quantile definition as
+  T0_threshold. Any empty-domain result of type7_quantile follows the
+  existing frozen V2+A001..A004 semantics unchanged; A005 introduces no
+  empty-domain rule.
+
+R1.3.3 Diagnostic-only restriction.
+  TZ_diagnostic_threshold:
+    (a) MUST NOT replace, modify, or be substituted for T0_threshold;
+    (b) MUST NOT be used for event eligibility, event acceptance,
+        direction, overlap, spacing, or any quantitative event metric;
+    (c) is consumed ONLY by the comparison in R1.3.4.
+  A004 Section 4.4 continues to govern the ACTUAL threshold in full:
+  the TZ zero exclusion is not applied when forming T0_threshold.
+
+R1.3.4 Class rule (A001 rule, applied with the operands above).
+
+    if zero_n == 0:
+        hz_discrimination_class = ZERO_FREE_CONTROL
+    else if T0_threshold and TZ_diagnostic_threshold differ under the
+            exact A001 Section A2 Python-value comparison semantics:
+        hz_discrimination_class = HZ_DISCRIMINATING
+    else:
+        hz_discrimination_class = HZ_NONDISCRIMINATING_EQUAL_THRESHOLD
+
+  The comparison, including NULL handling (NULL == NULL treated as
+  equal) and exact Python-value equality, is inherited verbatim from
+  A001 Section A2 (lines 97-107). A005 does not restate, alter, or
+  extend those comparison semantics. In the A001 rule, the operand
+  "TZ_threshold" is, for "fair_gap_reversion", the
+  TZ_diagnostic_threshold of R1.3.2; the operand "T0_threshold" is the
+  actual threshold of R1.1.
+
+R1.3.5 Explicit non-effects of R1.3.
+  R1.3 introduces NO change to: the actual fair_gap_reversion
+  threshold; its threshold domain; event eligibility (including the
+  A004 event-eligibility TZ exclusion); accepted events; direction;
+  overlap; spacing; or any quantitative event metric. R1.3 affects only
+  the value of the diagnostic field hz_discrimination_class for
+  "fair_gap_reversion".
+
+======================================================================
+3. R2 — EXACT sync_grid_100ms LOADER CONTRACT
+======================================================================
+
+All clauses in this Section 3:
+Classification: EXPLICIT_CODIFICATION_OF_EXISTING_BEHAVIOR
+Source: backend/recovery/harness.py _load_grid_for_block (lines 341-414)
+and _get_block_summary (lines 418-463).
+
+These clauses supply the literal predicate for the "frozen collector
+naming representation" referenced in A004 Section 5.5(b).
+
+----------------------------------------------------------------------
+R2.1 PRIMARY ENTRY SELECTION
+----------------------------------------------------------------------
+
+For each requested asset string `asset`, with `zf` the opened session
+ZIP:
+
+  grid_names = sorted(
+      n for n in zf.namelist()
+      if "sync_grid_100ms" in n
+      and n.endswith(".parquet")
+      and asset in n
+  )
+
+Semantics:
+  (a) `n` is the FULL internal ZIP entry path string exactly as returned
+      by ZipFile.namelist(); it is NOT the basename.
+  (b) `"sync_grid_100ms" in n` is case-sensitive Python substring
+      containment anywhere in `n`.
+  (c) `n.endswith(".parquet")` is a case-sensitive suffix test.
+  (d) `asset in n` is case-sensitive Python substring containment of the
+      requested asset string anywhere in the full path `n`, including
+      directory components. It is NOT token matching, NOT path-component
+      matching, and NOT basename-only matching. No word-boundary guard
+      exists.
+
+----------------------------------------------------------------------
+R2.2 FALLBACK ENTRY SELECTION
+----------------------------------------------------------------------
+
+If and only if the primary selection of R2.1 is empty:
+
+  grid_names = sorted(
+      n for n in zf.namelist()
+      if "sync_grid_100ms" in n
+      and n.endswith(".parquet")
+  )
+
+No filename/path asset filter is applied in the fallback. Predicates
+(a)-(c) of R2.1 apply with identical semantics. Asset restriction in
+the fallback case relies solely on the per-part row filter of R2.4.
+
+----------------------------------------------------------------------
+R2.3 SORT
+----------------------------------------------------------------------
+
+In both R2.1 and R2.2 the ordering is Python built-in sorted() with no
+key argument and default ascending order, applied to the complete
+internal ZIP entry path strings (default Python str comparison). It is
+NOT a basename sort and NOT a natural/numeric sort.
+
+----------------------------------------------------------------------
+R2.4 PER-PART ROW FILTER
+----------------------------------------------------------------------
+
+Each selected entry is loaded, in the order of R2.3, into a DataFrame
+`df`. Then, per part:
+
+  if "asset" in df.columns:
+      df = df[df["asset"] == requested_asset].copy()
+
+  - The comparison is exact equality against the requested asset
+    string (case-sensitive).
+  - If the "asset" column is ABSENT, the row-level asset filter is
+    skipped and the complete DataFrame for that part is retained.
+    Absence of the "asset" column alone is NOT a structural failure
+    (consistent with A004 Section 6.5).
+
+----------------------------------------------------------------------
+R2.5 MULTIPLE PARTS
+----------------------------------------------------------------------
+
+The per-part results of R2.4 are concatenated in the exact order of
+R2.3:
+
+  combined = pd.concat(parts, ignore_index=True)
+
+before canonical grid construction. Canonical grid construction itself
+is unchanged from V2+A001..A004.
+
+----------------------------------------------------------------------
+R2.6 ZERO ROWS (frozen harness Case D)
+----------------------------------------------------------------------
+
+If `combined` has zero rows after the applicable filtering of R2.4
+(including the case where no filter was applied because the "asset"
+column was absent), the block is:
+
+  FAILED / STRUCTURAL_INVALID
+
+and is NEVER classified PENDING. (Existing mechanism: raise
+BlockDataUnavailableError, caught in _get_block_summary, yielding
+BlockSummary(valid=False).)
+
+----------------------------------------------------------------------
+R2.7 NO ENTRY SELECTED (frozen harness Case B)
+Classification: EXPLICIT_CODIFICATION_OF_EXISTING_BEHAVIOR
+Source: backend/recovery/harness.py lines 380-386 (raise) and
+        lines 451-458 (catch)
+----------------------------------------------------------------------
+
+R2.7.1 Trigger. If the primary selection (R2.1) is empty AND the
+  fallback selection (R2.2), attempted as a consequence, is also empty,
+  i.e. `grid_names` is empty after the fallback has been attempted:
+
+    if not grid_names:
+        raise BlockDataUnavailableError(...)   # frozen harness Case B
+
+  Case B means: the RAW ZIP was opened successfully but no
+  sync_grid_100ms parquet entry was found.
+
+R2.7.2 Ordering. The Case B condition is raised BEFORE any per-part
+  DataFrame list is created, BEFORE any parquet payload is opened or
+  loaded, and BEFORE pd.concat is called. R2.4, R2.5 and R2.6 are not
+  reached in this case.
+
+R2.7.3 Classification. _get_block_summary catches
+  BlockDataUnavailableError and returns BlockSummary(valid=False). The
+  block is:
+
+    FAILED / STRUCTURAL_INVALID
+
+  and is NEVER classified PENDING.
+
+R2.7.4 Distinction from Case D (R2.6). Case B and Case D are distinct
+  conditions:
+    - Case B trigger: no entry selected after primary and fallback
+      selection; raised before any part is loaded.
+    - Case D trigger: one or more entries were selected and loaded, row
+      filtering (where applicable) and concatenation were performed,
+      and the combined DataFrame has zero rows.
+  They have different trigger conditions and different raise sites /
+  code paths. They share the same exception type
+  (BlockDataUnavailableError), the same downstream handler, and the
+  same final classification: FAILED / STRUCTURAL_INVALID, never
+  PENDING. Neither condition shall be treated as the other.
+
+======================================================================
+4. R2 — EXPECTED sync_grid_100ms PART COUNT
+======================================================================
+
+All clauses in this Section 4:
+Classification: EXPLICIT_CODIFICATION_OF_EXISTING_BEHAVIOR
+(including a correction of the DESCRIPTION given in A004 Section 5.7;
+the behavior itself is unchanged)
+
+----------------------------------------------------------------------
+R2.8 SOURCE OF THE EXPECTED COUNT
+----------------------------------------------------------------------
+
+The expected sync_grid_100ms part count is:
+
+  QARun.sync_grid_file_count          (backend/models.py line 98)
+
+It is populated at ingest time (backend/qa_engine.py lines 248-274) as:
+
+  len(list_dir_entries(inspection, "sync_grid_100ms"))
+
+where list_dir_entries (backend/zip_security.py lines 182-190) returns
+all NON-DIRECTORY ZIP entries whose path starts with "sync_grid_100ms/"
+or contains "/sync_grid_100ms/". It is therefore an OBSERVED count of
+all such files at ingest time; it is not restricted to ".parquet"
+entries.
+
+It is NOT a field extracted from the collector JSON manifest artifacts
+(manifest.json, runtime_status.json, fast_collection_summary.json).
+backend/manifest_parser.py FIELD_ALIASES and DERIVATIONS contain no
+alias or derivation for it.
+
+----------------------------------------------------------------------
+R2.9 CORRECTION OF A004 SECTION 5.7 WORDING
+----------------------------------------------------------------------
+
+A004 Section 5.7 describes the expected part inventory as that which
+"the authoritative frozen collector/session manifest declares". That
+description is inaccurate/imprecise. Wherever A004 Section 5.7 (or any
+earlier text) refers to the collector/session manifest as the source of
+the expected sync_grid_100ms part count, it SHALL be read as referring
+to QARun.sync_grid_file_count as defined in R2.8.
+
+The harness docstring at backend/recovery/harness.py lines 205-206
+("parsed once at ingest time by qa_engine.py from the collector
+manifest") is likewise inaccurate as a description; the code behavior
+of R2.8 governs. This correction changes no behavior.
+
+----------------------------------------------------------------------
+R2.10 VALIDATION WHEN THE EXPECTED COUNT IS AVAILABLE
+Classification: EXPLICIT_CODIFICATION_OF_EXISTING_BEHAVIOR
+Source: backend/recovery/harness.py lines 201-278;
+        backend/parquet_validator.py lines 73-82, 135-145, 227-371
+----------------------------------------------------------------------
+
+R2.10.1 Comparison. Where QARun.sync_grid_file_count is non-NULL, the
+  frozen coverage validation (_authoritative_sync_grid_count ->
+  _evaluate_sync_grid_coverage, harness.py lines 201-278) compares the
+  sync-grid file count observed by the frozen reconstruction-time
+  validation (sync_dir.files_seen, R2.10.2) against it. The condition
+  is exact integer inequality:
+
+    if QARun.sync_grid_file_count is not None
+       and sync_dir.files_seen != QARun.sync_grid_file_count:
+        HARD structural failure
+
+  Any mismatch is a HARD structural failure.
+
+R2.10.2 Observed count (sync_dir.files_seen), exact predicate.
+  sync_dir is the PerDirResult for dataset directory "sync_grid_100ms"
+  produced by parquet_validator.validate_all_parquet over the complete
+  SESSION ZIP. For that ZIP, enumerate entries via ZipFile.infolist().
+  Let `name` be the FULL internal ZIP entry path string of an entry
+  (ZipInfo.filename; NOT the basename). An entry contributes exactly
+  one to sync_dir.files_seen iff BOTH:
+
+    (1) name.endswith(".parquet")
+        (case-sensitive Python suffix test);
+    AND
+    (2) name.startswith("sync_grid_100ms/")
+        or "/sync_grid_100ms/" in name
+        (case-sensitive Python string semantics).
+
+  Equivalently:
+
+    sync_dir.files_seen = len([
+        info for info in zf.infolist()
+        if info.filename.endswith(".parquet")
+        and (info.filename.startswith("sync_grid_100ms/")
+             or "/sync_grid_100ms/" in info.filename)
+    ])
+
+  i.e. the number of ".parquet" entries under a "sync_grid_100ms/"
+  directory component. (The frozen source additionally excludes names
+  ending in "/"; no name satisfying (1) can end in "/", so the
+  predicate above is exact.)
+
+R2.10.3 Scope of the observed count. sync_dir.files_seen:
+  (a) is SESSION-level: it is computed over the complete session ZIP;
+  (b) is NOT asset-dependent: no requested-asset predicate participates
+      in (1) or (2);
+  (c) is determined independently of, and not by, the loader entry /
+      asset selection of R2.1 and R2.2;
+  (d) is a non-negative integer whenever sync_dir (the relevant
+      PerDirResult) exists; it is never NULL in that case.
+
+R2.10.4 Session-level evaluation. The coverage evaluation result is
+  cached keyed by session_id (harness.py _part_coverage_cache). The
+  expected-vs-observed comparison of R2.10.1 is therefore evaluated
+  per session_id, and its result is reused for every requested asset
+  of that session; it is not independently recomputed per requested
+  asset. A005 states no other cache semantics.
+
+R2.10.5 Expected vs observed predicates are NOT equivalent.
+    EXPECTED  QARun.sync_grid_file_count (R2.8): ingest-time count of
+              ALL non-directory entries under a "sync_grid_100ms/"
+              directory component; NO extension restriction.
+    OBSERVED  sync_dir.files_seen (R2.10.2): reconstruction-time count
+              of ".parquet" entries ONLY under a "sync_grid_100ms/"
+              directory component.
+  The directory-component sub-predicate is the same on both sides; the
+  ".parquet" restriction is present only on the observed side. Both
+  predicates are codified as existing behavior and are NOT harmonized
+  by A005: no filtering is added to either side and neither predicate
+  is changed. A005 does not assert that the two counts are equal for
+  any session; any inequality is handled solely by R2.10.1.
+
+R2.10.6 Absent / zero sync_dir.
+  Classification: EXPLICIT_CODIFICATION_OF_EXISTING_BEHAVIOR
+  (NOT a NEW_NORMATIVE_CHOICE)
+  Source: backend/recovery/harness.py _evaluate_sync_grid_coverage.
+
+  (a) Guard. The frozen coverage evaluation contains the exact compound
+      guard:
+
+        if sync_dir is None or sync_dir.files_seen == 0:
+
+      If the guard is true, the evaluator immediately returns:
+
+        False, "sync_grid_100ms: no parquet parts present"
+
+  (b) Single behavior. "sync_dir is None" (no PerDirResult for
+      "sync_grid_100ms") and "sync_dir.files_seen == 0" are NOT
+      distinct behaviors. They are the two operands of the same
+      compound guard and produce exactly the same result.
+
+  (c) Order. This guard is evaluated BEFORE:
+        - sequence-validity checking;
+        - corrupt-part / sync-failure checking;
+        - the expected-count comparison of R2.10.1.
+
+  (d) Consequence. When the guard fires, the expected-count comparison
+      of R2.10.1 is NEVER reached, regardless of whether
+      QARun.sync_grid_file_count is None, 0, or any other value.
+
+  (e) Propagation. The caller propagates this result as
+      FAILED / STRUCTURAL_INVALID, NEVER PENDING, with reason exactly:
+
+        "sync_grid_100ms: no parquet parts present"
+
+  (f) Control flow when expected_count == 0 (existing control flow
+      only; no new rule):
+        - sync_dir is None OR sync_dir.files_seen == 0:
+            the early structural failure of (a) fires; expected-count
+            equality is not tested, including when
+            QARun.sync_grid_file_count == 0;
+        - sync_dir.files_seen > 0 AND QARun.sync_grid_file_count == 0:
+            the guard of (a) does not fire; the exact inequality
+            comparison of R2.10.1 is reached; files_seen != 0;
+            therefore the existing HARD structural mismatch failure of
+            R2.10.1 applies.
+
+----------------------------------------------------------------------
+R2.11 VALIDATION WHEN THE EXPECTED COUNT IS UNAVAILABLE
+----------------------------------------------------------------------
+
+Where QARun.sync_grid_file_count is unavailable or NULL (session not
+present in the database, or field not set), NO expected-count
+comparison is performed. Unavailability alone is not a failure.
+
+======================================================================
+5. NON-REGRESSION
+======================================================================
+
+5.1 A005 changes or resolves ONLY:
+    (1) the "fair_gap_reversion" HZ diagnostic count/class
+        interpretation of Section 2;
+    (2) exact sync_grid ZIP-entry selection, asset matching, fallback,
+        and sorting (R2.1-R2.3);
+    (3) row-level asset-filter behavior, insofar as needed for
+        deterministic loader codification (R2.4-R2.6);
+    (4) authoritative expected sync-grid count provenance and
+        validation (R2.8-R2.11).
+
+5.2 Everything else remains frozen exactly as V2+A001+A002+A003+A004.
+    In particular the following are UNCHANGED:
+      candidate composition; axes; feature families; variants;
+      quantiles; horizons; actual thresholds (including the
+      already-frozen A004 R-02 fair_gap_reversion rule); G1 threshold
+      source; directions; B0/B1; spacing; fingerprint; A003 metrics;
+      the 3456-row inventory; S1/S2; one-shot policy; claim boundary;
+      A004 serialization/type rules; A004 forward return; actual
+      fair_gap_reversion threshold and event semantics; the HZ
+      definitions for all features other than "fair_gap_reversion";
+      the HG/HC/HB definitions.
+
+5.3 A005 introduces no new scientific rule, no new event rule, and no
+    new metric.
+
+======================================================================
+6. PRECEDENCE
+======================================================================
+
+6.1 A005 prevails over earlier text (V2, A001, A002, A003, A004) ONLY
+    to the extent necessary to resolve the matters enumerated in 5.1.
+
+6.2 On every other matter, V2+A001+A002+A003+A004 remain unchanged and
+    retain their existing internal precedence. A005 creates no general
+    or residual precedence.
+
+======================================================================
+7. OBSERVATIONS RECORDED WITHOUT NORMATIVE EFFECT
+======================================================================
+
+The following are recorded for the independent determinacy auditor.
+They create no rule and change no behavior.
+
+  O-1 The primary asset predicate (R2.1(d)) is pure substring
+      containment on the full path; an asset string may match entries
+      belonging to other symbols whose paths contain it. This is
+      existing behavior, codified as-is, not remediated.
+
+  O-2 In the fallback path (R2.2), if a selected part lacks the "asset"
+      column, all of its rows are retained (R2.4). This is existing
+      behavior, codified as-is.
+
+  O-3 The loader predicate ("sync_grid_100ms" substring + ".parquet"
+      suffix) and the ingest-time count predicate (non-directory
+      entries under a "sync_grid_100ms/" directory component, any
+      extension) are not identical predicates. Both are codified as
+      existing behavior; their relationship is governed by the frozen
+      coverage validation of R2.10.
+
+======================================================================
+8. DETERMINACY CHECKLIST
+======================================================================
+
+[R1]
+  [x] Actual fair_gap_reversion threshold = type7_quantile over
+      abs(raw_gap_signal[T0_domain]), zeros included; unchanged (R1.1).
+  [x] T0_domain defined exactly (R1.1).
+  [x] TZ_domain defined exactly (R1.1).
+  [x] threshold_domain_finite_n: A001 definition, restated (R1.2(1)).
+  [x] threshold_domain_nonzero_n: A001 definition, restated (R1.2(2)).
+  [x] zero_n: A001 definition, restated (R1.2(3)).
+  [x] zero_fraction incl. NULL on zero denominator (R1.2(4)).
+  [x] nonzero_unique_value_n incl. 0 on empty TZ_domain (R1.2(5)).
+  [x] TZ_diagnostic_threshold defined exactly (R1.3.2).
+  [x] TZ_diagnostic_threshold diagnostic-only; no event use (R1.3.3).
+  [x] Class rule order: zero_n==0 first, then comparison (R1.3.4).
+  [x] Comparison/NULL/equality semantics inherited verbatim from A001
+      (R1.3.4).
+  [x] R1.3 labelled NEW_NORMATIVE_CHOICE; not presented as
+      pre-existing (R1.3, R1.3.1).
+  [x] No change to eligibility, events, direction, overlap, metrics
+      (R1.3.5).
+
+[R2 — loader]
+  [x] Primary predicate literal and exact (R2.1).
+  [x] Full-path, case-sensitive substring semantics explicit (R2.1).
+  [x] Not token, not basename matching (R2.1(d)).
+  [x] Fallback trigger (primary empty) and predicate exact (R2.2).
+  [x] No asset filter in fallback (R2.2).
+  [x] Sort: sorted(), no key, full path strings (R2.3).
+  [x] Row filter when "asset" column present (R2.4).
+  [x] Missing "asset" column: skip filter, keep all rows, not a
+      failure (R2.4).
+  [x] Concatenation order and call (R2.5).
+  [x] Zero combined rows (Case D) -> FAILED / STRUCTURAL_INVALID, never
+      PENDING (R2.6).
+  [x] Primary and fallback both empty (Case B) -> raised before any
+      part is loaded or concatenated -> FAILED / STRUCTURAL_INVALID,
+      never PENDING (R2.7).
+  [x] Case B and Case D distinct; shared exception type, handler and
+      classification only (R2.7.4).
+
+[R2 — expected count]
+  [x] Source = QARun.sync_grid_file_count (R2.8).
+  [x] Provenance = observed ingest-time count of non-directory entries
+      under sync_grid_100ms/, not a collector JSON manifest field
+      (R2.8).
+  [x] A004 Section 5.7 wording corrected, not perpetuated (R2.9).
+  [x] Non-NULL: exact integer inequality; mismatch is HARD structural
+      failure (R2.10.1).
+  [x] Observed count sync_dir.files_seen: exact predicate over
+      ZipFile.infolist() full paths, ".parquet" AND
+      "sync_grid_100ms/" directory component (R2.10.2).
+  [x] Observed count session-level, asset-independent, independent of
+      R2.1/R2.2 selection, non-negative integer when sync_dir exists
+      (R2.10.3).
+  [x] Comparison evaluated per session_id (cached), not per asset
+      (R2.10.4).
+  [x] Expected and observed predicates explicitly non-equivalent; not
+      harmonized (R2.10.5).
+  [x] Absent / zero sync_dir: exact compound guard "sync_dir is None
+      or sync_dir.files_seen == 0" (single behavior) evaluated before
+      sequence-validity, corrupt-part / sync-failure and expected-count
+      checks; returns False, "sync_grid_100ms: no parquet parts
+      present"; expected-count comparison never reached (any
+      QARun.sync_grid_file_count incl. None/0); FAILED /
+      STRUCTURAL_INVALID, never PENDING; files_seen > 0 with expected 0
+      -> R2.10.1 HARD mismatch; EXPLICIT_CODIFICATION_OF_EXISTING_BEHAVIOR
+      (R2.10.6).
+  [x] NULL/unavailable: no comparison performed (R2.11).
+
+[Scope]
+  [x] Exactly one NEW_NORMATIVE_CHOICE (1.4, R1.3).
+  [x] Non-regression enumerated (Section 5).
+  [x] Narrow precedence only (Section 6).
+  [x] No numerical content stated or implied (0.3).
+
+END OF AMENDMENT 005 DRAFT
