@@ -1,0 +1,514 @@
+======================================================================
+SuperBot V1.2
+NEW36 VALIDATION PROTOCOL V2 — AMENDMENT 004
+Document: V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_004.txt
+
+STATUS: DRAFT — NOT FROZEN
+This document has no SHA256 identity. It SHALL NOT be cited as frozen,
+and no SHA256 value SHALL be attributed to it, until it is frozen by the
+protocol's own freezing procedure.
+======================================================================
+
+----------------------------------------------------------------------
+0. KEY WORDS
+----------------------------------------------------------------------
+
+The key words "MUST", "MUST NOT", "SHALL", "SHALL NOT", "REQUIRED" and
+"MAY" in this document are to be interpreted as normative requirements.
+"Reference" means the independent reference implementation.
+"Candidate" means the candidate application under validation.
+"Implementation" means either of them.
+
+----------------------------------------------------------------------
+1. PURPOSE
+----------------------------------------------------------------------
+
+1.1 This Amendment closes exactly six determinacy gaps, identified
+    before the independent reference implementation and designated
+    R-01 through R-06.
+
+1.2 This Amendment clarifies already-frozen semantics and the
+    mechanical NEW36 input/output contract. It introduces no new
+    scientific, quantitative or acceptance content.
+
+1.3 This Amendment does NOT alter the scientific candidate, thresholds,
+    event rules, overlap semantics, candidate composition, row
+    inventory or acceptance criteria.
+
+----------------------------------------------------------------------
+2. FROZEN PARENT IDENTITIES
+----------------------------------------------------------------------
+
+2.1 Parent protocol: SuperBot V1.2 NEW36 Validation Protocol V2
+    ("V2"), SHA256:
+      5ed8a8b12726d395d25262dc3e4073250be3de94f3d62e64e99167921380ef95
+
+2.2 Frozen collector identity, SHA256:
+      e924edc1b8348d9cc8e74a37eaa17e6bbc80116de29d2f7a00cd43444d1265a3
+
+2.3 Amendments 001, 002 and 003 are independently frozen normative
+    documents with their own SHA256 identities as recorded at their
+    freezing. This Amendment does not restate, recompute or modify
+    those identities.
+
+2.4 The engine allowlist already authorized under V2 and Amendments
+    001/002/003 is unchanged by this Amendment.
+
+----------------------------------------------------------------------
+3. R-01 — FORWARD RETURN PRICE SERIES
+----------------------------------------------------------------------
+
+3.1 The array supplied as "canonical_mid" to
+
+      _build_forward_return_array(canonical_mid, k)
+
+    SHALL be exactly:
+
+      grid["bitget_mid"].to_numpy(dtype=float)
+
+    where "grid" is the canonical grid returned by
+    build_canonical_grid() for the same (session_id, asset) block.
+
+3.2 Consequently, for every position "pos" for which the forward
+    return is valid:
+
+      forward_return_bps[pos] =
+          ln(bitget_mid[pos + k] / bitget_mid[pos]) * 10000
+
+    where ln is the natural logarithm.
+
+3.3 Validity of the endpoint and of the base, and the session-end
+    rules, are exactly those already frozen. This section does not
+    alter them. Where the frozen rules declare a forward return
+    invalid, it SHALL remain invalid.
+
+3.4 No other price series (including any other venue mid, trade price,
+    microprice, bid, ask or derived fair value) SHALL be used as
+    "canonical_mid".
+
+3.5 This section is a clarification of frozen engine semantics, not a
+    new quantitative choice.
+
+----------------------------------------------------------------------
+4. R-02 — fair_gap_reversion THRESHOLD DOMAIN
+----------------------------------------------------------------------
+
+4.1 The HZ zero-exclusion rule SHALL NOT alter the threshold domain of
+    "fair_gap_reversion".
+
+4.2 For "fair_gap_reversion", the threshold domain SHALL be exactly the
+    set of positions satisfying:
+
+      quality_admissible AND isfinite(raw_gap_signal)
+
+4.3 Positions with raw_gap_signal exactly equal to zero ARE INCLUDED in
+    the threshold domain and therefore participate in the frozen
+    type-7 quantile calculation.
+
+4.4 The TZ zero exclusion applies to EVENT ELIGIBILITY only. It SHALL
+    NOT be applied when forming the threshold-domain quantile.
+
+4.5 The same unchanged gap threshold-domain rule SHALL apply wherever
+    the frozen C1 semantics consume the frozen fair-gap threshold.
+
+4.6 This section implements, and does not extend, the already-frozen
+    declarations:
+
+      HZ_fair_gap_threshold_semantics_unchanged=true
+      C1_gap_threshold=frozen_fair_gap_threshold_type7_quantile;domain_unchanged_by_HZ_zero_rule
+
+4.7 This section SHALL NOT be interpreted as a new candidate rule.
+
+----------------------------------------------------------------------
+5. R-03 — NEW36 INPUT / LOADER CONTRACT
+----------------------------------------------------------------------
+
+5.1 Inventory. The frozen NEW36 inventory consists of exactly the 12
+    session IDs listed in V2 Appendix B, in exactly that order. This
+    Amendment does not restate, add, remove or reorder them.
+
+5.2 Session representation. Each session is represented by its
+    canonical session ZIP produced by the frozen collector identity
+    declared in V2 (Section 2.2 above).
+
+5.3 Logical identity only. This Amendment defines logical input
+    identity. It does NOT define any archive naming convention,
+    filesystem path, directory layout or deployment location. Such
+    deployment details are non-normative and SHALL NOT affect outputs.
+
+5.4 Processing requirements. The Reference and the Candidate SHALL:
+
+    (a) process only the exact Appendix-B session IDs, and no others;
+    (b) obtain the canonical parquet payload(s) from each session ZIP;
+    (c) construct exactly one DataFrame block per (session_id, asset)
+        for exactly the assets:
+          BTC
+          ETH
+    (d) pass each asset block DataFrame to build_canonical_grid()
+        before any quantitative computation;
+    (e) preserve the frozen Appendix-B session order, and BTC-before-
+        ETH asset order within each session, for canonical output
+        ordering.
+
+5.5 Asset resolution. For each canonical session ZIP and each
+    requested asset, exactly "BTC" or "ETH", the implementation SHALL
+    apply the frozen harness procedure:
+
+    (a) enumerate the canonical "sync_grid_100ms" parquet payload
+        entries of the session ZIP;
+    (b) first, select the payload entries whose filename identifies the
+        requested asset according to the frozen collector naming
+        representation;
+    (c) if no filename match exists for the requested asset, load the
+        canonical "sync_grid_100ms" parquet payload entries and resolve
+        the requested asset by exact equality on the parquet "asset"
+        column:
+          "BTC" for BTC
+          "ETH" for ETH;
+    (d) after parquet loading, each selected part SHALL be processed
+        individually, in either selection path (b) or (c), as follows:
+
+        A. If the part's DataFrame contains an "asset" column, exact
+           row filtering SHALL be applied, equivalent to:
+
+             df = df[df["asset"] == requested_asset].copy()
+
+           Rows whose asset differs from the requested asset are
+           dropped.
+
+        B. If the part's DataFrame does NOT contain an "asset" column,
+           the row-level asset filter is skipped for that part and the
+           full DataFrame of that part is retained. Absence of the
+           "asset" column by itself is NOT a structural failure.
+
+        If, after processing and concatenating the selected parts
+        (Section 5.7), the combined DataFrame has zero rows, the
+        structural block-unavailable condition SHALL be raised. It is
+        classified "FAILED / STRUCTURAL_INVALID" and is never PENDING.
+
+        If the combined DataFrame is non-empty, processing continues to
+        build_canonical_grid(). No subsequent asset-column filter is
+        performed by the engine, and none SHALL be added;
+    (e) asset identity MUST NOT be guessed, inferred or reconstructed
+        from quantitative feature values, price levels or any other
+        quantitative content;
+    (f) failure to deterministically construct the required BTC or ETH
+        block is a structural application failure (Section 6).
+
+    This procedure defines logical selection only; Section 5.3 applies
+    and no deployment-specific absolute path is defined.
+
+5.6 Absent quantitative feature columns. Where the frozen
+    implementation contract treats a requested quantitative column as
+    absent, the implementation SHALL represent that requested signal as
+    an all-NaN float array whose length equals the canonical-grid
+    length of the block. Quantitative observations SHALL NOT be
+    synthesized, imputed, forward-filled, defaulted or otherwise
+    fabricated. This section does not change which columns the frozen
+    contract treats as absent.
+
+5.7 Multiple parquet parts. A canonical session MAY contain multiple
+    canonical "sync_grid_100ms" parquet parts for an asset. For each
+    requested asset the implementation SHALL, per the frozen harness
+    behavior:
+
+    (a) determine the applicable canonical parquet parts under
+        Section 5.5;
+    (b) sort the selected part entries by filename in ascending
+        order, where "filename" means the complete internal ZIP entry
+        name/path string as returned by ZipFile.namelist() (NOT the
+        basename), ordered by behavior equivalent to:
+
+          sorted(selected_entry_names)
+
+        with no "key=" function, using Python native ascending string
+        ordering;
+    (c) load them in that order;
+    (d) combine them by row-wise concatenation equivalent to:
+          pd.concat(parts, ignore_index=True)
+    (e) only after that concatenation, pass the resulting asset
+        DataFrame to build_canonical_grid().
+
+    Where the authoritative frozen collector/session manifest declares
+    the part inventory, the expected part count SHALL be validated
+    against it. A required part SHALL NOT be silently skipped.
+
+5.8 Part-order observability. The pre-concatenation part ordering of
+    Section 5.7 is part of the deterministic loader contract. For any
+    block successfully returned by build_canonical_grid(), however, it
+    creates no observable quantitative ordering ambiguity:
+    build_canonical_grid() performs a stable ascending sort by
+
+      (local_ts_ms, sample_monotonic_ns)
+
+    and an exact duplicate/tie on that two-field sort key is a
+    CORRUPT_GRID hard failure. Every validly returned canonical grid
+    therefore has unique two-field sort keys, and its canonical row
+    order and grid_pos assignment are determined by those keys rather
+    than by incoming parquet-part order. This section does not weaken
+    or change the frozen CORRUPT_GRID behavior.
+
+----------------------------------------------------------------------
+6. STRUCTURAL APPLICATION FAILURE
+----------------------------------------------------------------------
+
+6.1 Each of the following SHALL be a structural application failure:
+
+    (a) a required session ZIP is unavailable;
+    (b) a canonical parquet payload is unavailable or unreadable;
+    (c) asset identity cannot be deterministically resolved;
+    (d) either the BTC or the ETH block required by the frozen
+        inventory cannot be constructed;
+    (e) build_canonical_grid() raises CorruptGridError;
+    (f) a canonical grid is empty;
+    (g) exact duplicate sort-key / full-row corruption is detected by
+        the frozen canonical-grid rules;
+    (h) a required canonical "sync_grid_100ms" parquet part is
+        missing, unreadable, corrupt or inconsistent, including a part
+        count inconsistent with the authoritative frozen
+        collector/session manifest where that manifest declares the
+        part inventory.
+
+6.2 A structural application failure SHALL NOT be converted into a
+    zero-row block, a NULL-result block, a skipped block, or any
+    partial output presented as valid.
+
+6.3 A structural application failure SHALL trigger the already-frozen
+    V2 structural-failure behavior. This Amendment does not define,
+    extend or replace that behavior.
+
+6.4 Absence of a quantitative feature column handled under Section 5.6
+    is NOT, by itself, a structural application failure.
+
+6.5 Absence of the "asset" column in a selected parquet part is NOT, by
+    itself, a structural application failure and does NOT, by itself,
+    constitute an unresolved asset identity under Section 6.1(c); such
+    a part is handled exactly as in Section 5.5(d)B. A combined asset
+    DataFrame with zero rows under Section 5.5(d) is a structural
+    application failure classified "FAILED / STRUCTURAL_INVALID".
+
+----------------------------------------------------------------------
+7. R-04 — EVENT METRIC FORMULAS
+----------------------------------------------------------------------
+
+7.1 Metrics SHALL be calculated over ACCEPTED events only, i.e. after
+    the applicable frozen overlap filter has been applied.
+
+7.2 For each accepted event i:
+
+      signed_return_i = direction_i * forward_return_bps_i
+
+    where direction_i follows exactly the frozen family-specific
+    direction semantics, which this Amendment does not redefine.
+
+7.3 When accepted_n > 0:
+
+      mean_signed_bps = arithmetic_mean(signed_return_i)
+
+      hit_rate = count(signed_return_i > 0.0) / accepted_n
+
+    An equivalent implementation of hit_rate is:
+
+      mean(signed_return_i > 0.0)
+
+7.4 A signed return exactly equal to zero is a MISS.
+
+7.5 When accepted_n == 0:
+
+      mean_signed_bps = NULL
+      hit_rate        = NULL
+
+7.6 This section does NOT alter the Amendment 003 semantics of
+    "mean_abs_move" or of "gate_zero_n".
+
+----------------------------------------------------------------------
+8. R-05 — CSV BYTE SERIALIZATION
+----------------------------------------------------------------------
+
+8.1 Candidate and Reference CSV artifacts SHALL be serialized as
+    follows:
+
+    - encoding:           UTF-8, without BOM;
+    - header row:         present, exactly one;
+    - header fields:      exactly the frozen 25 fields, in frozen
+                          order, with no additional fields;
+    - index columns:      none;
+    - delimiter:          ASCII comma ",";
+    - quoting policy:     Python csv.writer default, QUOTE_MINIMAL;
+    - quote character:    ASCII double quote (");
+    - line terminator:    LF ("\n") for every record, including the
+                          header;
+    - CRLF:               forbidden;
+    - NULL:               empty CSV field;
+    - integer values:     base-10 integer strings;
+    - float values:       Python repr(float), i.e. the repr of the
+                          value as a Python built-in float;
+    - explicit rounding:  none.
+
+8.2 A FLOAT value SHALL first be represented as a Python built-in
+    float and then serialized as:
+
+      repr(float(value))
+
+    Library-specific scalar repr strings (for example "np.float64(...)")
+    SHALL NOT appear in the output. This is a clarification of the
+    already-authorized "Python repr(float)" rule, not a new
+    quantitative rule.
+
+8.3 Row order is the frozen canonical output ordering, including the
+    Appendix-B session order and BTC-before-ETH asset order stated in
+    Section 5.4(e).
+
+8.4 Under these rules the final output SHALL be a deterministic byte
+    stream.
+
+8.5 Non-finite FLOAT values. For every FLOAT field of the frozen
+    25-field schema:
+
+    - a non-NULL emitted value MUST be finite;
+    - NaN is forbidden;
+    - +inf is forbidden;
+    - -inf is forbidden;
+    - NULL remains the empty CSV field;
+    - a non-finite value is NOT another representation of NULL.
+
+    Non-finite values SHALL NOT be serialized as "nan", "inf", "-inf"
+    or any other text. An emitted non-finite FLOAT is a validation
+    failure under the already-frozen V2 comparison/validation rules.
+
+8.6 Frozen field types. The frozen 25-field schema contains only the
+    following already-frozen categories:
+
+    STRING (8):
+      protocol_version, session_id, asset, axis, feature_family,
+      variant_id, hz_discrimination_class, accepted_positions_sha256
+
+    INTEGER (11):
+      horizon_ms, threshold_domain_finite_n,
+      threshold_domain_nonzero_n, zero_n, nonzero_unique_value_n,
+      gate_zero_n, spacing_steps, pre_overlap_n, exact_spacing_pair_n,
+      accepted_n, overlap_dropped_n
+
+    FLOAT (6):
+      quantile, zero_fraction, calculated_threshold, mean_signed_bps,
+      hit_rate, mean_abs_move
+
+    No BOOLEAN field exists in the frozen 25-field schema. This
+    section lists types only; header order remains the frozen order.
+    NULL admissibility remains governed by the frozen NULL matrix and
+    other frozen field-specific rules. This section creates no new NULL
+    permission.
+
+8.7 S1 FLOAT comparison and negative zero. No byte-level normalization
+    of "-0.0" is imposed. The S1 FLOAT comparison remains the frozen
+    rule: both NULL, OR both finite and
+
+      abs(candidate_value - reference_value) <= 1e-12
+
+    Accordingly "0.0" and "-0.0" are numerically equivalent for S1.
+    CSV byte identity between Candidate and Reference is NOT an S1
+    requirement. Role-specific CSV SHA256 values remain provenance
+    identities and do not require Candidate/Reference CSV byte
+    identity.
+
+8.8 Floating-point evaluation order. This Amendment does not mandate
+    "math.log" versus "numpy.log", any particular summation
+    implementation, sequential versus pairwise summation, or any
+    particular library's arithmetic-mean implementation. The normative
+    requirements remain the frozen mathematical formulas, finite
+    emitted FLOAT values (Section 8.5) and the frozen S1 absolute
+    tolerance of 1e-12. Implementation-level floating-point choices
+    are not independently frozen, provided emitted values satisfy the
+    normative formulas and the S1 criteria.
+
+----------------------------------------------------------------------
+9. R-06 — MANIFEST HASH IDENTITIES
+----------------------------------------------------------------------
+
+9.1 The manifest field "collector_sha256" SHALL be the frozen
+    collector identity literal:
+
+      e924edc1b8348d9cc8e74a37eaa17e6bbc80116de29d2f7a00cd43444d1265a3
+
+    It SHALL NOT be recomputed from any local collector file during the
+    reference run.
+
+9.2 The manifest field "protocol_sha256" SHALL be exactly the SHA256 of
+    the frozen parent V2 protocol document:
+
+      5ed8a8b12726d395d25262dc3e4073250be3de94f3d62e64e99167921380ef95
+
+9.3 "protocol_sha256" SHALL NOT be:
+    - a concatenated hash;
+    - a Merkle or hash-tree value;
+    - an aggregate hash of V2 plus any amendments;
+    - the SHA256 of this Amendment 004;
+    - dynamically recomputed from any modified protocol text.
+
+9.4 Amendments 001, 002, 003 and 004 remain independently frozen
+    normative documents with their own SHA256 identities. The value of
+    the manifest field "protocol_sha256" nevertheless remains the
+    parent V2 SHA256 stated in Section 9.2.
+
+----------------------------------------------------------------------
+10. NON-REGRESSION
+----------------------------------------------------------------------
+
+10.1 This Amendment resolves ONLY R-01 through R-06.
+
+10.2 This Amendment does NOT change any of the following:
+
+     - candidate composition;
+     - HZ/HG/HC/HB definitions, except the explicit R-02
+       clarification in Section 4;
+     - feature families;
+     - variants;
+     - quantiles;
+     - horizons;
+     - threshold method;
+     - G1 threshold source;
+     - direction semantics;
+     - overlap B0/B1 semantics;
+     - exact-spacing consecutive-pair semantics;
+     - accepted-position fingerprint encoding;
+     - Amendment 003 "mean_abs_move";
+     - Amendment 003 "gate_zero_n";
+     - the canonical 3456-row inventory;
+     - S1 comparison criteria;
+     - the S2 invariant list;
+     - the one-shot NEW36 policy;
+     - the claim boundary and nonclaims.
+
+10.3 No provision of this Amendment SHALL be read as filling any
+     ambiguity outside R-01 through R-06.
+
+----------------------------------------------------------------------
+11. PRECEDENCE
+----------------------------------------------------------------------
+
+11.1 For ONLY the six subjects explicitly covered by this Amendment
+     (R-01 through R-06), this Amendment is authoritative where
+     earlier wording is incomplete or ambiguous.
+
+11.2 Outside those six subjects, V2 and Amendments 001, 002 and 003
+     remain unchanged and authoritative according to their existing
+     precedence rules.
+
+----------------------------------------------------------------------
+12. NEW36 SAFETY STATEMENT
+----------------------------------------------------------------------
+
+12.1 This Amendment was drafted without access to NEW36 data, NEW36
+     results, OLD36, goldens, Stage1/Stage2/Stage3 artifacts or the
+     candidate implementation.
+
+12.2 No provision of this Amendment was selected, tuned or informed by
+     any NEW36 observation.
+
+12.3 This Amendment does not consume, spend or modify the one-shot
+     NEW36 policy. NEW36 SHALL NOT be accessed as part of drafting,
+     reviewing or freezing this Amendment.
+
+======================================================================
+END OF DRAFT AMENDMENT 004 — NOT FROZEN
+======================================================================
