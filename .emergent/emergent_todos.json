@@ -1,34 +1,6 @@
 [
   {
-    "content": "PRE-RUN GATE: verify HEAD, SHA256s, frozen sources, no existing artifacts",
+    "content": "§13 Final Report",
     "status": "completed"
-  },
-  {
-    "content": "ENVIRONMENT PROVENANCE: record Python/NumPy versions",
-    "status": "completed"
-  },
-  {
-    "content": "SAFETY GATE: verify NEW36 firewall, sessions, assets",
-    "status": "completed"
-  },
-  {
-    "content": "SINGLE STAGE3 INVOCATION: run_stage3_diagnostics once, report exceptions if any",
-    "status": "completed"
-  },
-  {
-    "content": "POST-RUN VERIFICATION: row counts, schema, manifest fields",
-    "status": "completed"
-  },
-  {
-    "content": "POST-RUN SOURCE INTEGRITY: re-verify HEAD and SHAs unchanged",
-    "status": "completed"
-  },
-  {
-    "content": "CREATE AUDIT BUNDLE + SELF-CHECK: zip 5 files, verify",
-    "status": "completed"
-  },
-  {
-    "content": "OUTPUT REQUIRED REPORT",
-    "status": "in_progress"
   }
 ]
