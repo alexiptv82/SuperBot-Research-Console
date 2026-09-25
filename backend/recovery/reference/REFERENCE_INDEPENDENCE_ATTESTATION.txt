@@ -1,0 +1,140 @@
+SUPERBOT V1.2 - NEW36 VALIDATION PROTOCOL V2 - INDEPENDENT REFERENCE
+REFERENCE_INDEPENDENCE_ATTESTATION
+implementation_role=REFERENCE
+normative_chain=V1_2_NEW36_VALIDATION_PROTOCOL_V2 + AMENDMENT_001..AMENDMENT_006
+
+================================================================
+1. SCOPE OF THIS ATTESTATION
+================================================================
+This attestation covers exactly three files:
+  backend/recovery/reference/v1_2_reference.py
+  backend/recovery/reference/tests/test_v1_2_reference.py
+  backend/recovery/reference/REFERENCE_INDEPENDENCE_ATTESTATION.txt
+
+================================================================
+2. AUTHORING INPUTS (CLEAN ROOM)
+================================================================
+The Reference was authored clean-room from the supplied A006 pack only.
+No repository checkout, no network resource and no other file was used.
+
+authoring_cloud_pack=SUPERBOT_V1_2_REFERENCE_AUTHORING_A006_CLOUD_PACK.zip
+authoring_cloud_pack_sha256=6aed984fcf65716348016f482aac3eb84a5b680ea2b030a0ec1a97b8014d8da5
+reference_input_pack=SUPERBOT_V1_2_REFERENCE_INPUT_PACK_A006.zip
+reference_input_pack_size_bytes=72003
+reference_input_pack_sha256=7896146dce40f76ba3570cc93321d5822a61c03389d152914cbe9d2e4d79f33f
+authoring_prompt_sha256=75996dd99830e542eacddc8deb1ad209f5dd658778a9144f0051ecdf39a7ded4
+
+input_pack_members_read (sha256):
+  V1_2_NEW36_VALIDATION_PROTOCOL_V2.txt                 5ed8a8b12726d395d25262dc3e4073250be3de94f3d62e64e99167921380ef95
+  V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_001.txt   e64f1198e3f97f975d1f0f8ec7183b1f0c83786429e98cbd66819d98f640f0bf
+  V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_002.txt   9a335589a44df68de56804bce09d122308f01ba95403bcb10a764c0b3461df57
+  V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_003.txt   cee61f2ea2b5d592deddb0fa6d2215c77039c365006ecb0bc7caf1d32075bea7
+  V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_004.txt   62830b779ed77cabc6afdc0ac8cea4b9013871feee65b03aa73d7757c88197b4
+  V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_005.txt   0c2dc05bc37fc392f67b45fd8f7e3576b49be9d764ffca4be0679db22b8d2a00
+  V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_006.txt   a8610b5dc3328c164bceb91921ee9a658bf2721cb1b0384e66b6289255f910b7
+  V1_2_CANDIDATE_SPEC.txt (frozen normative text)       aed67b5ec9ae1b710ec3d96e1fcc2e15bd9c30fdd60e80cc68553d8fc3b597ca
+  backend/recovery/engine.py (allowlisted symbols only) abedee399c272eff858b109fb448cbda3ad3a49e40be4ba3f486650e3151a3e8
+  backend/checkpoint_registry.py (session identity only) f5258876c624f213274d262baa73d80e5a7772f3d11dc73aa9a83471aa1f1dbf
+  REFERENCE_INPUT_MANIFEST.txt                          d3b7181cfacfd637070d230559d165a38fa3dd77300e0764feb5e6f80d8f4c6b
+
+All ten non-manifest members matched REFERENCE_INPUT_MANIFEST.txt before use.
+
+================================================================
+3. INDEPENDENCE STATEMENTS
+================================================================
+candidate_implementation_code_read=NO
+candidate_implementation_code_used=NO
+candidate_tests_read=NO
+candidate_outputs_read=NO
+historical_stage_or_diagnostic_modules_read=NO
+preflight_or_harness_modules_read=NO
+prior_reference_implementation_read=NO
+new36_quantitative_data_read=NO
+old36_quantitative_content_read=NO
+golden_artifacts_read=NO
+reference_design_rationale_from_candidate=NONE
+
+The only descriptions of V1.2 behaviour used were the normative texts of
+the frozen protocol chain and the frozen V1_2_CANDIDATE_SPEC.txt, both of
+which the V2 independence contract (V2 section 11) explicitly permits.
+
+================================================================
+4. ENGINE ACCESS (A001 section A10)
+================================================================
+backend/recovery/engine.py was inspected only at the definitions of the
+A001-allowlisted symbols. At run time the Reference loads engine.py by
+path only after verifying its raw-byte SHA256 equals the frozen
+ENGINE_SHA256 (fail-closed on drift) and takes from it exactly:
+
+  GRID_MS
+  FEATURE_MAP
+  SIMPLE_FEATURES
+  QUANTILES
+  build_canonical_grid
+  _quality_admissible_mask
+  _rank_signed_uniform
+  _quantile_type7
+  _build_forward_return_array
+  _greedy_overlap_filter
+
+All ten are members of the A001 allowlist. HORIZONS_SIMPLE_MS and
+HORIZONS_COMPOSITE_MS are allowlisted but not used. No prohibited routine
+(reconstruct_block, _compute_simple_feature, _compute_derived_composite,
+_compute_gap_composite, _compute_leader1000_extofi, aggregate_blocks,
+aggregate_dispersion_states) and no other engine symbol is imported,
+called or reimplemented by copying. B1 (strict >) is implemented
+independently; the consecutive-pair exact-spacing count (A001 A6), all
+V2 axis/variant masks, thresholds, fingerprints, CSV and manifest
+serialization, R3 coverage/loader rules and NNC-1..NNC-5 logic are
+independent Reference code.
+
+================================================================
+5. SESSION IDENTITY
+================================================================
+backend/checkpoint_registry.py is used only to obtain the frozen NEW36
+session identity (V2 section 11). No NEW36 session identifier is
+hard-coded in the Reference source or tests, and no session is special
+cased.
+
+================================================================
+6. NUMERICAL CONTENT
+================================================================
+No real-data numerical expected answer is embedded anywhere. The only
+hexadecimal/numeric literals are frozen protocol identities (protocol,
+candidate spec, engine and collector SHA256 values, inventory counts,
+quantiles, horizons, grid size) taken from the normative texts.
+
+================================================================
+7. TESTS
+================================================================
+tests_nature=SYNTHETIC_AND_STATIC_ONLY
+The test suite uses generated synthetic grids ("SYNxx_session"
+identifiers), temporary directories, temporary Git repositories,
+temporary SQLite files and in-memory ZIP archives. It discovers or loads
+no NEW36, OLD36 or golden artifact.
+authoring_environment_note= the authoring sandbox had no pyarrow and no
+pytest; the suite is stdlib unittest; the single real-pyarrow metadata
+test is skipped when pyarrow is absent and must be exercised in the
+frozen runtime environment (NNC-3 pins pyarrow 17.0.0).
+
+================================================================
+8. PROVENANCE (NNC-1 / NNC-2)
+================================================================
+The Reference implements the exact NNC-1 (runtime_source_commit) and
+NNC-2 (source_sha256) generation logic, exercised here only against
+temporary synthetic Git repositories.
+final_runtime_source_commit=NOT_ESTABLISHED
+final_source_sha256=NOT_ESTABLISHED
+Final NNC-1/NNC-2 provenance remains to be established after these three
+files are committed to the repository, at actual artifact generation
+time. This attestation claims no runtime_source_commit.
+
+================================================================
+9. EXECUTION COUNTS AT AUTHORING TIME
+================================================================
+candidate_execution_count=0
+reference_new36_execution_count=0
+new36_quantitative_access=NO
+old36_quantitative_access=NO
+
+END_OF_ATTESTATION
