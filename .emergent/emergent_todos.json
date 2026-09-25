@@ -1,18 +1,18 @@
 [
   {
-    "content": "HEAD MIGRATION GATE: Eseguire gates 1-5 (ancestry, delta, frozen identity, worktree, git tracking)",
-    "status": "completed"
-  },
-  {
-    "content": "Creare runtime copy con REQUIRED_HEAD aggiornato se transport_pipeline.py e' tracked",
-    "status": "completed"
-  },
-  {
-    "content": "Eseguire pipeline atomica con AUTHORIZED_HEAD e tutti i gate fail-closed",
+    "content": "SECTION 1-2: HEAD migration gate + frozen identity reverification",
     "status": "in_progress"
   },
   {
-    "content": "Produrre FINAL REPORT completo con HEAD-MIGRATION + transport results",
+    "content": "SECTION 3-4: Aggiornare runtime copy (log→/var/tmp) + final HEAD check pre-exec",
+    "status": "pending"
+  },
+  {
+    "content": "SECTION 5: Eseguire pipeline atomica da /var/tmp/",
+    "status": "pending"
+  },
+  {
+    "content": "SECTION 7-9: Post-exec HEAD check + FINAL REPORT completo",
     "status": "pending"
   }
 ]
