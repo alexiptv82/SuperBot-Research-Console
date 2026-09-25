@@ -1,6 +1,18 @@
 [
   {
-    "content": "§14 Final Verdict",
+    "content": "Aggiornare transport_pipeline.py con tutti i 10 gate fail-closed richiesti",
     "status": "completed"
+  },
+  {
+    "content": "Eseguire transport_pipeline.py in background (download ~2.9GB)",
+    "status": "in_progress"
+  },
+  {
+    "content": "Monitorare il log e verificare TRANSPORT_REASSEMBLY_GATE=PASS",
+    "status": "pending"
+  },
+  {
+    "content": "Produrre il FINAL REPORT completo (Section 14) con NEW36_MULTIPART_DELIVERY_GATE_COMPLETE",
+    "status": "pending"
   }
 ]
