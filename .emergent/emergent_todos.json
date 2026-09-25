@@ -1,18 +1,18 @@
 [
   {
-    "content": "Aggiornare transport_pipeline.py con tutti i 10 gate fail-closed richiesti",
+    "content": "HEAD MIGRATION GATE: Eseguire gates 1-5 (ancestry, delta, frozen identity, worktree, git tracking)",
     "status": "completed"
   },
   {
-    "content": "Eseguire transport_pipeline.py in background (download ~2.9GB)",
+    "content": "Creare runtime copy con REQUIRED_HEAD aggiornato se transport_pipeline.py e' tracked",
+    "status": "completed"
+  },
+  {
+    "content": "Eseguire pipeline atomica con AUTHORIZED_HEAD e tutti i gate fail-closed",
     "status": "in_progress"
   },
   {
-    "content": "Monitorare il log e verificare TRANSPORT_REASSEMBLY_GATE=PASS",
-    "status": "pending"
-  },
-  {
-    "content": "Produrre il FINAL REPORT completo (Section 14) con NEW36_MULTIPART_DELIVERY_GATE_COMPLETE",
+    "content": "Produrre FINAL REPORT completo con HEAD-MIGRATION + transport results",
     "status": "pending"
   }
 ]
