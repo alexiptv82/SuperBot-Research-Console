@@ -383,29 +383,6 @@ def assert_hb_i11(b0_accepted_n: int, b1_accepted_n: int) -> None:
             f"B0.accepted_n={b0_accepted_n}"
         )
 
-
-def assert_hb_i12(
-    exact_spacing_pair_n_value: int,
-    b0_accepted: np.ndarray,
-    b1_accepted: np.ndarray,
-) -> None:
-    """I_HB_I12: if exact_spacing_pair_n == 0 then B0 and B1 accepted masks
-    are element-wise identical.
-    """
-    if int(exact_spacing_pair_n_value) != 0:
-        return
-    if b0_accepted.shape != b1_accepted.shape:
-        raise AssertionError(
-            "I_HB_I12 FAIL: esp=0 but B0/B1 shape mismatch "
-            f"{b0_accepted.shape} vs {b1_accepted.shape}"
-        )
-    if not bool(np.array_equal(b0_accepted, b1_accepted)):
-        diffs = int(np.sum(b0_accepted != b1_accepted))
-        raise AssertionError(
-            f"I_HB_I12 FAIL: esp=0 but B0 and B1 differ in {diffs} positions"
-        )
-
-
 __all__ = [
     "CANDIDATE_VERSION",
     "HZ_VARIANT", "HG_VARIANT", "HC_VARIANT", "HB_VARIANT",
@@ -422,5 +399,5 @@ __all__ = [
     "spacing_steps_for_horizon",
     "b0_greedy_filter", "b1_diagnostic_filter",
     "exact_spacing_pair_n",
-    "assert_hb_i11", "assert_hb_i12",
+    "assert_hb_i11",
 ]

@@ -1092,25 +1092,23 @@ def test_hb_exact_spacing_pair_n_multiple():
     assert result == 3
 
 
-def test_hb_esp_zero_implies_b0_b1_identical():
-    """I12: if exact_spacing_pair_n==0, B0 and B1 must have identical results."""
-    # Positions with no exact spacing pairs -> B0 and B1 must give same result
-    # Use spacing=10, positions=[0, 7, 15, 24] (no exact 10-gaps)
-    positions = np.array([0, 7, 15, 24], dtype=np.int64)
+def test_hb_a007_esp_zero_b0_b1_diverge():
+    """A007 regression counterexample: positions=[0,5,10], spacing=10.
+    Candidate-spec exact_spacing_pair_n==0 (consecutive pairs only), yet
+    B0 accepts [0,10] and B1 accepts [0] — they differ, withdrawing I12 enforcement.
+    """
+    import recovery.v1_2_candidate as _cand
+    positions = np.array([0, 5, 10], dtype=np.int64)
     spacing = 10
-    directions = np.array([1.0, -1.0, 1.0, -1.0])
-    returns = np.array([5.0, -3.0, 4.0, -2.0])
-
-    esp = exact_spacing_pair_n(positions, spacing)
+    esp = _cand.exact_spacing_pair_n(positions, spacing)
     assert esp == 0
-
     b0_mask = _greedy_overlap_filter(positions, spacing)
     b1_mask = _greedy_overlap_filter_strict(positions, spacing)
-
-    # When esp=0, B0 and B1 must produce identical accepted sets
-    assert np.array_equal(b0_mask, b1_mask), (
-        f"I12: esp=0 but B0_mask={b0_mask} != B1_mask={b1_mask}"
-    )
+    b0_accepted = list(positions[b0_mask])
+    b1_accepted = list(positions[b1_mask])
+    assert b0_accepted == [0, 10]
+    assert b1_accepted == [0]
+    assert not np.array_equal(b0_mask, b1_mask)
 
 
 def test_hb_b1_accepted_n_le_b0():

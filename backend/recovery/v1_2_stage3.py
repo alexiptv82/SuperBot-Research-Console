@@ -1351,20 +1351,6 @@ def _run_invariants(rows: list[dict]) -> None:  # noqa: C901
                     f"> B0.accepted_n={pair['B0']['accepted_n']} for key={key!r}"
                 )
 
-    # I12: if exact_spacing_pair_n == 0 -> B0 and B1 identical results
-    for key, pair in hb_by_key.items():
-        if "B0" in pair and "B1" in pair:
-            esp = pair["B0"]["exact_spacing_pair_n"]
-            if esp == 0:
-                b0, b1 = pair["B0"], pair["B1"]
-                for field in ("accepted_n", "accepted_positions_sha256",
-                              "mean_signed_bps", "hit_rate", "mean_abs_move"):
-                    if b0[field] != b1[field]:
-                        raise AssertionError(
-                            f"I12 FAIL: esp=0 but B0.{field}={b0[field]!r} "
-                            f"!= B1.{field}={b1[field]!r} for key={key!r}"
-                        )
-
     # I13: ZERO_FREE_CONTROL implies zero_n == 0
     for r in hz_rows:
         if r["hz_discrimination_class"] == _ZERO_FREE_CONTROL:

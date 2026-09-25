@@ -266,19 +266,20 @@ class TestHBFilters:
         with pytest.raises(AssertionError, match="I_HB_I11 FAIL"):
             cand.assert_hb_i11(b0_accepted_n=3, b1_accepted_n=5)
 
-    def test_i12_holds_when_esp_zero(self):
-        positions = np.array([0, 15, 30], dtype=np.int64)  # gaps 15,15
+    def test_a007_esp_zero_b0_b1_diverge(self):
+        """A007 regression counterexample: positions=[0,5,10], spacing=10 -> esp==0,
+        B0 accepts [0,10], B1 accepts [0], they differ — withdrawing I12 enforcement.
+        """
+        positions = np.array([0, 5, 10], dtype=np.int64)
         s = 10
         assert cand.exact_spacing_pair_n(positions, s) == 0
         b0 = cand.b0_greedy_filter(positions, s)
         b1 = cand.b1_diagnostic_filter(positions, s)
-        cand.assert_hb_i12(0, b0, b1)  # must not raise
-
-    def test_i12_violation_detected(self):
-        b0 = np.array([True, True])
-        b1 = np.array([True, False])
-        with pytest.raises(AssertionError, match="I_HB_I12 FAIL"):
-            cand.assert_hb_i12(0, b0, b1)
+        b0_accepted = list(positions[b0])
+        b1_accepted = list(positions[b1])
+        assert b0_accepted == [0, 10]
+        assert b1_accepted == [0]
+        assert not np.array_equal(b0, b1)
 
     def test_hb_discriminating_cell_logic(self):
         # Non-discriminating: esp=0 (no equality pairs)
