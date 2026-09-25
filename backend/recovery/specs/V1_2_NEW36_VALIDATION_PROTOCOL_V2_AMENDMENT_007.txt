@@ -1,0 +1,328 @@
+SUPERBOT V1.2 — NEW36 VALIDATION PROTOCOL V2 — AMENDMENT 007
+DOCUMENT: V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_007_DRAFT.txt
+
+STATUS: DRAFT — NOT FROZEN
+
+This document has no frozen identity. It SHALL NOT be cited as frozen,
+and no SHA256 value SHALL be attributed to it as a frozen identity,
+until it has passed independent determinacy audit and has been frozen
+by the separate freeze procedure.
+
+======================================================================
+0. KEY WORDS AND DOCUMENT CONTROL
+======================================================================
+
+0.1 "MUST", "MUST NOT", "SHALL", "SHALL NOT" and "MAY" are normative.
+    "Candidate", "Reference", "comparator", "validator" and "S2" have
+    their V2 meanings.
+
+0.2 Parent protocol:
+      V1_2_NEW36_VALIDATION_PROTOCOL_V2
+      SIZE_BYTES=19392
+      SHA256=5ed8a8b12726d395d25262dc3e4073250be3de94f3d62e64e99167921380ef95
+
+0.3 Candidate specification:
+      V1_2_CANDIDATE_SPEC.txt
+      SIZE_BYTES=6738
+      SHA256=aed67b5ec9ae1b710ec3d96e1fcc2e15bd9c30fdd60e80cc68553d8fc3b597ca
+
+0.4 Prior amendments (identities as recorded in
+    REFERENCE_INPUT_MANIFEST.txt of the A006 Reference Input Pack;
+    unchanged by A007):
+      A001 SIZE_BYTES=13858
+           SHA256=e64f1198e3f97f975d1f0f8ec7183b1f0c83786429e98cbd66819d98f640f0bf
+      A002 SIZE_BYTES=7236
+           SHA256=9a335589a44df68de56804bce09d122308f01ba95403bcb10a764c0b3461df57
+      A003 SIZE_BYTES=5209
+           SHA256=cee61f2ea2b5d592deddb0fa6d2215c77039c365006ecb0bc7caf1d32075bea7
+      A004 SIZE_BYTES=21467
+           SHA256=62830b779ed77cabc6afdc0ac8cea4b9013871feee65b03aa73d7757c88197b4
+      A005 SIZE_BYTES=29853
+           SHA256=0c2dc05bc37fc392f67b45fd8f7e3576b49be9d764ffca4be0679db22b8d2a00
+
+0.5 Frozen A006 identity:
+      SIZE_BYTES=61911
+      SHA256=a8610b5dc3328c164bceb91921ee9a658bf2721cb1b0384e66b6289255f910b7
+    A006 freeze commit, as supplied by the workflow:
+      b80410d9802219d9c3a67163b72d84ff90c18a0e
+
+0.6 Audit input:
+      SUPERBOT_V1_2_REFERENCE_INPUT_PACK_A006.zip
+      SIZE_BYTES=72003
+      SHA256=7896146dce40f76ba3570cc93321d5822a61c03389d152914cbe9d2e4d79f33f
+      MEMBER_COUNT=11; all 10 non-manifest members matched
+      REFERENCE_INPUT_MANIFEST.txt by size and SHA256.
+
+======================================================================
+1. PURPOSE AND SCOPE
+======================================================================
+
+1.1 Clean-room Reference authoring exposed a possible logical
+    inconsistency between frozen V2 invariants. A targeted consistency
+    audit (Section 2) confirmed that V2 A20_I12, and the equivalent
+    Candidate-specification invariant I_HB_I12, are NOT logically
+    entailed by the frozen B0, B1 and exact-spacing definitions, and
+    can be violated by implementations that conform exactly to those
+    definitions.
+
+1.2 A007 does exactly one thing: it withdraws A20_I12 and I_HB_I12 as
+    requirements for this V2 validation. It changes nothing else.
+
+======================================================================
+2. FINDING (NON-QUANTITATIVE PROTOCOL REASONING)
+======================================================================
+
+2.1 Clauses audited (verbatim from V2 Section 7 and A001 Section A6):
+
+    A14_B0= greedy earliest-first over ascending grid_pos; first event
+      accepted; subsequent event accepted iff
+      pos-last_accepted>=spacing_steps.
+
+    A15_B1_CONTROL= B1 is diagnostic only and uses strict
+      pos-last_accepted>spacing_steps. B1 can never replace B0.
+
+    A20_I12= if exact_spacing_pair_n==0 then paired B0 and B1 accepted
+      masks, accepted_n and accepted_positions_sha256 are identical.
+
+    A21_EXACT_SPACING_DEFINITION= exact_spacing_pair_n uses consecutive
+      pairs in the sorted pre-overlap position array only.
+
+    A001 Section A6:
+      exact_spacing_pair_n = count of consecutive pairs in the sorted
+      pre-overlap positions array whose difference equals
+      spacing_steps.
+
+    Candidate specification Section 7:
+      I_HB_I12=if exact_spacing_pair_n==0 then B0 and B1 identical
+      per_paired_case
+
+2.2 Synthetic counterexample (synthetic integers only; not derived
+    from, and not representative of, any real dataset):
+
+      pre_overlap_positions = [0, 5, 10]
+      spacing_steps         = 10
+
+    exact_spacing_pair_n under A21 / A001 Section A6:
+      consecutive differences: 5-0=5, 10-5=5; neither equals 10
+      exact_spacing_pair_n = 0
+
+    B0 under A14 (>=):
+      0  : first event, accepted; last_accepted=0
+      5  : 5-0=5,  5>=10 false  -> rejected
+      10 : 10-0=10, 10>=10 true -> accepted
+      B0 accepted positions = [0, 10]; accepted_n = 2
+
+    B1 under A15 (>):
+      0  : first event, accepted; last_accepted=0
+      5  : 5-0=5,  5>10 false   -> rejected
+      10 : 10-0=10, 10>10 false -> rejected
+      B1 accepted positions = [0]; accepted_n = 1
+
+    The premise of A20_I12 holds (exact_spacing_pair_n==0), yet the
+    accepted masks differ, accepted_n differs (2 vs 1), and the
+    accepted_positions_sha256 values differ (the fingerprinted byte
+    strings are the int64 encodings of two and of one position
+    respectively, hence distinct inputs). A20_I12 is violated while B0
+    and B1 each obey their frozen algorithms exactly.
+
+2.3 General reason. B0 and B1 process the same positions in the same
+    order and differ only when a comparison evaluates
+    pos-last_accepted == spacing_steps (the only case where >= and >
+    disagree). last_accepted need not be the immediate predecessor of
+    pos in the pre-overlap array, because intermediate positions may
+    have been rejected. The consecutive-pair count of A21 therefore
+    does not observe every difference the greedy filters compare, and
+    exact_spacing_pair_n==0 does not exclude a B0/B1 divergence.
+    A20_I12 is not entailed by A14+A15+A21; the counterexample of 2.2
+    proves non-entailment.
+
+2.4 No earlier amendment resolves the inconsistency:
+      A001 Section A6 confirms the consecutive-pair definition and
+        Section A12 states S2 candidate invariants are unchanged;
+      A002 Section B7, A003 Section C4, A004 Section 10.2 and A005
+        Section 5.2 each declare overlap semantics, the exact-spacing
+        consecutive-pair rule and/or the S2 invariant list unchanged;
+      A006 addresses only AMB-R3, provenance, runtime environment,
+        session_id uniqueness and manifest JSON duplicate members.
+    No clause of A001-A006 overrides, repairs, narrows or otherwise
+    resolves A20_I12 or I_HB_I12.
+
+2.5 A19_I11 (B1.accepted_n<=B0.accepted_n) is not affected by this
+    finding: every B1 accepted set has all successive gaps
+    >spacing_steps, hence >=spacing_steps, so it is a feasible set
+    under the B0 constraint, and the greedy earliest-first B0 selection
+    has maximum cardinality among such sets. A19_I11 remains entailed
+    and remains in force.
+
+======================================================================
+3. MATERIALITY
+======================================================================
+
+3.1 V2 Section 7 states: all_A01_through_A30_are_fail_closed=true;
+    any_A01_through_A30_violation=S2_FAIL.
+
+3.2 V2 Section 15 requires S2_PASS for PASS; otherwise, after a valid
+    application execution, the verdict is V1_2_NEW36_PROTOCOL_FAIL.
+
+3.3 Therefore A20_I12 can produce S2_FAIL, and a protocol FAIL, for a
+    Candidate that implements B0 and B1 exactly as frozen. The defect
+    can change the effective validation PASS/FAIL outcome and is
+    material to S2.
+
+3.4 V2 Section 13 forbids any invariant or protocol change once a NEW36
+    application invocation begins. The defect must therefore be closed
+    before any NEW36 application invocation, and its closure MUST NOT
+    depend on inspecting NEW36 to learn whether the pattern of 2.2
+    occurs there.
+
+======================================================================
+4. NORMATIVE CLAUSES
+======================================================================
+
+A007.1 Withdrawal of A20_I12 (R1).
+  V2 Section 7 clause A20_I12 is WITHDRAWN as an S2 invariant for this
+  V2 validation. A20_I12 MUST NOT be enforced by the Candidate, the
+  Reference, the comparator, the validator or any S2 check, and its
+  premise or conclusion SHALL NOT produce S2_FAIL. The S2 closed
+  invariant list for this V2 validation is A01-A19 and A21-A30;
+  remaining clauses keep their V2 identifiers and are not renumbered.
+  V2 "all_A01_through_A30_are_fail_closed=true" and
+  "any_A01_through_A30_violation=S2_FAIL" apply to those remaining
+  clauses only.
+
+A007.2 Withdrawal of I_HB_I12 (R2).
+  Candidate specification Section 7 invariant I_HB_I12 is WITHDRAWN for
+  this V2 validation. It MUST NOT be treated as an implementation
+  conformance requirement for the Candidate or the Reference.
+
+A007.3 A14_B0 preserved (R3).
+  A14_B0 is unchanged. B0 remains greedy earliest-first over ascending
+  grid_pos; the first event is accepted; a subsequent event is accepted
+  iff pos-last_accepted>=spacing_steps. HB=B0 is unchanged.
+
+A007.4 A15_B1_CONTROL preserved (R4).
+  A15_B1_CONTROL is unchanged. B1 remains diagnostic only, uses strict
+  pos-last_accepted>spacing_steps, and can never replace B0.
+
+A007.5 A21 and A001 Section A6 preserved (R5).
+  A21_EXACT_SPACING_DEFINITION and A001 Section A6 are unchanged.
+  exact_spacing_pair_n remains the count of consecutive pairs in the
+  sorted pre-overlap positions array whose difference equals
+  spacing_steps. It is NOT redefined over all unordered pairs; the
+  historical Stage3 all-unordered-pairs count remains non-normative as
+  stated in A001 Section A6. exact_spacing_pair_n remains an emitted
+  field with unchanged definition, type and NULL/COMPUTED status. No
+  output field is added, removed or changed; the 25-field row schema is
+  unchanged.
+
+A007.6 A19_I11 preserved (R6).
+  A19_I11 (paired B1.accepted_n<=B0.accepted_n) remains an S2 invariant
+  and remains fail-closed, unchanged.
+
+A007.7 No replacement (R7).
+  A007 introduces no replacement for A20_I12 and no replacement for
+  I_HB_I12. No new diagnostic, no new predicate, no new S2 check and no
+  new output field is introduced, explicitly or implicitly.
+
+A007.8 No other change (R8).
+  A007 makes no change to: Candidate or Reference quantitative
+  algorithms; thresholds or threshold domains; event selection or
+  event eligibility; directions; spacing; overlap filtering;
+  metrics; CSV or manifest serialization; the manifest schema or
+  manifest contract; the accepted-position fingerprint; AMB-R3
+  (A006 Section 4); provenance and runtime gates (A006 Sections 5-8A);
+  the NEW36 inventory; S1; S3; S4; S5; the one-shot contract; the
+  claim boundary.
+
+A007.9 Precedence (R9).
+  Where V2 Section 7 requires A20_I12, or the Candidate specification
+  requires I_HB_I12, A007 supersedes only those requirements, for this
+  V2 validation. All other clauses of V2, A001, A002, A003, A004, A005,
+  A006 and the Candidate specification remain in force with their
+  existing precedence. A007 creates no general or residual precedence.
+
+======================================================================
+5. CHOICE ACCOUNTING
+======================================================================
+
+5.1 A007 introduces exactly ONE new normative choice:
+
+      WITHDRAW_FALSE_A20_I12_S2_INVARIANT
+
+    Classification: VALIDATION / CONSISTENCY ONLY.
+    It is not scientific. It is not quantitative. It does not change
+    any generated row value.
+
+5.2 A007.2 (I_HB_I12) is the Candidate-specification counterpart of the
+    same invariant and is part of the same choice. A007.3-A007.9 are
+    preservation and scope clauses and are not choices. The synthetic
+    example of 2.2 and the reasoning of 2.3-2.5 and Section 3 are
+    non-normative and contain no choice.
+
+5.3 Counts:
+
+      A007_NEW_NORMATIVE_CHOICES_COUNT=1
+      A007_NEW_SCIENTIFIC_CHOICES_COUNT=0
+      A007_NEW_QUANTITATIVE_CHOICES_COUNT=0
+
+======================================================================
+6. SAFETY AND ONE-SHOT STATEMENT
+======================================================================
+
+6.1 A007 was drafted solely from the A006 Reference Input Pack
+    (V2, A001-A006, Candidate specification). No NEW36 quantitative
+    content, no OLD36 quantitative content, no golden numerical
+    content, no Candidate output and no Reference output was accessed.
+    Neither Candidate nor Reference was executed. The only numbers used
+    are the synthetic integers of 2.2.
+
+6.2 No provision of A007 was selected, tuned or informed by any NEW36
+    or OLD36 observation.
+
+6.3 A007 does not authorize a retry of any already-consumed NEW36
+    invocation, and does not modify the V2 one-shot contract. At
+    drafting time the workflow reports zero NEW36 Candidate and zero
+    NEW36 Reference application executions.
+
+6.4 A007 does not itself modify any source code, test, artifact,
+    Reference, comparator or preflight. It does not freeze itself.
+
+======================================================================
+7. SELF-AUDIT FLAGS
+======================================================================
+
+A20_I12_LOGICALLY_VALID=NO
+A20_I12_CAN_FALSE_FAIL_CONFORMING_IMPLEMENTATIONS=YES
+A20_I12_MATERIAL_TO_S2=YES
+A20_I12_MUST_BE_CLOSED_PRE_NEW36=YES
+A001_TO_A006_RESOLVE_A20_I12=NO
+
+A20_I12_WITHDRAWN=YES
+I_HB_I12_WITHDRAWN=YES
+
+A14_B0_CHANGED=NO
+A15_B1_CHANGED=NO
+A21_EXACT_SPACING_CHANGED=NO
+EXACT_SPACING_PAIR_N_OUTPUT_CHANGED=NO
+ROW_SCHEMA_CHANGED=NO
+QUANTITATIVE_ALGORITHM_CHANGED=NO
+REPLACEMENT_INVARIANT_INTRODUCED=NO
+
+A19_I11_PRESERVED=YES
+
+A007_NEW_NORMATIVE_CHOICES_COUNT=1
+A007_NEW_SCIENTIFIC_CHOICES_COUNT=0
+A007_NEW_QUANTITATIVE_CHOICES_COUNT=0
+
+NEW36_QUANTITATIVE_ACCESS=NO
+OLD36_QUANTITATIVE_ACCESS=NO
+GOLDEN_NUMERICAL_CONTENT_READ=NO
+CANDIDATE_OUTPUT_READ=NO
+REFERENCE_OUTPUT_READ=NO
+
+CANDIDATE_EXECUTION_COUNT=0
+REFERENCE_NEW36_EXECUTION_COUNT=0
+
+A007_STATUS=DRAFT_NOT_FROZEN
+
+END OF DRAFT AMENDMENT 007 — NOT FROZEN
