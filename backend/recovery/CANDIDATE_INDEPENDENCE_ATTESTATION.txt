@@ -1,0 +1,121 @@
+CANDIDATE_INDEPENDENCE_ATTESTATION.txt
+A008 DRAFT4 §5.3 — hash-bound member of ATTESTATION (§3.3.2)
+======================================================================
+
+1. AUTHOR IDENTITY / ROLE
+   Author: Neo (AI Full-Stack Engineering agent), acting in this session
+   EXCLUSIVELY as the Candidate-side author for A008 DRAFT4 Section 16
+   STEP 4 (Execution Layer implementation ONLY). No other role was
+   exercised. No human co-author reviewed or edited the Candidate source
+   prior to this attestation being written.
+
+2. EXHAUSTIVE LIST OF FILES READ DURING AUTHORING
+   backend/recovery/specs/V1_2_NEW36_VALIDATION_PROTOCOL_V2.txt
+   backend/recovery/specs/V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_006.txt
+   backend/recovery/specs/V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_008_DRAFT4.txt
+   backend/recovery/v1_2_candidate.py
+   backend/recovery/v1_2_stage3.py
+   backend/recovery/v1_2_diagnostics.py
+   backend/recovery/engine.py
+   backend/recovery/harness.py               (contracts A004 §5-6, A005 R2,
+                                                A006 §4 ONLY; no loader called)
+   backend/recovery/allowlist.py
+   backend/frozen_engine.py
+   backend/checkpoint_registry.py
+   backend/parquet_validator.py
+   backend/recovery/v1_2_preflight.py
+   backend/recovery/__init__.py, backend/recovery/validation.py (directory
+     listing / import-surface orientation only; no symbol consumed)
+   Not read in full: backend/recovery/v1_2_acceptance.py (glob-listed only;
+     no symbol from it is imported by the Candidate application or the
+     Executors in this Step-4 implementation).
+
+3. NO REFERENCE PATH WAS CONSULTED
+   No file, module, test, attestation or output under
+   backend/recovery/reference/ was read, imported, executed, diffed,
+   opened or otherwise consulted at any point during authoring or
+   synthetic testing of:
+     backend/recovery/v1_2_new36_validators.py
+     backend/recovery/v1_2_new36_candidate_app.py
+     backend/recovery/v1_2_new36_run.py
+     backend/tests/test_v1_2_new36_validators.py
+     backend/tests/test_v1_2_new36_candidate_app.py
+     backend/tests/test_v1_2_new36_run.py
+   REFERENCE_INDEPENDENCE_ATTESTATION.txt was NOT read and was NOT used
+   as an authoring input, per A008 §5.2.
+
+4. EXACT SYMBOLS IMPORTED FROM engine.py, v1_2_stage3.py,
+   v1_2_diagnostics.py, v1_2_candidate.py BY THE NEW MODULES
+   (each confirmed within the A008 §4.7.2 exhaustive authorization list):
+
+   engine.py:
+     GRID_MS
+     _build_forward_return_array
+     _quantile_type7
+     (engine.build_canonical_grid and engine._quality_admissible_mask are
+      consumed transitively, ONLY via v1_2_diagnostics._prepare_block,
+      never called directly by the new modules)
+
+   v1_2_candidate.py:
+     tz_threshold, g1_pre_overlap_mask, g1_parent_gate_mask,
+     assert_g1_parent_subset, g1_direction, c1_pre_overlap_mask,
+     c1_gap_parent_mask, assert_c1_gap_subset, c1_direction,
+     spacing_steps_for_horizon, b0_greedy_filter, b1_diagnostic_filter,
+     exact_spacing_pair_n, assert_hb_i11
+
+   v1_2_diagnostics.py:
+     _prepare_block, _finite_mean_abs
+     (fingerprint_positions is available and authorized; the new modules
+      use the equivalent v1_2_new36_validators.sha256_positions, which
+      implements the identical V2 fingerprint encoding independently for
+      Candidate-side evidence use, per A008 §4.7.2 "either may be used")
+
+   v1_2_stage3.py (sub-operations only, exactly as authorized):
+     _hz_block                      (all HZ rows, F-3/F-5 corrected)
+     _hg_block                      (variant_id == "G0" ROWS ONLY consumed;
+                                      G1 rows from this call are discarded)
+     _hc_block                      (variant_id "C0" AND "C1" rows consumed)
+     _hb_extract_pre_overlap        (per-family HB pre-overlap arrays)
+     _compute_event_metrics         (mean_signed_bps / hit_rate ONLY)
+     STAGE3_HZ_FEATURES, STAGE3_HB_FAMILIES (feature-order constants;
+       drift-asserted equal to the Appendix-B literal at import time)
+
+   FORBIDDEN symbols confirmed NEVER imported or called by the new
+   modules: v1_2_stage3.exact_spacing_pair_n (module-local, unordered
+   pairs), v1_2_stage3._hb_block, any v1_2_stage3 row's mean_abs_move
+   field (F-4; always overwritten before serialization), any
+   v1_2_stage3 row's diagnostic_version field (F-5; never emitted), any
+   v1_2_stage3._hg_block row with variant_id "G1" (F-2; recomposed from
+   first principles using the CANDIDATE-authorized functions listed
+   above), any Stage3 (fair_gap_reversion, TZ) calculated_threshold (F-3;
+   overwritten with the T0 threshold before serialization).
+
+5. NO NEW36 QUANTITATIVE CONTENT WAS READ
+   No NEW36 ZIP archive, parquet part, row, byte range or derived
+   quantitative value was opened, read, decoded or otherwise accessed
+   during the authoring of this Section 16 STEP 4 deliverable or during
+   any synthetic test executed against it. All synthetic tests use
+   programmatically generated, clearly-labelled non-NEW36 numeric
+   fixtures; the 12 real frozen NEW36 session identifiers are used ONLY,
+   where necessary, to exercise inventory-enforcement logic (A008
+   §13.2), always paired with synthetic (non-NEW36) ZIP byte content.
+
+6. WITHDRAWN INVARIANT
+   A20_I12/I_HB_I12 NOT IMPLEMENTED (A007)
+
+7. REFERENCE LAUNCH CONTRACT PROVENANCE
+   The Reference external launch contract implemented in
+   backend/recovery/v1_2_new36_run.py (Orchestrator step 7,
+   `step7_reference_generate`) was taken EXCLUSIVELY from A008 DRAFT4
+   §9.8 (argv-only invocation; minimal environment; read-only DB path;
+   shared environment record path; session-zip-map path; two fresh
+   output paths). backend/recovery/reference/v1_2_reference.py was NOT
+   read to construct this contract.
+
+======================================================================
+This file is a member of ATTESTATION (A008 §3.3.2) and is hash-bound: its
+own SHA256 (raw bytes) is recorded in the Candidate manifest's
+source_sha256 object under this file's repository-relative path, and its
+committed blob at the recorded runtime_source_commit (git HEAD) MUST
+byte-equal its working-tree content (A006 §6.5 predicate), verified by
+gate P-05 on every `preflight`/`generate` invocation.
