@@ -1,0 +1,1494 @@
+SUPERBOT V1.2 — NEW36 VALIDATION PROTOCOL V2 — AMENDMENT 008
+DOCUMENT: V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_008_DRAFT2.txt
+
+STATUS: DRAFT2 — NOT FROZEN
+
+This document has no frozen identity. It SHALL NOT be cited as frozen,
+and no SHA256 value SHALL be attributed to it as a frozen identity,
+until it has passed the targeted independent re-audit and has been
+frozen by the separate exact-byte freeze procedure (Section 16, step 3).
+
+CLASS: EXECUTION-CLOSURE AMENDMENT
+SCOPE: execution layer, provenance, gates, authorization, orchestration,
+       executors, supplemental evidence, testing.
+NOT IN SCOPE: any scientific, quantitative, threshold, event-selection,
+metric, canonical-schema, serialization, tolerance or inventory rule.
+
+DRAFT2 supersedes DRAFT1 as the text under audit. DRAFT1 is preserved
+byte-for-byte as audit evidence (Section 0.5) and is NOT normative.
+
+======================================================================
+0. KEY WORDS AND DOCUMENT CONTROL
+======================================================================
+
+0.1 "MUST", "MUST NOT", "SHALL", "SHALL NOT" and "MAY" are normative.
+    "Candidate", "Reference", "comparator", "validator", "S1", "S2",
+    "one-shot", "application invocation" have their V2 meanings.
+    "Candidate application" = backend/recovery/v1_2_new36_candidate_app.py
+    (Section 4). "Orchestrator" = backend/recovery/v1_2_new36_run.py
+    (Section 9). "Executors" = backend/recovery/v1_2_new36_validators.py
+    (Sections 8, 10, 11).
+
+0.2 Parent protocol:
+      V1_2_NEW36_VALIDATION_PROTOCOL_V2
+      SIZE_BYTES=19392
+      SHA256=5ed8a8b12726d395d25262dc3e4073250be3de94f3d62e64e99167921380ef95
+
+0.3 Candidate specification:
+      V1_2_CANDIDATE_SPEC.txt
+      SIZE_BYTES=6738
+      SHA256=aed67b5ec9ae1b710ec3d96e1fcc2e15bd9c30fdd60e80cc68553d8fc3b597ca
+
+0.4 Prior amendments (raw working-tree bytes; A001-A006 coincide with
+    A007 Section 0.4/0.5):
+      A001 SIZE_BYTES=13858 SHA256=e64f1198e3f97f975d1f0f8ec7183b1f0c83786429e98cbd66819d98f640f0bf
+      A002 SIZE_BYTES=7236  SHA256=9a335589a44df68de56804bce09d122308f01ba95403bcb10a764c0b3461df57
+      A003 SIZE_BYTES=5209  SHA256=cee61f2ea2b5d592deddb0fa6d2215c77039c365006ecb0bc7caf1d32075bea7
+      A004 SIZE_BYTES=21467 SHA256=62830b779ed77cabc6afdc0ac8cea4b9013871feee65b03aa73d7757c88197b4
+      A005 SIZE_BYTES=29853 SHA256=0c2dc05bc37fc392f67b45fd8f7e3576b49be9d764ffca4be0679db22b8d2a00
+      A006 SIZE_BYTES=61911 SHA256=a8610b5dc3328c164bceb91921ee9a658bf2721cb1b0384e66b6289255f910b7
+           freeze commit b80410d9802219d9c3a67163b72d84ff90c18a0e
+      A007 SIZE_BYTES=13971 SHA256=d33f9c66537e762f08d164bc791f31e3eb18fbc3a5e694507f9f436322ceaf10
+           freeze commit e7b7ea513cf438ef62681a9fc1a8aa5a54ea432c (Section 2)
+
+0.5 DRAFT1 audit evidence (NOT normative, preserved unchanged):
+      backend/recovery/specs/V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_008_DRAFT.txt
+      SIZE_BYTES=56185
+      SHA256=be62836d916c116c2b6a41e6c9146730f8d30729cd344e7df13bd2e00fd423cd
+    Independent audit verdict on DRAFT1: FAIL (blocking findings B-1..B-7,
+    advisories N-1..N-6). DRAFT2 remediates exactly those findings and
+    nothing else (Section 18.4).
+
+0.6 Frozen Reference identity (byte-exact; MUST remain byte-identical):
+      backend/recovery/reference/v1_2_reference.py
+        SIZE_BYTES=84763 SHA256=f608d69cae4ebf56b19732cb558b91860c64878ba351aef3de520eaf5347651b
+      backend/recovery/reference/tests/test_v1_2_reference.py
+        SIZE_BYTES=86102 SHA256=bdc72be42d93de4b41eaaf7e6596a43051b80332a51983b2a12311cd5b9c0373
+      backend/recovery/reference/REFERENCE_INDEPENDENCE_ATTESTATION.txt
+        SIZE_BYTES=7253  SHA256=23ef2bbe8795d6037297fc2d22204cf809a1926cb3aca4e2367f130ea4fcf46e
+
+0.7 Frozen engine / collector identities (V2 Section 2, unchanged):
+      ENGINE_SHA256=abedee399c272eff858b109fb448cbda3ad3a49e40be4ba3f486650e3151a3e8
+      COLLECTOR_SHA256=e924edc1b8348d9cc8e74a37eaa17e6bbc80116de29d2f7a00cd43444d1265a3
+
+0.8 Evidence basis and DISCLOSURE.
+    (a) A008 (DRAFT1 and DRAFT2) was drafted from: the frozen documents
+        of 0.2-0.4; static read-only inspection of the repository; read-
+        only metadata of the runtime database (session identifiers,
+        checkpoint hints, stored paths, byte sizes); filesystem stat().
+        No NEW36 session ZIP was opened. No NEW36 quantitative value, no
+        golden numerical content, no Candidate NEW36 output and no
+        Reference NEW36 output was read. Neither Candidate nor Reference
+        was executed.
+    (b) DISCLOSURE (audit finding B-5). During pre-application forensic
+        discovery the protocol author inspected the frozen Reference's
+        EXTERNAL EXECUTION INTERFACE (command-line subcommands, argument
+        names, the JSON shape of the environment record it consumes, the
+        JSON shape of the session-zip map it consumes, and its exclusive-
+        create output behaviour) for the sole purpose of establishing
+        interoperability of the shared orchestration layer with the
+        frozen Reference. That inspection concerned external invocation
+        only. No Reference quantitative implementation logic is
+        authorized as Candidate authoring input; no Reference source or
+        test may be consulted during Candidate/Executor/Orchestrator
+        implementation (Section 5). The interoperability shapes that
+        appear in this Amendment (Candidate CLI shape 4.2, shared
+        environment-record shape 6.3, session-zip-map shape 4.3(a),
+        Reference launch contract 9.8) are A008-INTRODUCED DEPLOYMENT
+        CONTRACTS, not inherited normative rules.
+
+======================================================================
+1. PURPOSE, SCOPE AND NON-NEGOTIABLE SCIENTIFIC FREEZE
+======================================================================
+
+1.1 Purpose. Pre-application forensic discovery established:
+      CANDIDATE_NEW36_ENTRYPOINT_STATUS=NOT_FOUND
+      NEW36_EXPECTED_INPUT_MODE=EXISTING_RAW_ZIP_STORE
+      REFERENCE_NEW36_DIRECT_FILESYSTEM_PATH_EXISTS=YES
+      CANDIDATE_NEW36_AUTHORIZED_READ_PATH_FOUND=NO
+      CANDIDATE_NNC3_IMPLEMENTATION_FOUND=NO
+      CANDIDATE_NNC4_IMPLEMENTATION_FOUND=NO
+      CANDIDATE_NNC5_MANIFEST_PARSER_FOUND=NO
+      S1_S2_COMPLETE_EXECUTOR_FOUND=NO
+      NEW_CANDIDATE_ENTRYPOINT_WOULD_BE_REQUIRED=YES
+    A008 closes ONLY these execution-layer contracts.
+
+1.2 Scientific freeze. A008 MUST NOT and does NOT alter any of:
+    HZ/HG/HC/HB definitions; T0/TZ domains; G0/G1; C0/C1; B0/B1;
+    thresholds and threshold domains; horizon definitions; quantiles;
+    forward-return semantics (A004 R-01); overlap semantics;
+    exact_spacing_pair_n semantics (V2 Section 4, A001 A6, A007.5);
+    gate_zero_n (A003 C2); mean_abs_move (A003 C1); metric formulas
+    (A004 R-04); event selection or eligibility; the canonical 25-field
+    row schema; the canonical row key; CSV serialization rules; S1
+    tolerance (<= 1e-12); S2 invariant semantics; the NEW36 inventory.
+
+1.3 A007 remains authoritative. A20_I12 and I_HB_I12 are withdrawn.
+    The S2 closed invariant list is A01-A19 and A21-A30. A19_I11
+    remains enforced and fail-closed. No replacement for A20 exists.
+
+1.4 Explicit statements:
+      QUANTITATIVE_ALGORITHM_CHANGED=NO
+      EVENT_SELECTION_CHANGED=NO
+      THRESHOLD_LOGIC_CHANGED=NO
+      METRIC_LOGIC_CHANGED=NO
+      CANONICAL_SCHEMA_CHANGED=NO
+      NEW36_INVENTORY_CHANGED=NO
+      MANIFEST_REQUIRED_KEY_SET_CHANGED=NO
+      S1_RULES_CHANGED=NO
+      S2_INVARIANT_LIST_CHANGED=NO
+
+1.5 Every normative clause of A008 is an EXECUTION/ORCHESTRATION
+    choice. A008 contains zero scientific and zero quantitative choices
+    (Section 18). Clauses that restate frozen semantics are marked
+    EXPLICIT_CODIFICATION_OF_EXISTING_FROZEN_SEMANTICS and are not
+    choices.
+
+1.6 Narrowing rule (audit advisory N-1). Every A008 one-shot, retry,
+    consumption or gate rule is a NARROWING, NEVER A WIDENING, of the
+    rights granted by V2 Section 13 and A006. Where A008 declares a role
+    consumed earlier than V2 Section 13 would, the A008 rule governs;
+    where V2 Section 13 declares consumption, A008 never postpones it.
+
+======================================================================
+2. DISPOSITION OF THE A007 INTERNAL LEGACY HEADER
+======================================================================
+
+    A008_NEW_NORMATIVE_CHOICE_01=A007_EXTERNAL_IDENTITY_CONTROLS
+
+2.1 Finding. The frozen A007 body contains an internal legacy line
+    equivalent to "STATUS: DRAFT — NOT FROZEN" and an internal filename
+    line ending in "_DRAFT.txt". These strings are part of A007's frozen
+    bytes.
+
+2.2 Rule. The frozen external identity controls:
+      backend/recovery/specs/V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_007.txt
+      SIZE_BYTES=13971
+      SHA256=d33f9c66537e762f08d164bc791f31e3eb18fbc3a5e694507f9f436322ceaf10
+      commit e7b7ea513cf438ef62681a9fc1a8aa5a54ea432c
+    The preserved internal legacy status string does NOT reopen A007,
+    does NOT make A007 a draft and SHALL NOT be cited as evidence that
+    A007 is unfrozen.
+
+2.3 No byte of A007 may change. Preflight (Section 4.12 gate P-02) MUST
+    verify the A007 SIZE_BYTES and SHA256 of 2.2.
+
+2.4 The same rule applies to A008 once frozen: the frozen A008 bytes
+    will contain the DRAFT2 header; the external frozen identity
+    recorded by the freeze procedure controls.
+
+======================================================================
+3. POST-A007 IMPLEMENTATION IDENTITY AND FREEZE RECORD
+======================================================================
+
+    A008_NEW_NORMATIVE_CHOICE_02=POST_A007_IMPLEMENTATION_IDENTITY_AND_FREEZE_RECORD
+
+3.1 Drift finding (evidence). V2 Section 2 froze
+      IMPLEMENTATION_SOURCE_AGGREGATE_SHA256=dbfd311f7b0290a29f546de57d494e77082516cff91ae7e4b5e82587d141356a
+      IMPLEMENTATION_TEST_AGGREGATE_SHA256=b9ffac445641c007b83a0a8e71cd0d40cdff29ee3f968a07cbf7fe3bf675c275
+    over v1_2_preflight.IMPL_SOURCE_PATHS / IMPL_TEST_PATHS. After the
+    A007 conformance cleanup (commit 3d30debf4aee52951321c8a88c42714eb083bf92)
+    the same algorithm yields (observed at HEAD 1078e92389a7876e2e90fbbde45761f6483c866c):
+      source aggregate 7b61a5be4632856b346b24dc48076342e5a1b3e527c7a29e1d432bc8de4325e0
+      test aggregate   b4dc1a963ade27fa0f65b89bc795c270faddd5dfc3b0c27dba93a97d3fee2457
+    The V2 Section 2 values are retained as historical identities of the
+    PRE-A007 implementation. They MUST NOT be supplied as
+    PreflightExpectations for the NEW36 run; an implementation whose
+    aggregates equal them is NOT NEW36-eligible (it contains withdrawn
+    I12 enforcement).
+
+3.2 Observed current identities (INFORMATIVE, PRE-A008, NOT frozen):
+      backend/recovery/v1_2_candidate.py   |13519|49ec55f68110c22c20fd4fe0879928e9366b27db904402c273a84c5d31425e48
+      backend/recovery/v1_2_stage3.py      |63676|013b8c75b9caf32172e92c8dc6d3adcaf7ad8bb725493e1dea584000f92eba84
+      backend/recovery/v1_2_diagnostics.py |33645|45731cb23790567904ffa6ff9f369966d0911f05d5cf29faed0a61837f817376
+      backend/recovery/v1_2_acceptance.py  |14025|1a03ea0feda51c5016781b66696802863452f0f896db11de23f4b3e57fe03fc4
+      backend/recovery/v1_2_preflight.py   | 9480|840fd065b530363d625908e78101c9fda593ab0521b4e5785262113b80604ed0
+      backend/recovery/engine.py           |58268|abedee399c272eff858b109fb448cbda3ad3a49e40be4ba3f486650e3151a3e8
+      backend/recovery/harness.py          |59414|e97f2278b96b8154411de8f5a8c205273b217b65f33feada0986a78c69917e39
+      backend/parquet_validator.py         |14516|3e367a414b222b2aee1be1c0bf459ff21d69dee6c3c5d2aceae363bc34636ee7
+      backend/frozen_engine.py             | 1206|f969d95c32dbb492678f9556ae9252f970bdd7b731ce71fb1d58c5d195e21330
+      backend/checkpoint_registry.py       | 8477|f5258876c624f213274d262baa73d80e5a7772f3d11dc73aa9a83471aa1f1dbf
+      backend/recovery/sandbox.py          | 4725|7fbe860ed399142ce445fbd5287bd8b327423dcd527127214636e151bea788ca
+      backend/recovery/allowlist.py        | 2057|3fd893d503201c3a3fec54ba0554c029ac7d0009a736f1a52f80de766dc329be
+      backend/tests/test_v1_2_candidate.py |32731|aab4e639cdfeb83644ac84c63d293d70b354a0d9b240fb9280a0f8e53f37f28e
+      backend/tests/test_v1_2_stage3.py    |72049|cfe6aa8ee110fd10823c4bb1d1e6b9d0ea55c1dc9b003b1764b49f68e04639f1
+
+3.3 Identity sets (EXACT repository-root-relative paths, "/" separators).
+
+    3.3.1 SOURCE (execution-relevant code; existing + NEW):
+      backend/recovery/v1_2_new36_candidate_app.py     NEW (Section 4)
+      backend/recovery/v1_2_new36_validators.py        NEW (Sections 8,10,11)
+      backend/recovery/v1_2_new36_run.py               NEW (Section 9)
+      backend/recovery/v1_2_candidate.py
+      backend/recovery/v1_2_stage3.py                  (retained helpers, 4.7)
+      backend/recovery/v1_2_diagnostics.py
+      backend/recovery/harness.py                      (transitively imported by v1_2_diagnostics)
+      backend/recovery/engine.py
+      backend/checkpoint_registry.py
+      backend/parquet_validator.py
+      backend/frozen_engine.py
+
+    3.3.2 ATTESTATION:
+      backend/recovery/CANDIDATE_INDEPENDENCE_ATTESTATION.txt  NEW (Section 5)
+
+    3.3.3 TEST:
+      backend/tests/test_v1_2_candidate.py
+      backend/tests/test_v1_2_stage3.py
+      backend/tests/test_v1_2_new36_candidate_app.py   NEW
+      backend/tests/test_v1_2_new36_validators.py      NEW
+      backend/tests/test_v1_2_new36_run.py             NEW
+
+    3.3.4 CONTROL (provenance / firewall code, byte-bound):
+      backend/recovery/v1_2_preflight.py
+      backend/recovery/v1_2_acceptance.py
+      backend/recovery/sandbox.py
+      backend/recovery/allowlist.py
+
+    3.3.5 Completeness rule. At Section 16 step 6 the implementer MUST
+      record the set of modules under backend/ actually imported
+      (directly or transitively) by the Candidate application, the
+      Executors and the Orchestrator during the synthetic end-to-end run
+      (sys.modules delta). Every such module MUST be a member of SOURCE
+      or CONTROL; otherwise it MUST be added to SOURCE and step 6 is
+      repeated. No execution-relevant imported module may remain outside
+      the identity set. Paths under backend/recovery/reference/ MUST NOT
+      appear in that delta (Section 5.4).
+
+3.4 Aggregate algorithm (identical to v1_2_preflight.aggregate_sha256):
+      for each path P in the set:
+        rec := P + "\t" + lowercase_hex_sha256(raw working-tree bytes of P) + "\n"
+      records sorted ascending by P (exact code-point string order);
+      blob := concatenation of records, UTF-8;
+      AGGREGATE := lowercase_hex_sha256(blob).
+    Three aggregates:
+      IMPLEMENTATION_SOURCE_AGGREGATE_SHA256   over SOURCE ∪ ATTESTATION
+      IMPLEMENTATION_TEST_AGGREGATE_SHA256     over TEST
+      IMPLEMENTATION_CONTROL_AGGREGATE_SHA256  over CONTROL
+    Every per-file SHA256 is also recorded individually (3.5).
+
+3.5 Freeze record artifact (NOT created before Section 16 step 6):
+      backend/recovery/specs/V1_2_CANDIDATE_IMPLEMENTATION_FREEZE_MANIFEST.txt
+    Exact deterministic format: UTF-8, LF, no BOM, no trailing spaces,
+    final LF, in this order and nothing else:
+      FORMAT_VERSION=A008_FREEZE_MANIFEST_V1
+      A008_FROZEN_PATH=backend/recovery/specs/V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_008_DRAFT2.txt
+      A008_FROZEN_SIZE_BYTES=<int>
+      A008_FROZEN_SHA256=<64 hex>
+      A008_FREEZE_COMMIT=<40 hex>
+      CAPTURE_COMMIT=<40 hex>            (git rev-parse HEAD at capture)
+      then one record per path, TAB-separated, ordered first by record
+      type in the order SOURCE, TEST, ATTESTATION, CONTROL and within a
+      type by relpath ascending:
+      SOURCE<TAB><relpath><TAB><size_bytes><TAB><sha256>
+      TEST<TAB><relpath><TAB><size_bytes><TAB><sha256>
+      ATTESTATION<TAB><relpath><TAB><size_bytes><TAB><sha256>
+      CONTROL<TAB><relpath><TAB><size_bytes><TAB><sha256>
+      then:
+      IMPLEMENTATION_SOURCE_AGGREGATE_SHA256=<64 hex>
+      IMPLEMENTATION_TEST_AGGREGATE_SHA256=<64 hex>
+      IMPLEMENTATION_CONTROL_AGGREGATE_SHA256=<64 hex>
+      REFERENCE_IDENTITY_OK=YES            (0.6 byte identities verified)
+      PROTOCOL_IDENTITY_OK=YES             (0.2-0.4 verified)
+    Every SHA256 is the raw-byte SHA256 of the committed blob at
+    CAPTURE_COMMIT (git show <CAPTURE_COMMIT>:<relpath>) AND of the
+    working-tree file; both MUST be equal. No value in this record may be
+    guessed, pre-computed or copied from a draft; the record is written
+    only at step 6 and frozen at step 8. The record file itself is not a
+    member of any aggregate.
+
+3.6 Eligibility rule. No implementation is NEW36-eligible until the
+    record of 3.5 exists and is frozen (Section 16 step 8) and the final
+    pre-application gate (4.12 gate P-03) verifies, in the interpreter
+    that will execute the run, that every per-file SHA256 and every
+    aggregate of 3.5, every 0.6 Reference identity and every 0.2-0.4
+    protocol identity match exactly, and that `git rev-parse HEAD` is
+    CAPTURE_COMMIT or a descendant in which every SOURCE/TEST/
+    ATTESTATION/CONTROL blob is byte-identical (3.7). Any mismatch is
+    PRECONDITION_FAIL; NEW36 is not consumed.
+
+3.7 Provenance hazard (audit advisory N-6). The execution platform can
+    create commits to task-state files (e.g. .emergent/*) that advance
+    HEAD without any scientific source change. Therefore runtime_source_
+    commit values in Candidate and Reference manifests are NOT required
+    to equal CAPTURE_COMMIT or A008_FREEZE_COMMIT (A006 5.5); validity is
+    established by byte identity of every execution-relevant file at the
+    actual runtime HEAD (A006 6.5 predicate applied to every SOURCE/
+    ATTESTATION/CONTROL path for the Candidate role, 12.2) and by the
+    final gate of 3.6. A HEAD that differs from CAPTURE_COMMIT only by
+    commits touching no path of 3.3 is conforming.
+
+======================================================================
+4. CANDIDATE NEW36 APPLICATION CONTRACT
+======================================================================
+
+    A008_NEW_NORMATIVE_CHOICE_03=CANDIDATE_APPLICATION_ENTRYPOINT_AND_CLI
+    A008_NEW_NORMATIVE_CHOICE_04=COMPOSITION_RULE_AND_BINDING_FIELD_PROVENANCE
+    A008_NEW_NORMATIVE_CHOICE_20=A008_INTRODUCED_SAFETY_RULES
+    A008_NEW_NORMATIVE_CHOICE_21=CANDIDATE_PREAPPLICATION_GATE_ORDER
+
+4.1 Location and nature. Exactly one new module
+      backend/recovery/v1_2_new36_candidate_app.py
+    It is a COMPOSITION/ORCHESTRATION layer. It MUST NOT define any
+    threshold, domain predicate, mask, filter, direction, metric,
+    fingerprint or count formula of its own; every canonical field MUST
+    be obtained by calling the AUTHORIZED existing implementation named
+    in the binding table of 4.7, exactly as stated there.
+
+4.2 Invocation interface (A008-INTRODUCED DEPLOYMENT CONTRACT, 0.8(b);
+    explicit invocation only; no import-time side effects; no FastAPI
+    route):
+      python -m recovery.v1_2_new36_candidate_app preflight
+          --db <sqlite path> --environment-record <path>
+          --session-zip-map <json path>
+      python -m recovery.v1_2_new36_candidate_app generate
+          --db <sqlite path> --environment-record <path>
+          --session-zip-map <json path>
+          --out-csv <path> --out-manifest <path> --out-evidence <path>
+          --run-id <uuid> --ledger <path>
+    The environment record is created by the Orchestrator (6.3), not by
+    the Candidate application. `generate` MUST refuse (PRECONDITION_FAIL,
+    nothing opened) unless the ledger (9.5) contains, as the LAST record
+    for role CANDIDATE, a record with state=INVOKED and run_id equal to
+    --run-id (9.7 step 5); this binds the Candidate to the Orchestrator.
+
+4.3 Inputs.
+    (a) --session-zip-map: JSON object {session_id: absolute path of the
+        canonical session ZIP in the raw store} (A008-INTRODUCED
+        DEPLOYMENT CONTRACT). Parsed with the NNC-5 parser (Section 8).
+        Key set MUST equal exactly the 12 frozen NEW36 identifiers (14.2);
+        extra, missing or repeated key => PRECONDITION_FAIL before any
+        open.
+    (b) --db: live runtime SQLite database, opened READ-ONLY (URI
+        mode=ro). Used only for NNC-4 (Section 7) and the authoritative
+        expected sync_grid_100ms part count (A005 R2.8, A006 4.10.2).
+    (c) --environment-record: the shared NNC-3 record (6.3).
+    (d) --out-csv, --out-manifest, --out-evidence: MUST NOT exist;
+        created with exclusive-create ("xb"); pre-existence =>
+        PRECONDITION_FAIL before any open.
+
+4.4 Inventory. Session order = frozen Appendix-B order. The application
+    MUST load checkpoint_registry.NEW36_SESSION_IDS and verify element-
+    wise equality with the 12 literals of V2 Section 3 (also listed in
+    14.2). Any difference => PRECONDITION_FAIL.
+
+4.5 Data access and firewall.
+    (a) Reads the raw store directly via 4.3(a); MUST NOT copy, move,
+        re-download, re-transport, extract-to-disk or re-archive any ZIP;
+        parquet payloads are read from the ZIP into memory only.
+    (b) MUST NOT import recovery.sandbox directly and MUST NOT call
+        recovery.sandbox.open_reference_zip, recovery.harness.
+        _load_grid_for_block, recovery.harness._validate_sync_grid_part_
+        coverage, or any function whose call chain reaches
+        recovery.allowlist.assert_recovery_allowed with a NEW36 id.
+        Transitive module import of recovery.harness through
+        v1_2_diagnostics is permitted; no harness loader may be called.
+    (c) MUST NOT modify, monkeypatch, wrap, disable or weaken
+        recovery.allowlist.assert_recovery_allowed or checkpoint_registry.
+        is_new36_registered. The recovery firewall remains fully active
+        (CONTROL byte identity, 3.3.4). Preflight MUST verify, without
+        opening data, that assert_recovery_allowed(NEW36_SESSION_IDS[0])
+        raises PermissionError; otherwise PRECONDITION_FAIL.
+    (d) frozen_engine.current_status() MUST report "NOT_CONFIGURED" and
+        accepts_input False before and after the run.
+
+4.6 Loader (by reference, unchanged). Per block (Appendix-B session
+    order, BTC then ETH): obtain sync_grid_100ms parts exactly per A004
+    5.4-5.8 and A005 R2.1-R2.7; session-level part coverage per A005
+    R2.8-R2.10 and A006 4.9-4.11 using backend/parquet_validator.py
+    functions and the DB-derived expected count; then
+    engine.build_canonical_grid() (A004 5.4(d)); then the Candidate-side
+    block preparation v1_2_diagnostics._prepare_block(session_id, asset,
+    df) (which calls the frozen engine reconstruct_block for the block;
+    no OLD36/golden access). Structural failures per A004 Section 6.
+
+4.7 COMPOSITION RULE AND BINDING FIELD PROVENANCE (audit B-1).
+    4.7.1 Stage3 row output is NOT normative. Any requirement to call
+      v1_2_stage3._hz_block, _hg_block, _hc_block or _hb_block as
+      authoritative row generators is WITHDRAWN. A Stage3 function MAY
+      be reused ONLY as a sub-operation whose semantics are proven
+      identical to the frozen rule for the specific field(s) named in
+      the table; such reuse is listed explicitly below. Where a Stage3
+      block function is reused as a sub-operation, ONLY the fields
+      named "FROM <function>" may be taken from its output; every other
+      field of that output MUST be discarded and composed per the table.
+    4.7.2 Authorized existing implementations (exhaustive):
+      ENGINE: engine.build_canonical_grid, engine._quality_admissible_mask
+        (via _prepare_block), engine._quantile_type7,
+        engine._build_forward_return_array, engine._greedy_overlap_filter
+        (via v1_2_candidate.b0_greedy_filter), engine.GRID_MS,
+        engine.FEATURE_MAP, engine.SIMPLE_FEATURES.
+      CANDIDATE: v1_2_candidate.tz_threshold, g1_pre_overlap_mask,
+        g1_parent_gate_mask, assert_g1_parent_subset, g1_direction,
+        c1_pre_overlap_mask, c1_gap_parent_mask, assert_c1_gap_subset,
+        c1_direction, spacing_steps_for_horizon, b0_greedy_filter,
+        b1_diagnostic_filter, exact_spacing_pair_n, assert_hb_i11.
+      DIAGNOSTICS: v1_2_diagnostics._prepare_block, _BlockContext,
+        fingerprint_positions, _finite_mean_abs.
+      STAGE3 (sub-operations only): _hz_block (fields listed in table),
+        _hg_block (G0 rows only, fields listed), _hc_block (C0 and C1
+        rows, fields listed), _hb_extract_pre_overlap (HB family
+        pre-overlap sets), _compute_event_metrics (mean_signed_bps and
+        hit_rate ONLY), _sha256_positions (equivalent to
+        fingerprint_positions; either may be used).
+      FORBIDDEN: v1_2_stage3.exact_spacing_pair_n (module-local, all
+        unordered pairs; A001 A6 non-normative); v1_2_stage3._hb_block
+        (does not expose positions; embeds forbidden helper);
+        v1_2_stage3._hg_block output rows with variant_id G1 (wrong
+        threshold source, F-2); the mean_abs_move value of any Stage3
+        output row (F-4); the diagnostic_version field (F-5); any
+        Stage3 output calculated_threshold for (fair_gap_reversion, TZ)
+        (F-3).
+    4.7.3 Binding table. Columns: FIELD | FROZEN NORMATIVE SOURCE |
+      AUTHORIZED IMPLEMENTATION | STAGE3 STATUS | COMPOSITION RULE.
+      Every row: COMPOSABLE_WITHOUT_QUANTITATIVE_PRIMITIVE_CHANGE=YES
+      (justification: the AUTHORIZED IMPLEMENTATION already exists and
+      is not modified).
+
+      protocol_version | A001 A1 | constant literal
+        "V1_2_NEW36_VALIDATION_PROTOCOL_V2" | NOT NORMATIVE (F-5:
+        "diagnostic_version"="V1.2_STAGE3_FINAL") | emit the A001 A1
+        literal as field 1; diagnostic_version MUST NOT appear.
+      session_id | V2 §4, Appendix B | inventory of 4.4 | identical |
+        pass-through in Appendix-B order.
+      asset | A004 5.4(c) | ("BTC","ETH") | identical | BTC then ETH.
+      axis | V2 §4 | literal per row family | identical | HZ,HG,HC,HB.
+      feature_family | V2 §3 App.B, A002 B3 | STAGE3_HZ_FEATURES,
+        STAGE3_HB_FAMILIES, "depthL1_extOFI", "gap_depth_extOFI"
+        (verified equal to Appendix B) | identical | Appendix-B order.
+      variant_id | V2 §4 | literals T0,TZ,G0,G1,C0,C1,B0,B1 | identical |
+        per axis in V2 §4 variant_order.
+      quantile | V2 §3 | (0.80,0.90,0.95); HB 0.90 | identical | as V2.
+      horizon_ms | A001 A2 (HZ NULL), V2 §3 | (1000,5000,30000) |
+        identical | HZ: NULL; HG/HC/HB: horizon.
+      threshold_domain_finite_n | A001 A2 (count T0 domain) |
+        FROM _hz_block (line-verified: quality & isfinite(signal)) |
+        identical | HZ rows only; NULL elsewhere (A001 A7).
+      threshold_domain_nonzero_n | A001 A2 / A005 R1.2 | FROM _hz_block
+        (t0_domain & signal != 0.0) | identical | HZ only; NULL elsewhere.
+      zero_n | A001 A2 | FROM _hz_block (finite_n - nonzero_n) | identical
+        | HZ only.
+      zero_fraction | A001 A2 | FROM _hz_block | identical | HZ only.
+      nonzero_unique_value_n | A001 A2 | FROM _hz_block (distinct Python
+        floats of abs(signal[TZ domain])) | identical | HZ only.
+      hz_discrimination_class | A001 A2 lines 61-107; A005 R1.3 for
+        fair_gap_reversion | FROM _hz_block (literals ZERO_FREE_CONTROL /
+        HZ_DISCRIMINATING / HZ_NONDISCRIMINATING_EQUAL_THRESHOLD; operand
+        comparison t0_thresh != tz_thresh with None==None equal; for
+        fair_gap_reversion tz_thresh is numerically the A005 R1.3.2
+        TZ_diagnostic_threshold) | identical | HZ only; NULL elsewhere.
+      gate_zero_n | A003 C2 (HG/G1 only), A001 A7 | composed:
+        count(quality & isfinite(di_l1) & di_l1 == 0.0) — the G1 path
+        (F-2 rule below) computes it with the same predicate as
+        _hg_block lines 695-697, proven identical | identical predicate |
+        HG/G1 only; NULL on every other row.
+      calculated_threshold | A001 A2 (HZ T0/TZ); A004 §4.1-4.4 + A005
+        R1.1/R1.3.3(c) (fair_gap_reversion, F-3); A001 A07 + CANDIDATE_SPEC
+        G1_THRESHOLD_SOURCE=TZ (G1, F-2); A001 A3 (G0); A001 A4 + A004
+        4.5 (C0/C1); A001 A5 (HB baseline) | HZ: FROM _hz_block EXCEPT
+        (fair_gap_reversion, TZ) := value of the (fair_gap_reversion, T0,
+        same q) row (F-3); G1: v1_2_candidate.tz_threshold(ctx.quality,
+        ctx.columns["bitget_depth_imbalance_l1"], q) (F-2); G0: FROM
+        _hg_block G0 row; C0/C1: FROM _hc_block; HB: threshold returned
+        by _hb_extract_pre_overlap | NOT NORMATIVE for G1 (uses T0) and
+        for (fair_gap_reversion, TZ) (uses zero-excluded diagnostic) |
+        as stated; NULL policy: domain count < 2 => NULL (A001 A2, A8).
+      spacing_steps | V2 A13 | v1_2_candidate.spacing_steps_for_horizon |
+        identical (max(10, h//100)) | HG/HC/HB; HZ NULL.
+      pre_overlap_n | A001 A3/A4/A5, A16 | G0: FROM _hg_block; G1:
+        count(g1_pre_overlap_mask(...)) (F-2); C0/C1: FROM _hc_block;
+        HB: len(positions) from _hb_extract_pre_overlap | identical
+        except G1 (downstream of F-2) | as stated; HZ NULL.
+      exact_spacing_pair_n | V2 §4, A001 A6, A21, A007.5 | v1_2_candidate.
+        exact_spacing_pair_n(sorted pre-overlap positions, spacing_steps)
+        | NOT NORMATIVE (F-1: Stage3 module-local all-pairs helper used
+        by _hb_block) | HB rows only: positions from _hb_extract_pre_
+        overlap (ascending by construction from ctx.gpos; the application
+        MUST assert ascending order and MUST NOT re-sort silently);
+        B0 and B1 rows of the same cell carry the same value; NULL on
+        HZ/HG/HC (A001 A7).
+      accepted_n | A14/A16/A17 | G1: v1_2_candidate.b0_greedy_filter over
+        ctx.gpos[g1_mask]; HB: b0_greedy_filter (B0) and
+        b1_diagnostic_filter (B1) over positions; G0/C0/C1: FROM
+        _hg_block/_hc_block | identical (engine._greedy_overlap_filter
+        >=; strict > for B1) | as stated; HZ NULL.
+      overlap_dropped_n | A16 | pre_overlap_n - accepted_n | identical |
+        composed arithmetic on the two emitted integers of the same row.
+      accepted_positions_sha256 | V2 §4 encoding | v1_2_diagnostics.
+        fingerprint_positions(accepted positions)["accepted_positions_
+        sha256"] or _sha256_positions (byte-identical algorithm) |
+        identical | G1 and HB: computed on composed accepted positions;
+        G0/C0/C1: FROM _hg_block/_hc_block; HZ NULL.
+      mean_signed_bps | A004 R-04 7.2-7.3 | _compute_event_metrics
+        (directions, returns, accepted_mask)["mean_signed_bps"] |
+        identical (mean(dir*ret); None when accepted_n==0) | G1/HB:
+        computed on composed masks with directions g1_direction /
+        _hb_extract_pre_overlap directions and returns from
+        engine._build_forward_return_array(ctx.mid, k) (A004 R-01
+        canonical_mid = bitget_mid via _prepare_block); G0/C0/C1: FROM
+        _hg_block/_hc_block; HZ NULL.
+      hit_rate | A004 R-04, A23 | _compute_event_metrics[...]["hit_rate"]
+        | identical (mean(signed > 0.0); zero is a miss) | as above.
+      mean_abs_move | A003 C1 | v1_2_diagnostics._finite_mean_abs(
+        fwd[ctx.quality & np.isfinite(fwd)]) with fwd =
+        engine._build_forward_return_array(ctx.mid, horizon_ms//GRID_MS)
+        | NOT NORMATIVE (F-4: Stage3 _compute_event_metrics computes
+        mean(abs(returns[accepted])) and None when accepted_n==0) |
+        computed ONCE per (session_id, asset, horizon_ms) and written
+        identically to every HG/HC/HB row of that triple, regardless of
+        variant, feature or accepted_n; NULL only if the A003 domain is
+        empty; HZ NULL.
+
+    4.7.4 F-1 rule (exact_spacing_pair_n). The Candidate MUST obtain
+      exact_spacing_pair_n from v1_2_candidate.exact_spacing_pair_n
+      applied to the ascending pre-overlap positions array of the HB
+      cell (as returned by _hb_extract_pre_overlap). It MUST NOT call
+      v1_2_stage3.exact_spacing_pair_n and MUST NOT take the field from
+      any _hb_block row. No all-unordered-pairs definition is allowed.
+
+    4.7.5 F-2 rule (G1 threshold source = TZ). G1 rows MUST be composed
+      entirely on the normative G1 path: tz_thr :=
+      v1_2_candidate.tz_threshold(quality, di_l1, q) where di_l1 =
+      ctx.columns["bitget_depth_imbalance_l1"] (the frozen parent source,
+      A001 A07 / CANDIDATE_SPEC G1_THRESHOLD_SOURCE=TZ); g1_mask :=
+      g1_pre_overlap_mask(quality, di_l1, ext_ofi=ctx.columns["external_
+      ofi_consensus_l1"], fwd, tz_thr); parent := g1_parent_gate_mask(
+      quality, di_l1, fwd, tz_thr); assert_g1_parent_subset(g1_mask,
+      parent) (abort = structural failure); positions := ctx.gpos[g1_mask]
+      (ascending); directions := g1_direction(di_l1)[g1_mask]; returns
+      := fwd[g1_mask]; accepted := b0_greedy_filter(positions, spacing);
+      fingerprint, metrics per table. _hg_block G1 rows MUST be
+      discarded. calculated_threshold of the G1 row = tz_thr, which by
+      construction equals the (depth_imbalance_l1, TZ, q) HZ row value
+      (A07 / S3_3). gate_zero_n per table.
+
+    4.7.6 F-3 rule (fair_gap_reversion HZ/TZ). Classification:
+      EXPLICIT_CODIFICATION_OF_EXISTING_FROZEN_SEMANTICS — not a choice.
+      Derivation (unique): A004 4.1 "the HZ zero-exclusion rule SHALL NOT
+      alter the threshold domain of fair_gap_reversion"; A004 4.4 "the TZ
+      zero exclusion applies to EVENT ELIGIBILITY only. It SHALL NOT be
+      applied when forming the threshold-domain quantile"; A005 R1.1
+      "T0_threshold is the only threshold consumed wherever the frozen
+      fair-gap threshold is consumed"; A005 R1.3.3(c) the zero-excluded
+      TZ_diagnostic_threshold "is consumed ONLY by the comparison in
+      R1.3.4"; V2 S3_1 gap-family thresholds must equal "the
+      corresponding fair_gap_reversion threshold". The calculated_
+      threshold of the (fair_gap_reversion, TZ, q) row is the threshold
+      of that feature's TZ variant; that variant's threshold domain is,
+      by A004 4.1/4.4, the unaltered domain quality & isfinite(gap) (zeros
+      included); hence its value is T0_threshold (A005 R1.1), and
+      emitting the zero-excluded quantile there would be a consumption
+      forbidden by A005 R1.3.3(c). Therefore, for fair_gap_reversion:
+        (a) the emitted canonical calculated_threshold of BOTH the T0 row
+            and the TZ row = T0_threshold = type7_quantile(abs(gap[quality
+            & isfinite(gap)]), q), NULL iff that domain count < 2;
+        (b) the zero-excluded TZ_diagnostic_threshold is used ONLY as the
+            operand of the hz_discrimination_class comparison (A005
+            R1.3.4) and MUST NOT be emitted as calculated_threshold or
+            consumed anywhere else;
+        (c) all HZ count fields and hz_discrimination_class remain as
+            produced by _hz_block (proven identical to A001 A2 / A005
+            R1.2-R1.3.4).
+      The other 11 HZ features are unaffected (A001 A2 generic TZ rule).
+      D1_FAIR_GAP_RULE_UNIQUELY_DERIVED=YES.
+
+    4.7.7 F-4 rule (mean_abs_move). Per table: FEATURE-INDEPENDENT per
+      (session_id, asset, horizon_ms); domain quality_admissible AND
+      isfinite(forward_return); mean of abs over that domain
+      (v1_2_diagnostics._finite_mean_abs on fwd[ctx.quality &
+      np.isfinite(fwd)]); NULL only if the domain is empty; MAY be
+      non-NULL when accepted_n=0; MUST NOT inherit any Stage3
+      accepted-event-conditioned value. (A003 C1; the V2 generic
+      metric_when_accepted_n_zero=NULL rule does not apply to this field,
+      as A003 C1 states.)
+
+    4.7.8 F-5 rule (protocol_version). Field 1 of every row is
+      protocol_version = "V1_2_NEW36_VALIDATION_PROTOCOL_V2" (A001 A1).
+      diagnostic_version MUST NOT appear in the CSV.
+
+    4.7.9 Fail-closed reuse. Stage3 sub-operations carry built-in
+      drift guards (_assert_hz_t0_drift_guard, _assert_event_drift_guard,
+      _assert_position_subset) that raise on inconsistency with the
+      frozen engine metrics of the same block. Any such raise during
+      NEW36 generation is a structural application failure under V2
+      Section 13 (consumed, no retry). The application MUST NOT catch
+      or suppress them.
+
+    4.7.10 Frozen assertions. For every block the application MUST
+      invoke assert_g1_parent_subset (G1), assert_c1_gap_subset (C1,
+      with c1_gap_parent_mask over the frozen fair-gap threshold) and
+      assert_hb_i11 (every paired HB cell) and MUST abort on any raise.
+      It MUST NOT invoke any I12 / A20 check (A007). These assertions
+      are safety aborts; they are NOT S2 evidence (Section 11).
+
+4.8 Row schema and serialization. Exactly the 25 fields of V2 Section 4
+    required_row_fields_ordered in that order; NULL/COMPUTED per A001 A7;
+    V2 Section 4 serialization (UTF-8, LF, empty field for NULL,
+    repr(float), no rounding); Python csv.writer with QUOTE_MINIMAL and
+    lineterminator "\n" (codification: no frozen value contains ",",
+    '"', CR or LF, so a conforming CSV contains no '"' character);
+    canonical sort per V2 Section 4; key uniqueness verified before
+    writing.
+
+4.9 Expected inventory (unchanged): TOTAL=3456, HZ=1728, HG=432, HC=432,
+    HB=864; 24 blocks. Any other count is a structural failure.
+
+4.10 Manifest: Section 12. Evidence: Section 11.4.
+
+4.11 A008_INTRODUCED_SAFETY_RULE (not inherited from A006):
+    (a) CSV, manifest and evidence bytes are fully serialized in memory,
+        hashed, then written with "xb"; after writing, each file is
+        re-read and compared byte-for-byte to the serialized bytes; any
+        difference is a structural failure.
+    (b) runtime_source_commit and the Candidate source_sha256 object
+        (12.2) are captured at gate P-05 and re-captured after generation
+        before the manifest is serialized; any difference is a structural
+        failure.
+    Nothing is written before all 3456 rows exist and all checks pass.
+
+4.12 Candidate pre-application gate order (deterministic; the first
+    failing gate is the reported PRECONDITION_FAIL; none opens a ZIP):
+      P-01 argument parsing; all --out-* paths absent (4.3(d))
+      P-02 protocol identities 0.2-0.4 and A007 2.2 byte-verified
+      P-03 implementation identities per 3.5/3.6 (freeze record present,
+           every per-file SHA256 and aggregate equal; Reference 0.6;
+           CONTROL byte identity)
+      P-04 firewall self-check 4.5(c); FrozenAnalysisEngine 4.5(d)
+      P-05 NNC-1 runtime_source_commit; source_sha256 object with HEAD
+           binding (12.2)
+      P-06 NNC-3 environment equivalence (Section 6)
+      P-07 NNC-4 database uniqueness (Section 7), read-only
+      P-08 inventory 4.4 and session-zip-map key set 4.3(a)
+      P-09 input identity of the 12 mapped ZIPs (14.3: regular file,
+           size, raw SHA256)
+      P-10 ledger binding 4.2 (last CANDIDATE record INVOKED with --run-id)
+    `preflight` runs P-01..P-09 (P-01 without --out-*, P-10 omitted).
+    `generate` runs P-01..P-10 then begins application (first ZIP open).
+
+======================================================================
+5. CLEAN-ROOM CANDIDATE REQUIREMENT
+======================================================================
+
+    A008_NEW_NORMATIVE_CHOICE_05=CANDIDATE_INDEPENDENCE_ATTESTATION_AND_DISCLOSURE
+
+5.1 The author(s) of the Candidate application, the Executors, the
+    Orchestrator and their tests MUST NOT derive from, copy from,
+    import, inspect, execute, diff against or consult
+      backend/recovery/reference/v1_2_reference.py
+      backend/recovery/reference/tests/test_v1_2_reference.py
+    nor any Reference NEW36 output. The Orchestrator MAY invoke the
+    Reference ONLY through the external launch contract of 9.8, which
+    is fully specified in this Amendment; it MUST NOT read the Reference
+    source to do so.
+
+5.2 Permitted authoring inputs, exhaustively: V2, A001-A008 (frozen
+    text); V1_2_CANDIDATE_SPEC.txt; v1_2_candidate.py, v1_2_stage3.py,
+    v1_2_diagnostics.py and their tests; engine.py, frozen_engine.py,
+    checkpoint_registry.py, parquet_validator.py; harness.py only for the
+    contracts codified in A004 5-6, A005 R2, A006 4 (no sandbox-bound
+    loader may be called for NEW36, 4.5(b)); v1_2_preflight.py and
+    v1_2_acceptance.py. REFERENCE_INDEPENDENCE_ATTESTATION.txt is NOT an
+    input.
+
+5.3 backend/recovery/CANDIDATE_INDEPENDENCE_ATTESTATION.txt MUST record:
+    author identity/role; exhaustive list of files read during
+    authoring; explicit statement that no path under
+    backend/recovery/reference/ was read, imported, executed or diffed;
+    the exact engine.py, v1_2_stage3.py and v1_2_diagnostics.py symbols
+    imported by the new modules (by name, and confirming they are within
+    4.7.2); a statement that no NEW36 quantitative content was read
+    during authoring or synthetic testing; the statement
+    "A20_I12/I_HB_I12 NOT IMPLEMENTED (A007)"; the statement that the
+    Reference external launch contract was taken from A008 9.8 only.
+    It is a member of ATTESTATION (3.3.2) and hash-bound.
+
+5.4 The independent implementation audit (Section 16 step 7) MUST run a
+    static import/AST check that no module of 3.3.1-3.3.3 imports, opens,
+    reads or references a path under backend/recovery/reference/, and
+    MUST verify the sys.modules delta of 3.3.5 contains no such module.
+
+5.5 The Reference implementation (0.6) MUST remain byte-identical. A008
+    authorizes no change to any Reference file and adds no code to it.
+
+======================================================================
+6. CANDIDATE NNC-3 — RUNTIME ENVIRONMENT IDENTITY
+======================================================================
+
+    A008_NEW_NORMATIVE_CHOICE_06=CANDIDATE_NNC3_APPLICABILITY_AND_SHARED_RECORD
+
+6.1 The Candidate application MUST implement the A006 Section 7 NNC-3
+    contract EXACTLY as written (7.3.1 members A-D incl. pyarrow
+    "17.0.0"; 7.3.2 serialization and digest; 7.3.3 exclusivity; 7.4
+    equivalence; 7.6 failure). A008 restates none of it.
+
+6.2 Timing: gate P-06, in the same interpreter that executes `generate`,
+    before any ZIP is opened. Failure = PRECONDITION_FAIL; not consumed.
+
+6.3 Shared environment record (A008-INTRODUCED DEPLOYMENT CONTRACT for
+    interoperability, 0.8(b); required because A006 7.4 makes ONE
+    recorded identity apply to both roles): a single JSON file created
+    once by the Orchestrator (9.7 step 2) with "xb", containing EXACTLY
+    two members
+      "runtime_environment_identity"          (A006 7.3.1 object)
+      "runtime_environment_identity_sha256"   (A006 7.3.2 string)
+    serialized per V2 Section 5 canonical JSON (UTF-8, sort_keys=true,
+    indent=2, final newline); parsed with the NNC-5 parser; supplied
+    unchanged to both roles.
+
+6.4 The Candidate manifest informational block carries the recorded
+    runtime_environment_identity_sha256 (12.4).
+
+======================================================================
+7. CANDIDATE NNC-4 — LIVE DATABASE SESSION UNIQUENESS
+======================================================================
+
+    A008_NEW_NORMATIVE_CHOICE_07=CANDIDATE_NNC4_APPLICABILITY
+
+7.1 EXACTLY A006 Section 8 (A: no duplicate sessions.session_id rows;
+    B: DB-enforced non-partial single-column uniqueness on exactly
+    sessions.session_id). Not restated.
+7.2 Read-only (SQLite URI mode=ro); no write, no state-modifying PRAGMA,
+    no duplicate resolution (A006 8.5).
+7.3 Timing: gate P-07 in `preflight` and again in `generate`, before any
+    ZIP open. Failure or inability to establish = PRECONDITION_FAIL.
+
+======================================================================
+8. NNC-5 — DUPLICATE-MEMBER-SAFE JSON PARSER
+======================================================================
+
+    A008_NEW_NORMATIVE_CHOICE_08=NNC5_PRODUCTION_PARSER_LOCATION
+
+8.1 Location: one function in backend/recovery/v1_2_new36_validators.py,
+    implemented from A006 Section 8A text only, used by the Candidate
+    application, the Executors and the Orchestrator.
+8.2 Semantics (A006 8A.3-8A.6, unchanged): input is the original
+    serialized bytes; for EVERY JSON object at EVERY nesting depth a
+    repeated decoded member name makes the input INVALID; detection
+    occurs before conversion into any ordinary mapping; first-wins /
+    last-wins / silent collapse are FORBIDDEN; non-UTF-8 or unparseable
+    input fails closed; no downstream processing of an invalid input.
+8.3 Applicability: session-zip map; environment record; ledger records;
+    Candidate manifest (self-validation after write); the SERIALIZED
+    Candidate and Reference manifests read by S1/S2 before semantic
+    validation, before S1 comparison and before manifest_precomparison_
+    sha256 recomputation; the evidence artifact records (11.4).
+8.4 The Reference's internal parser is unchanged and MUST NOT be imported.
+
+======================================================================
+9. ONE-SHOT AUTHORIZATION, ORCHESTRATOR AND DURABLE LEDGER
+======================================================================
+
+    A008_NEW_NORMATIVE_CHOICE_09=NEW36_ONE_SHOT_AUTHORIZATION_AND_BOUNDARY
+    A008_NEW_NORMATIVE_CHOICE_10=ORCHESTRATOR_AUTHORITY_AND_REFERENCE_LAUNCH_CONTRACT
+    A008_NEW_NORMATIVE_CHOICE_11=DURABLE_LEDGER_SCHEMA_AND_STATE_MACHINE
+
+9.1 Nature. No authorization mechanism exists in code or in V2/A001-A007
+    (V2 Section 17). A008, ONCE FROZEN and ONLY after Section 16 through
+    step 9, constitutes the authorization. DRAFT2 confers none.
+
+9.2 Firewall NOT lifted. Authorization is granted by role to two named
+    applications reading the raw store through the explicit map:
+      CANDIDATE_MAX_NEW36_APPLICATION_INVOCATIONS=1
+        backend/recovery/v1_2_new36_candidate_app.py generate
+      REFERENCE_MAX_NEW36_APPLICATION_INVOCATIONS=1
+        backend/recovery/reference/v1_2_reference.py generate (via 9.8)
+    subject to all pre-application gates of that role passing, and ONLY
+    when launched by the Orchestrator (9.3). Direct invocation of either
+    `generate` outside the Orchestrator is a protocol violation; for the
+    Candidate it is also technically refused (4.2 / P-10).
+
+9.3 Orchestrator authority. backend/recovery/v1_2_new36_run.py is the
+    sole authority controlling both role invocations. It is a member of
+    SOURCE (3.3.1). It performs Section 9.7. The frozen Reference is
+    launched as a subprocess through its existing public interface (9.8)
+    and is NOT modified.
+
+9.4 Consumption boundary (NARROWING of V2 Section 13, never widening).
+    A role is CONSUMED when the Orchestrator has DURABLY appended the
+    INVOKED record for that role (9.6). This is strictly earlier than or
+    equal to V2 Section 13's "first quantitative read". Consequently a
+    role is treated as consumed even if a crash occurs after the durable
+    INVOKED record and before the child process opens any ZIP. The V2
+    Section 13 infrastructure-retry exception remains available ONLY for
+    failures occurring strictly before the durable INVOKED record.
+    Static checks, stat(), raw-byte SHA256 of ZIP files, DB metadata
+    reads, environment-identity construction and synthetic tests do NOT
+    consume.
+
+9.5 Ledger. Persistent path (under /app; never solely in /var/tmp or any
+    ephemeral location):
+      backend/recovery/reports/v1_2_new36/one_shot_ledger.jsonl
+    Operational evidence, not scientific input. Append-only JSON Lines;
+    one record per line; each line = canonical JSON (UTF-8, ensure_ascii
+    =true, sort_keys=true, separators (",",":")) followed by exactly one
+    LF; parsed with the NNC-5 parser. No delete, reset, truncate,
+    rewrite or reorder operation exists in the controlled runner; any
+    such operation on the ledger invalidates the run.
+
+9.6 Ledger record schema (EXACTLY these members, all required; null only
+    where stated):
+      "schema_version": "A008_LEDGER_V1"
+      "run_id": UUIDv4 string generated once per Orchestrator run (9.7 step 1)
+      "role": "CANDIDATE" | "REFERENCE"
+      "state": "GATES_PASS" | "INVOKED" | "COMPLETED" | "FAILED"
+      "utc": ISO-8601 UTC timestamp "YYYY-MM-DDTHH:MM:SS.ffffffZ" (non-normative metadata)
+      "runtime_head": 40-hex `git rev-parse HEAD` at record time
+      "runtime_environment_identity_sha256": 64-hex (6.3)
+      "input_inventory_id": "NEW36_12SESSIONS_24BLOCKS_3456ROWS_V1" (A002 B1)
+      "a008_sha256": 64-hex frozen A008 identity
+      "freeze_manifest_sha256": 64-hex raw SHA256 of 3.5 record file
+      "output_artifact_sha256": null, or (COMPLETED only) object
+          {"csv": 64-hex, "manifest": 64-hex, "evidence": 64-hex|null}
+          (evidence null for REFERENCE)
+      "detail": null, or (FAILED only) short string classification:
+          "STRUCTURAL" | "INFRASTRUCTURE" | "INCOMPLETE_AFTER_RESTART" | "OTHER"
+    Durable append semantics (each record): open with O_APPEND (and
+    O_CREAT on first use); ONE complete write of the full line;
+    flush; fsync(file descriptor); fsync(parent directory descriptor)
+    where the platform supports it; only after these return may the
+    Orchestrator proceed. A record is "durable" only after this
+    sequence completes.
+
+9.7 Orchestrator procedure (ordered; each step fail-closed):
+     1. Generate run_id; read existing ledger (if any) and apply the
+        recovery rules 9.9 BEFORE anything else; if either role is
+        already consumed, that role is skipped permanently.
+     2. Create the shared environment record (6.3) with "xb" if absent
+        (if present, validate it and reuse it; a record whose identity
+        differs from the current interpreter's identity is
+        PRECONDITION_FAIL).
+     3. Verify input identity of the 12 mapped ZIPs (14.3) and all
+        protocol/implementation identities (3.6); write nothing to the
+        ledger on failure.
+     4. Run the Candidate `preflight` (4.12 P-01..P-09) as a subprocess;
+        on success durably append {role:CANDIDATE, state:GATES_PASS}.
+     5. Durably append {role:CANDIDATE, state:INVOKED} (role now
+        consumed, 9.4); then launch the Candidate `generate` subprocess
+        with --run-id and --ledger; on exit code 0 and successful
+        sealing (raw SHA256 of the three outputs computed by the
+        Orchestrator and equal to the values inside the manifest),
+        durably append COMPLETED with output_artifact_sha256; otherwise
+        durably append FAILED (detail STRUCTURAL or INFRASTRUCTURE per
+        available evidence; no retry).
+     6. Run the Reference `preflight` through 9.8 as a subprocess; on
+        success durably append {role:REFERENCE, state:GATES_PASS}.
+     7. Durably append {role:REFERENCE, state:INVOKED}; then launch the
+        Reference `generate` through 9.8; seal and append COMPLETED or
+        FAILED as in step 5 (evidence null).
+     8. Only if BOTH roles are COMPLETED: run S1 then S2 (Sections 10,
+        11) on the sealed artifacts; write s1_report.json, s2_report.json
+        ("xb").
+     9. Write the execution evidence index (14.4) including the raw
+        SHA256 and size of the ledger file at that moment.
+    Steps 4-7 are strictly sequential; roles are never concurrent. The
+    Candidate-then-Reference order is fixed by A008 for determinacy of
+    the ledger; it has no scientific meaning.
+
+9.8 Reference launch contract (A008-INTRODUCED DEPLOYMENT CONTRACT; the
+    Orchestrator enforces it; the Reference is unchanged):
+    (a) Command (subprocess, same interpreter as the Orchestrator, cwd =
+        repository root, module path backend/ on sys.path exactly as the
+        Reference's own tests require):
+          python backend/recovery/reference/v1_2_reference.py preflight
+              --db <db> --environment-record <shared record 6.3>
+          python backend/recovery/reference/v1_2_reference.py generate
+              --db <db> --environment-record <shared record 6.3>
+              --session-zip-map <the SAME map file as the Candidate>
+              --out-csv <14.4 reference_new36.csv>
+              --out-manifest <14.4 reference_new36_manifest.json>
+    (b) The Reference receives ONLY: the read-only DB path, the shared
+        environment record, the session-zip map, and two fresh output
+        paths. It MUST NOT receive, as argument, environment variable,
+        working-directory content or file, any Candidate CSV, manifest,
+        evidence, report or ledger; the Orchestrator MUST launch it with
+        a minimal environment (PATH, PYTHONPATH as required, LANG/LC_ALL
+        =C.UTF-8, no other variables) and MUST verify the Reference
+        output paths do not exist before launch.
+    (c) The Orchestrator MUST NOT read Reference source to construct
+        (a); (a) is fully specified here.
+    (d) The Reference's own gates (NNC-1..NNC-4 as implemented in the
+        frozen Reference) remain its own; the Orchestrator additionally
+        enforces 9.7 steps 3 and 6 before INVOKED.
+
+9.9 Recovery rules (applied at 9.7 step 1 from the durable ledger, per
+    role independently):
+      A. No INVOKED record for the role: role NOT consumed; no process
+         was launched; the run may proceed for that role.
+      B. INVOKED durably recorded, crash before the child's first
+         quantitative read: role CONSUMED (9.4); no retry.
+      C. Crash after first quantitative read: CONSUMED; no retry.
+      D. INVOKED present without a later COMPLETED or FAILED record for
+         the same role: CONSUMED and FAILED/INCOMPLETE; the Orchestrator
+         durably appends {state:FAILED, detail:"INCOMPLETE_AFTER_RESTART"}
+         and NEVER relaunches that role.
+      E. COMPLETED present: consumed successfully; artifacts sealed.
+      F. FAILED present: consumed; no retry.
+    Candidate and Reference states are independent: consumption or
+    failure of one neither consumes nor authorizes the other. A
+    GATES_PASS record alone does not consume.
+
+9.10 Multiple INVOKED records for one role, any record after COMPLETED/
+    FAILED for that role other than nothing, a run_id mismatch between
+    the INVOKED record and the Candidate --run-id, or an unparseable
+    ledger line are ledger corruption: fail closed, nothing launched,
+    manual audit required; no reset.
+
+======================================================================
+10. S1 EXECUTOR CONTRACT
+======================================================================
+
+    A008_NEW_NORMATIVE_CHOICE_12=S1_COMPARATOR_EXECUTION_CONTRACT
+
+10.1 Location: backend/recovery/v1_2_new36_validators.py, command
+     `s1 --candidate-csv --candidate-manifest --reference-csv
+      --reference-manifest --ledger --out-report`. Explicit invocation
+     (by the Orchestrator, 9.7 step 8).
+
+10.2 Sealed inputs only. Before comparison: compute raw SHA256 and size
+     of the four artifacts; require csv_sha256/csv_size_bytes in each
+     manifest to equal the computed values of its CSV; parse each
+     manifest with the NNC-5 parser; recompute manifest_precomparison_
+     sha256 (V2 Section 5) and require equality; require both COMPLETED
+     ledger records' output_artifact_sha256 to equal the computed values.
+     Any failure => s1_status "INVALID_INPUT". No artifact is modified.
+
+10.3 CSV lexical contract (both roles): UTF-8; no BOM; LF only; no CR
+     anywhere; exactly one header line equal to the 25 V2 field names in
+     order, comma-separated; every row exactly 25 fields; no '"'
+     character anywhere (4.8); final byte LF; no blank line. Deviation
+     => INVALID_INPUT.
+
+10.4 Key = (session_id, asset, axis, feature_family, variant_id,
+     quantile, horizon_ms), compared as EXACT SERIALIZED STRINGS
+     (including the serialized quantile lexeme and the empty lexeme for
+     NULL horizon_ms); no numeric normalization of key lexemes. Both
+     files: keys unique (A02); row count exactly 3456; key sets equal;
+     canonical sort order equal. Every row compared; no sampling.
+
+10.5 Field comparison (V2 Sections 4 and 6):
+     string fields: exact serialized equality;
+     integer fields (horizon_ms, threshold_domain_finite_n,
+       threshold_domain_nonzero_n, zero_n, nonzero_unique_value_n,
+       gate_zero_n, spacing_steps, pre_overlap_n, exact_spacing_pair_n,
+       accepted_n, overlap_dropped_n): either both empty (NULL), or both
+       match ^-?[0-9]+$ and are equal as integers; a non-empty lexeme not
+       matching ^-?[0-9]+$ (e.g. "1000.0") => INVALID_INPUT for that
+       file;
+     float fields (quantile, zero_fraction, calculated_threshold,
+       mean_signed_bps, hit_rate, mean_abs_move): both NULL, or both
+       parse (Python float()) to finite values and abs(c-r) <= 1e-12;
+       NaN, +Inf, -Inf lexemes or non-parsable lexemes => INVALID_INPUT;
+     accepted_positions_sha256: exact lowercase 64-hex equality (and
+       both match ^[0-9a-f]{64}$ when non-NULL).
+     No adaptive or relative tolerance; no rounding.
+
+10.6 Manifest comparison: all V2 Section 5 semantic fields exactly equal
+     (A002 B2 shapes), except the role-specific provenance fields
+     implementation_role, runtime_source_commit, source_sha256,
+     csv_sha256, csv_size_bytes, manifest_precomparison_sha256, each
+     validated for shape/validity per its own rules. Informational keys
+     (12.4) are ignored for S1 (A002 B5).
+
+10.7 Report (canonical JSON per 9.5 line rules but indent=2 and final
+     LF; "xb"): s1_status ("PASS"|"FAIL"|"INVALID_INPUT"); row counts;
+     key_set_mismatch_n; sort_mismatch (bool); field_mismatch_total;
+     field_mismatch_by_field (object, 25 keys, ints); manifest_mismatch_
+     fields (array); mismatches (array of {key, field, candidate,
+     reference} in canonical key order, ALL mismatches); input identities
+     (four SHA256 + sizes). Any mismatch => FAIL (IMPLEMENTATION_
+     DISAGREEMENT). Deterministic for identical inputs.
+
+======================================================================
+11. S2 EXECUTOR CONTRACT, OBSERVABILITY MATRIX AND SUPPLEMENTAL EVIDENCE
+======================================================================
+
+    A008_NEW_NORMATIVE_CHOICE_13=S2_VALIDATOR_EXECUTION_CONTRACT_AND_MATRIX
+    A008_NEW_NORMATIVE_CHOICE_14=CANDIDATE_SUPPLEMENTAL_EVIDENCE_ARTIFACT
+
+11.1 Location: backend/recovery/v1_2_new36_validators.py, command
+     `s2 --candidate-csv --candidate-manifest --candidate-evidence
+      --freeze-manifest --ledger --out-report`. Reads ONLY the sealed
+     Candidate CSV, manifest and evidence, the frozen 3.5 record and the
+     hash-bound Candidate source (STATIC mode). It MUST NOT read any
+     Reference artifact and MUST NOT open any NEW36 ZIP:
+     S2_REQUIRES_POSTHOC_NEW36_REREAD=NO. It is not a third NEW36
+     application.
+
+11.2 Invariant set: exactly A01-A19 and A21-A30 (A007). A20 appears in
+     the report ONLY as the fixed member WITHDRAWN_INVARIANTS=["A20"];
+     no predicate, handler or replacement exists for it (A007.7). A19
+     is active and fail-closed. The rule "a completed artifact implies
+     PASS" (DRAFT1 GENERATION_TIME_ASSERTION) is DELETED: every
+     invariant is evaluated from observable evidence per 11.3.
+
+11.3 BINDING OBSERVABILITY MATRIX. Columns: INVARIANT_ID |
+     REQUIRED_EVIDENCE | EVIDENCE_SOURCE | EVALUATION_MODE |
+     POSTHOC_NEW36_REREAD_REQUIRED. Sources: CANDIDATE_CSV (CSV),
+     CANDIDATE_MANIFEST (MAN), CANDIDATE_SUPPLEMENTAL_EVIDENCE (EVD),
+     STATIC_HASH_BOUND_SOURCE (STATIC). Float comparisons use the 10.5
+     float rule.
+      A01 | exact Appendix-B key inventory, 3456 rows, per-axis counts | CSV | ARTIFACT | NO
+      A02 | canonical key unique | CSV | ARTIFACT | NO
+      A03 | TZ domain = quality & finite & != 0 | STATIC (v1_2_candidate.tz_threshold and _hz_block TZ predicate, hash-bound) + CSV (nonzero_n <= finite_n) | STATIC+ARTIFACT | NO
+      A04 | threshold NULL <=> domain count < 2, and NULL => N=0 | CSV for HZ (finite_n / nonzero_n; fair_gap TZ uses finite_n per 4.7.6) and for NULL=>pre_overlap_n=accepted_n=0 on HG/HC/HB; EVD threshold_domain_n for every HG/HC/HB cell (partial evidence) | ARTIFACT+EVIDENCE | NO
+      A05 | HZ count identities and zero_fraction range | CSV | ARTIFACT | NO
+      A06 | zero_n=0 => T0 and TZ thresholds equal within 1e-12 | CSV | ARTIFACT | NO
+      A07 | every G1 threshold = (depth_imbalance_l1,TZ,q) threshold within 1e-12 | CSV | ARTIFACT | NO
+      A08 | G1 pre-overlap positions ⊆ parent gate positions | EVD (pre_overlap_positions ⊆ parent_positions of G1 records) | EVIDENCE | NO
+      A09 | raw-sign confirmation; no z-score in G1 | STATIC (AST: g1_pre_overlap_mask is the only G1 mask source; CANDIDATE_FORBIDDEN_CONFIRMATION_COLUMNS never read in the app) | STATIC | NO
+      A10 | C1 threshold = fair_gap_reversion T0 threshold (S3_1) | CSV | ARTIFACT | NO
+      A11 | C1 pre-overlap ⊆ gap parent set | EVD (C1 records) | EVIDENCE | NO
+      A12 | C1 raw opposing signs; z_* forbidden | STATIC (c1_pre_overlap_mask only source; forbidden columns absent) | STATIC | NO
+      A13 | spacing_steps = max(10, horizon_ms//100) | CSV | ARTIFACT | NO
+      A14 | B0 greedy earliest-first, >= spacing | EVD (recompute b0 rule over pre_overlap_positions; equals accepted_positions of B0 record) + CSV accepted_n | EVIDENCE+ARTIFACT | NO
+      A15 | B1 strict >; B1 never candidate | EVD (recompute strict rule; equals B1 accepted_positions) + CSV (variant_id B1 only as control) + STATIC | EVIDENCE+ARTIFACT+STATIC | NO
+      A16 | pre_overlap_n = accepted_n + overlap_dropped_n | CSV | ARTIFACT | NO
+      A17 | accepted positions unique, ascending, ⊆ pre-overlap | EVD (accepted_positions vs pre_overlap_positions) + CSV counts | EVIDENCE+ARTIFACT | NO
+      A18 | accepted_positions_sha256 = V2 §4 encoding of exactly accepted_n positions | EVD accepted_positions re-hashed vs CSV field; len = accepted_n | EVIDENCE+ARTIFACT | NO
+      A19 | paired B1.accepted_n <= B0.accepted_n | CSV | ARTIFACT | NO   (ACTIVE)
+      A21 | exact_spacing_pair_n = consecutive pairs of sorted pre-overlap with diff == spacing | EVD (recompute over pre_overlap_positions) vs CSV field | EVIDENCE+ARTIFACT | NO
+      A22 | accepted_n=0 => mean_signed_bps, hit_rate NULL (mean_abs_move governed by A003 C1, checked for feature-independence per (session,asset,horizon)) | CSV | ARTIFACT | NO
+      A23 | hit_rate = count(sign==+1)/accepted_n; zero is a miss | EVD accepted_signed_return_signs vs CSV hit_rate (1e-12) | EVIDENCE+ARTIFACT | NO
+      A24 | BTC/ETH independence | STATIC (per-block composition; no cross-asset state in app) | STATIC | NO
+      A25 | no golden reads | MAN golden_artifacts_read=false + STATIC (v1_2_preflight.verify_no_golden_imports_in_candidate extended to the app module by the validator, forbidden tokens) | MANIFEST+STATIC | NO
+      A26 | no OLD36 quantitative reads | MAN old36_quantitative_data_read=false + STATIC (no sandbox/harness loader call) | MANIFEST+STATIC | NO
+      A27 | collector_sha256 = frozen | MAN | MANIFEST | NO
+      A28 | frozen_analysis_engine_state / accepts_input | MAN | MANIFEST | NO
+      A29 | protocol_sha256, candidate_spec_sha256, engine_sha256 = frozen | MAN | MANIFEST | NO
+      A30 | T0/G0/C0/B1 present only as controls; exactly one candidate variant per axis; no extra variants | CSV + MAN variant_sets_per_axis | ARTIFACT+MANIFEST | NO
+     Supplemental-evidence invariants: A04 (partial), A08, A11, A14,
+     A15, A17, A18, A21, A23. STATIC mode means: the validator hashes the
+     Candidate application source file, requires equality with the 3.5
+     record, and evaluates the predicate on the AST of that hash-bound
+     source; it never executes it.
+
+11.4 CANDIDATE SUPPLEMENTAL EVIDENCE ARTIFACT.
+     11.4.1 Nature. Candidate-only; NOT part of the canonical 25-field
+       CSV (CANONICAL_SCHEMA_CHANGED=NO); ignored by S1; never emitted
+       by the Reference; emitted DURING the single Candidate invocation
+       from the same in-memory block state used for the CSV rows (no
+       second read of any ZIP); sealed immediately (4.11(a)); consumed
+       by S2 only.
+     11.4.2 Path/name (14.4): candidate_new36_evidence.jsonl
+     11.4.3 Records. One record per HG, HC and HB canonical row (1728
+       records), in the SAME canonical order as the CSV rows of those
+       axes (V2 Section 4 canonical_sort restricted to axes HG,HC,HB).
+       No HZ records (HZ has no events; A04/A05/A06 for HZ are CSV-
+       observable).
+     11.4.4 Record schema (EXACTLY these members; member order in the
+       serialized line is sort_keys=true):
+         "session_id": string
+         "asset": string
+         "axis": "HG"|"HC"|"HB"
+         "feature_family": string
+         "variant_id": "G0"|"G1"|"C0"|"C1"|"B0"|"B1"
+         "quantile": float (repr, same lexeme as CSV)
+         "horizon_ms": int
+         "spacing_steps": int
+         "threshold_domain_n": int  — count of the threshold domain from
+             which this cell's calculated_threshold was computed (G0:
+             derived-domain count; G1: TZ depth_imbalance_l1 domain
+             count; C0: its derived domain; C1: fair_gap T0 domain count;
+             HB: the family's baseline threshold-domain count)
+         "pre_overlap_positions": array of int (ascending grid_pos of
+             the cell's pre-overlap events; for B1 records: null — the
+             array is identical to the paired B0 record of the same
+             (session_id, asset, feature_family, quantile, horizon_ms))
+         "parent_positions": array of int (ascending) for variant_id G1
+             (positions of g1_parent_gate_mask) and C1 (positions of
+             c1_gap_parent_mask); null for every other variant
+         "accepted_positions": array of int (ascending; exactly the
+             positions whose fingerprint is the CSV accepted_positions_
+             sha256 of this row)
+         "accepted_signed_return_signs": array of int in {-1,0,1}, same
+             length and order as accepted_positions; value =
+             sign(direction_i * forward_return_bps_i) with exact 0 for a
+             zero signed return (A004 R-04 operands; A23)
+       All integers are JSON integers; no floats other than quantile; no
+       NaN/Inf anywhere.
+     11.4.5 Serialization. UTF-8; no BOM; each record = canonical JSON
+       (ensure_ascii=true, sort_keys=true, separators (",",":")) + one
+       LF; LF only; deterministic record order 11.4.3; final byte LF.
+       Parsed by the NNC-5 parser line by line.
+     11.4.6 Sealing and manifest recording (A002 B5 extension
+       mechanism, informational only, ignored by S1):
+         candidate_evidence_size_bytes = byte length of the file
+         candidate_evidence_sha256     = raw SHA256 of the file
+       both recorded under the manifest informational block (12.4) and
+       in the ledger COMPLETED record (9.6).
+     11.4.7 Minimality. The evidence contains only what 11.3 requires.
+       No metric values, no thresholds, no raw feature values are
+       emitted. S2 MUST verify, for every record, consistency with the
+       CSV row of the same key (pre_overlap_n = len(pre_overlap_
+       positions) or of the paired B0 record; accepted_n =
+       len(accepted_positions)); any inconsistency is S2 FAIL.
+     11.4.8 Storage precondition. Because position arrays scale with
+       event counts, the Orchestrator MUST verify at 9.7 step 3 that the
+       filesystem holding 14.4 has at least 1073741824 free bytes;
+       otherwise PRECONDITION_FAIL (nothing consumed). See the
+       INFORMATIVE note after Section 14.
+
+11.5 Report (canonical JSON, indent=2, "xb"): s2_status ("PASS"|"FAIL"
+     |"INVALID_INPUT"); evaluated_invariants (exactly the 29 ids
+     A01-A19, A21-A30 in order); WITHDRAWN_INVARIANTS=["A20"];
+     failed_invariant_count; failed_invariant_ids; per-invariant entries
+     {id, evidence_source, evaluation_mode, status, detail_count,
+     details[]}; s5 (informative degeneracy counts; S5 hard-rule
+     violations reported as s5_status separately, V2 Section 10). Any
+     failed invariant => FAIL.
+
+======================================================================
+12. MANIFEST / PROVENANCE CONTRACT (CANDIDATE)
+======================================================================
+
+    A008_NEW_NORMATIVE_CHOICE_15=CANDIDATE_SOURCE_SHA256_SET_AND_INFORMATIONAL_BLOCK
+
+12.1 Required key set: exactly V2 Section 5 required_manifest_keys
+     (unchanged). Values by existing normative definition (none
+     redefined): protocol_version (A001 A1); implementation_role
+     "CANDIDATE"; runtime_source_commit (A006 5.6: `git rev-parse HEAD`,
+     stripped, ^[0-9a-f]{40}$, at generation time); csv_sha256 /
+     csv_size_bytes (raw CSV bytes); manifest_precomparison_sha256 (V2
+     Section 5); session_ids, assets, axes, feature_sets_per_axis,
+     variant_sets_per_axis, quantiles_per_axis, horizons_per_axis,
+     expected_row_counts_per_axis, actual_row_counts_per_axis,
+     expected_total_row_count, actual_total_row_count (A002 B2/B3/B6);
+     collector_sha256 (A004 9.1 literal, not recomputed); engine_sha256,
+     candidate_spec_sha256 (V2 Section 2 literals); protocol_sha256
+     (A004 9.2, parent V2 SHA256 only); new36_inventory_id (A002 B1);
+     golden_artifacts_read=false; old36_quantitative_data_read=false;
+     frozen_analysis_engine_state="NOT_CONFIGURED";
+     frozen_analysis_engine_accepts_input=false;
+     fingerprint_encoding_definition (A002 B4 literal);
+     quantile_method="TYPE7_LINEAR"; grid_ms=100.
+
+12.2 source_sha256 (Candidate). Semantics unchanged from A006 6.9 (JSON
+     object mapping repository-root-relative paths to raw-byte lowercase
+     SHA256 of working-tree files at generation time). A008 fixes the
+     path set for the NEW36 Candidate application to EXACTLY SOURCE ∪
+     ATTESTATION (3.3.1 + 3.3.2, twelve keys), superseding for this
+     application only the two-path Stage3 set described parenthetically
+     in A006 6.9 (the Stage3 manifest's own historical set is unchanged).
+     HEAD binding: each path MUST exist at runtime_source_commit and its
+     committed blob bytes MUST hash equal to the working-tree value (A006
+     6.5 predicate applied to the Candidate role). Candidate and
+     Reference source_sha256 remain role-specific, not cross-role
+     equality fields (A006 6.9).
+
+12.3 Serialization: V2 Section 5 (UTF-8 JSON, sort_keys=true, indent=2,
+     final newline); manifest_precomparison_sha256 computed with that
+     member set to null, then written, then serialized again.
+
+12.4 Informational block (A002 B5: "If an implementation emits
+     additional informational keys outside the required schema, the
+     frozen comparator MUST ignore them for S1"; never compared
+     cross-role; MUST NOT be added to the Reference manifest). The
+     Candidate manifest MUST carry the single object member
+     "a008_provenance" with EXACTLY:
+       "runtime_environment_identity_sha256": 64-hex (Section 6)
+       "implementation_source_aggregate_sha256": 64-hex (3.4)
+       "implementation_test_aggregate_sha256": 64-hex
+       "implementation_control_aggregate_sha256": 64-hex
+       "freeze_manifest_sha256": 64-hex (raw SHA256 of 3.5 record file)
+       "a008_sha256": 64-hex (frozen A008 identity; unknown to this draft)
+       "amendment_identities": object {"A001":…,"A002":…,…,"A007":…} 64-hex each
+       "candidate_evidence_size_bytes": int (11.4.6)
+       "candidate_evidence_sha256": 64-hex (11.4.6)
+       "run_id": UUIDv4 string (9.6)
+
+======================================================================
+13. SYNTHETIC PRE-NEW36 TESTABILITY
+======================================================================
+
+    A008_NEW_NORMATIVE_CHOICE_16=SYNTHETIC_CONFORMANCE_CONTRACT
+
+13.1 Before NEW36 eligibility, the Candidate application, the Executors
+     and the Orchestrator MUST be exercised end-to-end WITHOUT any real
+     NEW36 quantitative byte, under pytest, with no network, no real DB,
+     no path under backend/data/, no path under 14.4. Tests live in the
+     files of 3.3.3.
+
+13.2 Permitted synthetic inputs: in-memory/temporary ZIPs containing
+     synthetic sync_grid_100ms parquet parts with the frozen column set;
+     a temporary isolated SQLite DB reproducing the sessions/qa_runs/
+     raw_files schema incl. the unique index on sessions.session_id;
+     synthetic session metadata; synthetic canonical rows; a temporary
+     ledger path. Synthetic session identifiers MUST NOT be any of the
+     12 frozen NEW36 identifiers except where a test verifies inventory
+     enforcement by supplying the frozen id LIST against synthetic ZIP
+     bytes (identifiers are not quantitative data). Real NEW36 ZIP paths
+     MUST NOT be referenced by any test. Synthetic runs do NOT consume
+     NEW36.
+
+13.3 Retained minimum coverage (each an explicit test):
+     (a) exact 25-field schema/header order; protocol_version literal;
+         diagnostic_version absent;
+     (b) manifest serialization (sort_keys, indent, final newline,
+         precomparison round-trip, A002 B2 shapes, a008_provenance block);
+     (c) NNC-5: repeated member at top level, nested object, object in
+         array => rejection; well-formed accepted; non-UTF-8 rejected;
+     (d) inventory enforcement: 11, 13, reordered, duplicated, wrong-id
+         maps => PRECONDITION_FAIL before any open (counting resolver);
+     (e) NNC-3 success; altered distributions / python version /
+         requirements sha / pyarrow => fail before open;
+     (f) NNC-4 duplicate rows => fail; missing unique index => fail;
+         read-only enforcement;
+     (g) Candidate generation path over 12 synthetic sessions x 2 assets
+         => 3456 rows, per-axis counts, canonical sort, key uniqueness,
+         "xb" refusal, byte re-read check, evidence emitted and sealed;
+     (h) F-1 precedence: HB exact_spacing_pair_n is the consecutive-pair
+         count on synthetic positions where all-pairs and consecutive
+         counts differ (e.g. [0,5,10], spacing 10: consecutive=0,
+         all-pairs=1);
+     (i) S1 PASS fixture; S1 mismatch fixtures: string, integer, float
+         diff > 1e-12 fails, float diff exactly 1e-12 passes, NULL vs
+         value, key-set difference, sort difference, manifest semantic
+         difference, role-specific difference ignored, informational
+         keys ignored;
+     (j) every S2 handler A01-A19, A21-A30 with a passing and a failing
+         fixture; report enumerates exactly 29 ids;
+     (k) A20/I12 absence: static scan of new modules for "A20", "I12",
+         "I_HB_I12" outside the WITHDRAWN_INVARIANTS literal and
+         comments => none; A19 handler present and failing on
+         B1.accepted_n > B0.accepted_n;
+     (l) firewall: assert_recovery_allowed(NEW36 id) raises after
+         importing the app; recovery.sandbox not in sys.modules after
+         a synthetic generate; no harness loader called (call counter).
+
+13.4 Added tests (audit findings T-1..T-9):
+     T-1 S1: "nan", "inf", "-inf", "NaN", "Infinity" lexemes in any
+         float field => INVALID_INPUT; also in key/integer fields.
+     T-2 Ledger crash persistence (simulated aborts via injected
+         failure points): (i) abort before durable INVOKED => recovery
+         rule A (not consumed, relaunch permitted); (ii) abort after
+         durable INVOKED before the child process opens any synthetic
+         ZIP => rule B (consumed; relaunch refused); (iii) abort after
+         the child began without terminal record => rule D (FAILED
+         INCOMPLETE_AFTER_RESTART appended; relaunch refused); (iv)
+         durability sequence asserted (O_APPEND, fsync calls observed).
+     T-3 Reference isolation: with a stub in place of the Reference
+         executable, assert the launched argv contains only 9.8(b)
+         inputs, the environment is minimal, no Candidate path is
+         present in argv/env/cwd, and Reference output paths are
+         absent before launch.
+     T-4 Reference role sequencing: GATES_PASS then INVOKED durably
+         appended BEFORE the subprocess spawn call; COMPLETED/FAILED
+         appended after exit; run_id consistent.
+     T-5 G1 threshold source: synthetic depth_imbalance_l1 containing
+         exact zeros so that T0 and TZ thresholds differ; assert the
+         G1 row calculated_threshold equals v1_2_candidate.tz_threshold
+         and the (depth_imbalance_l1,TZ,q) HZ row, not the T0 row.
+     T-6 fair_gap_reversion: synthetic gap with zeros; assert TZ-row
+         calculated_threshold == T0-row calculated_threshold (zero-
+         included) while hz_discrimination_class == HZ_DISCRIMINATING
+         (diagnostic operand differs); and C1 threshold equals it.
+     T-7 mean_abs_move: identical across all HG/HC/HB rows sharing
+         (session,asset,horizon); non-NULL for a row with accepted_n=0
+         when the A003 domain is non-empty; NULL when that domain is
+         empty.
+     T-8 Evidence: schema exactness (member set, types, ordering),
+         record order = canonical, B1 pre_overlap_positions null,
+         parent_positions only for G1/C1, sealing values equal to file
+         hash/size and to manifest block and ledger; S1 ignores it; S2
+         consumes it and fails on a tampered accepted_positions.
+     T-9 S1 lexical: "1000.0" in an integer field => INVALID_INPUT;
+         "0.8" vs "0.80" quantile key lexemes => key mismatch (no
+         numeric normalization).
+
+======================================================================
+14. STORAGE, INPUT IDENTITY AND OUTPUT LOCATIONS
+======================================================================
+
+    A008_NEW_NORMATIVE_CHOICE_17=MANDATORY_INPUT_IDENTITY_AND_RAW_STORE_EXECUTION
+
+14.1 Evidence. The 12 NEW36 canonical session ZIPs are resident in
+     backend/data/raw_zips/ as content-addressed files <sha256>.zip,
+     registered in the runtime DB (checkpoint_hint=NEW36, retained=1),
+     total 2931646803 bytes. No transport wrapper is part of the
+     scientific execution contract; no re-transport is required.
+
+14.2 Authoritative input identity triples (session_id, SIZE_BYTES,
+     SHA256), Appendix-B order:
+      20260910T123759Z_5ab0c1b2 340751422 3955aa2494086cd9e21ce7eb9ba446c50c7af43933999e805bc823ba6aeda47d
+      20260911T040213Z_43a798b7 172003086 d824a3447e4f21c3255b9cccbb5a2ae98e02c1fad1de3464b689fc011162011e
+      20260911T081446Z_28b5a901 185950682 17908158a060314d3126c24235a167ed2acfb3d6d3c727cfdf0cfb4c06db639c
+      20260911T113249Z_276d8c3b 483830410 193823eeb99fd0686ce680f381fa37c9b7ae5a795a9efd7412e6a8babe3c0868
+      20260911T145009Z_37923a7a 361485063 58cd05ae1dda9edf7081e8621ba7c1de1b13808dba80fed39fd3be28ff4401f8
+      20260911T220737Z_5d45563e 171131284 c554548dac283277d978dd789ba3f3ac4f5c3ff022c7c1c552f6f927da3a8c52
+      20260912T072730Z_adb96088 141579081 b6d02a8e864c00f18610225ce850a670db2c32568819691743a9f751efb052c2
+      20260912T163326Z_16b9ca74 133546596 13581fea0765956b8db35716b8a5d527781fb53a3055e008e1e0cc5757298365
+      20260912T213151Z_9f9a0088 114954594 14c48ca156a60daa374fbbf8d12c4d7a7e37d7015472c1e63de4f848681e1022
+      20260914T050815Z_3b68aabf 201193333 5500d6f96306006c78ab125b87e14c913a2882bc7c431dd0deac78e6d9c54d6a
+      20260914T133522Z_6141ec8b 354205917 24538b5a61c8d194a70327ac968868063f7a4278175186b306542f5d42bf5783
+      20260914T192945Z_1b899057 271015335 ceadd07e36aebc406ec208c19b7de7bfe2a36aa572cc381b0fc5411fcac01964
+     INPUT_IDENTITY_TRIPLE_COUNT=12.
+
+14.3 Mandatory identity verification (Orchestrator 9.7 step 3 and
+     Candidate gate P-09), before ANY quantitative access of either
+     role, for every mapped session_id: the mapped path is a regular
+     file; its size_bytes equals 14.2 exactly; its raw-byte SHA256
+     equals 14.2 exactly; the mapped session_id equals the triple's
+     session_id. Any mismatch => PRECONDITION_FAIL; nothing consumed.
+     Raw-byte hashing and stat() are non-quantitative and do not consume
+     (9.4). The ZIP structure MUST NOT be opened during verification.
+
+14.4 Output location (all "xb"): backend/recovery/reports/v1_2_new36/
+       runtime_environment_identity.json      (6.3)
+       one_shot_ledger.jsonl                  (9.5; append-only)
+       candidate_new36.csv
+       candidate_new36_manifest.json
+       candidate_new36_evidence.jsonl         (11.4)
+       reference_new36.csv
+       reference_new36_manifest.json
+       s1_report.json
+       s2_report.json
+       execution_evidence_index.json          (raw SHA256 + size of every
+                                               file above incl. the ledger
+                                               at 9.7 step 9)
+     No temporary staging of raw data is permitted.
+
+INFORMATIVE NOTE (non-normative; audit advisory N-4). Six residual
+transport wrappers (/app/SUPERBOT_NEW36_TRANSPORT_*_OF_15.zip,
+1188001200 bytes, untracked, re-downloadable from the verified source
+recorded in transport_pipeline.py) and chunked-upload residue under
+backend/data/uploads/ are outside this Amendment. Their retention or
+deletion is an operational decision that MUST NOT touch
+backend/data/raw_zips/ and that may be needed to satisfy 11.4.8.
+
+======================================================================
+15. FILE SCOPE
+======================================================================
+
+    A008_NEW_NORMATIVE_CHOICE_18=MINIMUM_NEW_FILE_SET
+
+15.1 NEW files (exactly these):
+      backend/recovery/v1_2_new36_candidate_app.py
+      backend/recovery/v1_2_new36_validators.py
+      backend/recovery/v1_2_new36_run.py
+      backend/tests/test_v1_2_new36_candidate_app.py
+      backend/tests/test_v1_2_new36_validators.py
+      backend/tests/test_v1_2_new36_run.py
+      backend/recovery/CANDIDATE_INDEPENDENCE_ATTESTATION.txt
+      backend/recovery/specs/V1_2_CANDIDATE_IMPLEMENTATION_FREEZE_MANIFEST.txt (step 6 only)
+15.2 MUST NOT be modified: every path under backend/recovery/reference/;
+     v1_2_candidate.py; v1_2_stage3.py; v1_2_diagnostics.py; engine.py;
+     checkpoint_registry.py; sandbox.py; allowlist.py; harness.py;
+     parquet_validator.py; frozen_engine.py; v1_2_preflight.py;
+     v1_2_acceptance.py; every frozen spec; DRAFT1 (0.5); existing
+     Stage1/2/3 artifacts; the runtime DB; backend/data/raw_zips/.
+15.3 If implementing 15.1 reveals that a quantitative primitive MUST
+     change to satisfy frozen text (i.e. a 4.7.3 row cannot be honoured
+     by calling its AUTHORIZED IMPLEMENTATION), implementation STOPS:
+     A008_IMPLEMENTATION_STATUS=BLOCKED_PRIMITIVE_CHANGE_REQUIRED. The
+     binding table asserts, with justification per row, that no such
+     case exists; the table is normative now, not deferred.
+
+======================================================================
+16. FREEZE SEQUENCE (MANDATORY ORDER)
+======================================================================
+
+    A008_NEW_NORMATIVE_CHOICE_19=PRE_NEW36_FREEZE_SEQUENCE
+
+     1. A008 DRAFT2 (this document).
+     2. Targeted independent re-audit of DRAFT2.
+     3. Exact-byte A008 freeze (external identity recorded; DRAFT2
+        header preserved per 2.4).
+     4. Implementation of 15.1 under Section 5.
+     5. Synthetic tests only (Section 13); existing Candidate-side and
+        Reference suites still PASS; Reference bytes unchanged (0.6).
+     6. Identity capture: 3.3.5 import-completeness check; 3.5 record
+        written at a committed, byte-identical tree.
+     7. Independent implementation audit: 4.7.3 table honoured row by
+        row (static call-graph: each field's source function);
+        5.4 import/AST check; 11.2 A20 absence; 13.3/13.4 coverage;
+        CONTROL byte identity; Reference identity (0.6); 9.6-9.10 ledger
+        semantics; 11.4 evidence schema.
+     8. Final implementation freeze (3.5 record frozen).
+     9. Renewed narrow pre-NEW36 readiness in the execution interpreter:
+        9.7 steps 1-3 (recovery rules on an empty/absent ledger, shared
+        environment record, input identities, 3.6 identities, 11.4.8
+        free space), both roles' `preflight`. Nothing quantitative
+        opened; nothing appended as INVOKED.
+    10. ONLY THEN the controlled NEW36 one-shot via the Orchestrator
+        (9.7 steps 4-9).
+16.1 No OLD36 quantitative rerun is required by A008 unless a new
+     finding specifically demonstrates that it would affect effective
+     Candidate/Reference validity; such a finding requires its own
+     amendment.
+16.2 No real NEW36 quantitative content may be opened during steps 1-9.
+     Any such opening before step 10 is a protocol violation and
+     consumes the corresponding role invocation.
+16.3 Any change to any path of 3.3, to 0.6, or to any frozen document
+     after step 8 and before step 10 returns the sequence to step 4 or
+     step 1 respectively.
+
+======================================================================
+17. SAFETY AND ONE-SHOT STATEMENT
+======================================================================
+
+17.1 A008 was drafted with zero NEW36 quantitative access (0.8(a)).
+17.2 A008 does not itself modify any source code, test, artifact,
+     database, frozen document, DRAFT1 or firewall.
+17.3 No invocation has been consumed (CANDIDATE_EXECUTION_COUNT=0,
+     REFERENCE_EXECUTION_COUNT=0, ONE_SHOT_CONSUMED=NO).
+17.4 DRAFT2 authorizes nothing. Authorization arises only per Section 9
+     after Section 16 step 9.
+
+======================================================================
+18. CHOICE ACCOUNTING AND SELF-AUDIT FLAGS
+======================================================================
+
+18.1 Normative choices (all EXECUTION/ORCHESTRATION):
+      01 A007 external identity controls (§2)
+      02 Post-A007 identity sets, aggregates, freeze record format (§3)
+      03 Candidate entrypoint and CLI deployment contract (§4.1-4.5)
+      04 Composition rule and binding field-provenance table (§4.7)
+      05 Clean-room, attestation and interface-inspection disclosure (§5, 0.8(b))
+      06 Candidate NNC-3 applicability and shared record shape (§6)
+      07 Candidate NNC-4 applicability (§7)
+      08 NNC-5 production parser location (§8)
+      09 One-shot authorization and conservative consumption boundary (§9.1-9.4)
+      10 Orchestrator authority and Reference launch contract (§9.3, 9.7, 9.8)
+      11 Durable ledger schema, state machine, recovery rules (§9.5-9.10)
+      12 S1 comparator contract incl. lexical/key rules (§10)
+      13 S2 validator contract and binding observability matrix (§11.1-11.3, 11.5)
+      14 Candidate supplemental evidence artifact (§11.4)
+      15 Candidate source_sha256 path set and informational block (§12)
+      16 Synthetic conformance contract incl. T-1..T-9 (§13)
+      17 Mandatory input identity triples and raw-store execution (§14)
+      18 Minimum new file set (§15)
+      19 Freeze sequence (§16)
+      20 A008-introduced safety rules (§4.11)
+      21 Candidate pre-application gate order (§4.12)
+     NORMATIVE_CHOICE_COUNT=21
+18.2 SCIENTIFIC_CHOICE_COUNT=0
+18.3 QUANTITATIVE_CHOICE_COUNT=0
+     Clauses 4.7.4-4.7.8 (F-1..F-5) are EXPLICIT_CODIFICATION_OF_EXISTING
+     _FROZEN_SEMANTICS selecting already-frozen definitions over
+     non-normative Stage3 code; they introduce no new interpretation and
+     are therefore not counted as choices. 4.7.6 records
+     D1_FAIR_GAP_RULE_UNIQUELY_DERIVED=YES with its derivation.
+18.4 Remediation trace (DRAFT1 audit → DRAFT2): B-1 → 4.7; B-2 → 11.3,
+     11.4; B-3 → 9.3-9.10; B-4 → 3.3-3.6; B-5 → 0.8(b), 4.2, 4.11, 6.3,
+     9.8; B-6 → 14.2-14.3, P-09; B-7 → 10.3-10.5; N-1 → 1.6, 9.4; N-2 →
+     12.4, 11.4.6; N-3 → 4.12; N-4 → informative note after §14; N-5 →
+     4.7.6; N-6 → 3.7. Nothing else was changed in substance.
+18.5 Flags:
+      QUANTITATIVE_ALGORITHM_CHANGED=NO
+      EVENT_SELECTION_CHANGED=NO
+      THRESHOLD_LOGIC_CHANGED=NO
+      METRIC_LOGIC_CHANGED=NO
+      CANONICAL_SCHEMA_CHANGED=NO
+      NEW36_INVENTORY_CHANGED=NO
+18.6 Risk register (non-blocking): R-1 4.7.9 drift guards inside reused
+     Stage3 sub-operations are fail-closed by design; R-2 A006 7.3.1(D)
+     pyarrow "17.0.0" verified at step 9; R-3 evidence size vs free
+     space (11.4.8) verified at step 9.
+18.7 Precedence. Where V2 Section 17 or CANDIDATE_SPEC Section 8 state
+     that NEW36/candidate execution is not authorized by those
+     documents, A008 (once frozen, Section 9) supplies the authorization
+     and nothing else. All other clauses of V2, A001-A007 and the
+     Candidate specification remain in force with their existing
+     precedence.
+
+document_terminates_here=true
+append_after_freeze=FORBIDDEN
