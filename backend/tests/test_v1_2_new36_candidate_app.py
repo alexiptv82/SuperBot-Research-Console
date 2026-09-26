@@ -5,10 +5,18 @@ in this file. No network, no real DB, no path under backend/data/, no
 path under §14.4. All ZIP paths are throwaway placeholder files (never
 opened for real — the ZIP-opening/parquet layer is deliberately isolated
 via monkeypatch, see NOTE at the top of TestFullSyntheticGenerate).
-The 12 real frozen NEW36 session identifiers are used ONLY to exercise
-inventory-enforcement / the full composition pipeline against synthetic
-(non-NEW36) numeric fixtures, per the explicit §13.2 exception
-(identifiers are not quantitative data).
+
+§13.2 ISOLATION (STRICT): the 12 REAL frozen NEW36 session identifiers
+are used ONLY in the two dedicated P-08 inventory-enforcement tests
+below (test_gate_p08_inventory_rejects_*), which check the inventory
+KEY-SET logic in isolation and never touch quantitative composition.
+Every other test — including the FULL 12-session x 2-asset 3456-row
+generate() pipeline (TestFullSyntheticGenerate) and the P-09 input-
+identity gate test — uses _SYNTHETIC_SESSION_IDS_12, twelve clearly
+non-NEW36 identifiers, paired with in-memory/temporary synthetic ZIP
+placeholder bytes, a temporary synthetic SQLite DB and a temporary
+ledger. No real NEW36 ZIP path, no backend/data/ path, and no §14.4
+real report path is referenced anywhere in this file.
 """
 from __future__ import annotations
 
@@ -40,6 +48,12 @@ from recovery.v1_2_new36_validators import (  # noqa: E402
     verify_session_id_uniqueness,
 )
 from checkpoint_registry import NEW36_SESSION_IDS  # noqa: E402
+
+# Twelve CLEARLY synthetic session identifiers — never real NEW36 ids —
+# used for every test that is NOT specifically exercising the §13.2
+# inventory-enforcement exception (i.e. everything except the two
+# test_gate_p08_inventory_rejects_* tests below).
+_SYNTHETIC_SESSION_IDS_12: tuple[str, ...] = tuple(f"SYNTH36_TESTONLY_SESSION_{i:02d}" for i in range(12))
 
 
 # ---------------------------------------------------------------------------
@@ -82,6 +96,17 @@ def _make_synthetic_freeze_manifest(tmp_path: Path) -> Path:
     p = tmp_path / "freeze_manifest.txt"
     p.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return p
+
+
+def _make_synthetic_reference_identities(tmp_path: Path) -> tuple[tuple[str, int, str], ...]:
+    """Dependency-injection stand-in for A008 §0.6 (§13 pattern explicitly
+    endorsed for tests): a throwaway synthetic file, NEVER any path under
+    backend/recovery/reference/, used only to exercise gate P-03's
+    Reference-identity verification LOGIC without ever touching the real
+    Reference files."""
+    p = tmp_path / "synthetic_reference_stand_in.txt"
+    p.write_bytes(b"SYNTHETIC_REFERENCE_IDENTITY_STAND_IN_NOT_THE_REAL_FILE")
+    return ((str(p), p.stat().st_size, sha256_file(p)),)
 
 
 def _make_synthetic_input_files_and_identity_table(tmp_path: Path, session_ids) -> tuple[dict, dict]:
@@ -215,9 +240,9 @@ def test_gate_p08_inventory_rejects_duplicate_mapped_to_different_case():
 
 def test_gate_p09_input_identity_size_mismatch(tmp_path):
     ctx = capp.CandidateContext()
-    session_zip_map, identity_table = _make_synthetic_input_files_and_identity_table(tmp_path, NEW36_SESSION_IDS)
+    session_zip_map, identity_table = _make_synthetic_input_files_and_identity_table(tmp_path, _SYNTHETIC_SESSION_IDS_12)
     ctx.input_identity_table = identity_table
-    first = NEW36_SESSION_IDS[0]
+    first = _SYNTHETIC_SESSION_IDS_12[0]
     Path(session_zip_map[first]).write_bytes(b"TAMPERED")
     with pytest.raises(capp.PreconditionFail) as exc:
         capp.gate_p09_input_identity(ctx, session_zip_map)
@@ -229,6 +254,45 @@ def test_gate_p03_fails_closed_when_freeze_manifest_absent(tmp_path):
     with pytest.raises(capp.PreconditionFail) as exc:
         capp.gate_p03_implementation_identities(ctx)
     assert exc.value.code == "P-03"
+
+
+def test_gate_p03_reference_identity_source_is_independent_of_freeze_manifest(tmp_path):
+    """§0.6 contract: P-03 verifies Reference identity from frozen A008
+    §0.6 constants (or, in tests, from ctx.reference_identities via
+    dependency injection) — NEVER from rows inside the §3.5 freeze
+    manifest, which contains no Reference path/hash rows at all."""
+    freeze_path = _make_synthetic_freeze_manifest(tmp_path)
+    freeze_text = freeze_path.read_text(encoding="utf-8")
+    assert "reference" not in freeze_text.lower(), "freeze manifest must not contain Reference rows"
+
+    ref_identities = _make_synthetic_reference_identities(tmp_path)
+    ctx = capp.CandidateContext(freeze_manifest_path=freeze_path, reference_identities=ref_identities)
+    capp.gate_p03_implementation_identities(ctx)  # must not raise
+
+
+def test_gate_p03_reference_identity_drift_is_detected(tmp_path):
+    freeze_path = _make_synthetic_freeze_manifest(tmp_path)
+    ref_identities = _make_synthetic_reference_identities(tmp_path)
+    tampered_path, size, sha = ref_identities[0]
+    Path(tampered_path).write_bytes(b"TAMPERED_CONTENT_DIFFERENT_LENGTH_TOO")
+    ctx = capp.CandidateContext(freeze_manifest_path=freeze_path, reference_identities=ref_identities)
+    with pytest.raises(capp.PreconditionFail) as exc:
+        capp.gate_p03_implementation_identities(ctx)
+    assert exc.value.code == "P-03"
+    assert "§0.6" in str(exc.value) or "0.6" in str(exc.value)
+
+
+def test_gate_p03_default_reference_identities_are_transcribed_from_a008_0_6():
+    """Confirms the production default constant is exactly the frozen
+    A008 §0.6 table (path, size, sha256) and is never populated by
+    hashing the real Reference file at authoring time — the values are
+    literal constants in the module source."""
+    paths = {relpath for relpath, _size, _sha in capp.REFERENCE_FROZEN_IDENTITIES}
+    assert paths == {
+        "backend/recovery/reference/v1_2_reference.py",
+        "backend/recovery/reference/tests/test_v1_2_reference.py",
+        "backend/recovery/reference/REFERENCE_INDEPENDENCE_ATTESTATION.txt",
+    }
 
 
 def test_gate_p10_ledger_binding_requires_matching_invoked_record(tmp_path):
@@ -261,13 +325,21 @@ class TestFullSyntheticGenerate:
     files) and the ENTIRE §4.7 composition/serialization pipeline run
     for real, unmodified. gate_p05 (git HEAD binding) is monkeypatched
     because the newly authored Step-4 files are not yet committed at
-    authoring time; this does not touch composition logic."""
+    authoring time; this does not touch composition logic.
+
+    §13.2 ISOLATION: this class uses _SYNTHETIC_SESSION_IDS_12 (twelve
+    clearly non-NEW36 identifiers) via ctx.session_ids_ordered, NOT the
+    real frozen NEW36_SESSION_IDS — the full 3456-row composition
+    pipeline is never exercised against the real frozen identifiers.
+    Reference (§0.6) identity verification is exercised via
+    ctx.reference_identities dependency injection against a synthetic
+    stand-in file; backend/recovery/reference/ is never touched."""
 
     def _build_ctx_and_args(self, tmp_path, monkeypatch):
         db_path = _make_synthetic_sessions_db(tmp_path)
         env_path = _make_environment_record(tmp_path)
         freeze_path = _make_synthetic_freeze_manifest(tmp_path)
-        session_ids = list(NEW36_SESSION_IDS)
+        session_ids = list(_SYNTHETIC_SESSION_IDS_12)
         session_zip_map, identity_table = _make_synthetic_input_files_and_identity_table(tmp_path, session_ids)
         zip_map_path = tmp_path / "session_zip_map.json"
         zip_map_path.write_text(json.dumps(session_zip_map), encoding="utf-8")
@@ -275,6 +347,8 @@ class TestFullSyntheticGenerate:
         ctx = capp.CandidateContext(
             input_identity_table=identity_table,
             freeze_manifest_path=freeze_path,
+            reference_identities=_make_synthetic_reference_identities(tmp_path),
+            session_ids_ordered=tuple(session_ids),
         )
 
         monkeypatch.setattr(capp, "gate_p05_source_identity", lambda: ("a" * 40, {"synthetic": "0" * 64}))

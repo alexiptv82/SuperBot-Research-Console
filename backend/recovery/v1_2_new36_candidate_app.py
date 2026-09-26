@@ -137,17 +137,24 @@ CONTROL_PATHS: tuple[str, ...] = (
     "backend/recovery/allowlist.py",
 )
 
-# NOTE: Reference (0.6) byte-identity is verified GENERICALLY by the
-# freeze-manifest row loop in gate_p03_implementation_identities below
-# (any row, regardless of record_type, is checked against the real
-# repository file at its recorded path/size/sha256). No Reference file
-# hash is hardcoded in this module: computing it now, before Section 16
-# step 6 exists, would require fabricating a value this agent cannot
-# verify without violating the §5.1 clean-room prohibition on consulting
-# backend/recovery/reference/. The freeze manifest (Section 16 step 6,
-# NOT performed in this session) is the correct, authorized place to
-# record that hash via a plain byte-level SHA256 (identity check, not
-# content inspection).
+# A008 DRAFT4 §0.6 — frozen Reference identity (byte-exact), transcribed
+# VERBATIM from the frozen A008 amendment text itself (a permitted
+# authoring input per §5.2: "A001-A008 (frozen text)"). This agent has
+# NEVER opened, read, hashed or otherwise inspected the actual Reference
+# file at any point to produce these values — they are copied from the
+# frozen spec's own §0.6 table. P-03/§3.6 verifies these independently
+# of the §3.5 implementation freeze manifest, which per §3.5 contains
+# ONLY SOURCE/TEST/ATTESTATION/CONTROL rows, aggregates and the two
+# REFERENCE_IDENTITY_OK / PROTOCOL_IDENTITY_OK=YES recorded-verification
+# flags — it MUST NOT be expected to contain Reference path/hash rows.
+REFERENCE_FROZEN_IDENTITIES: tuple[tuple[str, int, str], ...] = (
+    ("backend/recovery/reference/v1_2_reference.py", 84763,
+     "f608d69cae4ebf56b19732cb558b91860c64878ba351aef3de520eaf5347651b"),
+    ("backend/recovery/reference/tests/test_v1_2_reference.py", 86102,
+     "bdc72be42d93de4b41eaaf7e6596a43051b80332a51983b2a12311cd5b9c0373"),
+    ("backend/recovery/reference/REFERENCE_INDEPENDENCE_ATTESTATION.txt", 7253,
+     "23ef2bbe8795d6037297fc2d22204cf809a1926cb3aca4e2367f130ea4fcf46e"),
+)
 
 # A008 DRAFT4 §14.2 — authoritative input identity triples (Appendix-B order).
 NEW36_INPUT_IDENTITY: dict[str, tuple[int, str]] = {
@@ -187,6 +194,7 @@ class CandidateContext:
     input_identity_table: dict[str, tuple[int, str]] | None = None
     freeze_manifest_path: Path | None = None
     protocol_identities: tuple[tuple[Path, int, str], ...] | None = None
+    reference_identities: tuple[tuple[str, int, str], ...] | None = None
     session_ids_ordered: tuple[str, ...] | None = None
     skip_firewall_self_check: bool = False
 
@@ -225,8 +233,10 @@ def gate_p03_implementation_identities(ctx: CandidateContext) -> None:
             f"freeze record absent: {freeze_path} (Section 16 step 6 has not "
             f"run yet; NEW36 is not eligible until then, §3.6)",
         )
-    # Freeze record present: verify every per-file SHA256/aggregate + the
-    # Reference (0.6) and protocol (0.2-0.4) identities it records.
+    # Freeze record present (§3.5 format: SOURCE/TEST/ATTESTATION/CONTROL
+    # rows + aggregates + REFERENCE_IDENTITY_OK/PROTOCOL_IDENTITY_OK=YES).
+    # It does NOT, and MUST NOT be expected to, contain Reference
+    # path/hash rows (§3.5 exact format has none).
     text = freeze_path.read_text(encoding="utf-8")
     lines = [ln for ln in text.split("\n") if ln]
     kv: dict[str, str] = {}
@@ -245,6 +255,20 @@ def gate_p03_implementation_identities(ctx: CandidateContext) -> None:
             raise PreconditionFail("P-03", f"freeze-manifest identity drift on {relpath} (record_type={record_type})")
     if kv.get("REFERENCE_IDENTITY_OK") != "YES" or kv.get("PROTOCOL_IDENTITY_OK") != "YES":
         raise PreconditionFail("P-03", "freeze manifest does not assert REFERENCE_IDENTITY_OK/PROTOCOL_IDENTITY_OK=YES")
+
+    # A008 §3.6: independently, deterministically verify EVERY frozen
+    # Reference identity from A008 §0.6 against the runtime files. This
+    # NEVER relies on the freeze manifest for the expected path/size/sha
+    # — the expected values come only from REFERENCE_FROZEN_IDENTITIES
+    # (transcribed from frozen §0.6 text) or, in synthetic tests ONLY,
+    # from ctx.reference_identities (dependency injection, §13).
+    ref_identities = ctx.reference_identities if ctx.reference_identities is not None else REFERENCE_FROZEN_IDENTITIES
+    for relpath, size_bytes, sha in ref_identities:
+        p = Path(relpath)
+        if not p.is_absolute():
+            p = REPO_ROOT / relpath
+        if not p.exists() or p.stat().st_size != size_bytes or sha256_file(p) != sha:
+            raise PreconditionFail("P-03", f"A008 §0.6 frozen Reference identity drift on {relpath}")
 
 
 def gate_p04_firewall_self_check(ctx: CandidateContext) -> None:
