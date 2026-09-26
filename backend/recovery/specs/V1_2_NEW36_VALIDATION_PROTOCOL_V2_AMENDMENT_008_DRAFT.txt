@@ -1,0 +1,1026 @@
+SUPERBOT V1.2 — NEW36 VALIDATION PROTOCOL V2 — AMENDMENT 008
+DOCUMENT: V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_008_DRAFT.txt
+
+STATUS: DRAFT — NOT FROZEN
+
+This document has no frozen identity. It SHALL NOT be cited as frozen,
+and no SHA256 value SHALL be attributed to it as a frozen identity,
+until it has passed independent static audit and has been frozen by the
+separate exact-byte freeze procedure (Section 16, step 3).
+
+CLASS: EXECUTION-CLOSURE AMENDMENT
+SCOPE: execution layer, provenance, gates, authorization, executors.
+NOT IN SCOPE: any scientific, quantitative, threshold, event-selection,
+metric, schema, serialization, tolerance or inventory rule.
+
+======================================================================
+0. KEY WORDS AND DOCUMENT CONTROL
+======================================================================
+
+0.1 "MUST", "MUST NOT", "SHALL", "SHALL NOT" and "MAY" are normative.
+    "Candidate", "Reference", "comparator", "validator", "S1", "S2",
+    "one-shot", "application invocation" have their V2 meanings.
+    "Candidate application" means the NEW36 execution/orchestration
+    layer defined in Section 4 of this Amendment.
+
+0.2 Parent protocol:
+      V1_2_NEW36_VALIDATION_PROTOCOL_V2
+      SIZE_BYTES=19392
+      SHA256=5ed8a8b12726d395d25262dc3e4073250be3de94f3d62e64e99167921380ef95
+
+0.3 Candidate specification:
+      V1_2_CANDIDATE_SPEC.txt
+      SIZE_BYTES=6738
+      SHA256=aed67b5ec9ae1b710ec3d96e1fcc2e15bd9c30fdd60e80cc68553d8fc3b597ca
+
+0.4 Prior amendments (identities observed as raw working-tree bytes at
+    repository HEAD 1078e92389a7876e2e90fbbde45761f6483c866c; A001-A006
+    values coincide with the identities recorded in A007 Section 0.4/0.5):
+      A001 SIZE_BYTES=13858
+           SHA256=e64f1198e3f97f975d1f0f8ec7183b1f0c83786429e98cbd66819d98f640f0bf
+      A002 SIZE_BYTES=7236
+           SHA256=9a335589a44df68de56804bce09d122308f01ba95403bcb10a764c0b3461df57
+      A003 SIZE_BYTES=5209
+           SHA256=cee61f2ea2b5d592deddb0fa6d2215c77039c365006ecb0bc7caf1d32075bea7
+      A004 SIZE_BYTES=21467
+           SHA256=62830b779ed77cabc6afdc0ac8cea4b9013871feee65b03aa73d7757c88197b4
+      A005 SIZE_BYTES=29853
+           SHA256=0c2dc05bc37fc392f67b45fd8f7e3576b49be9d764ffca4be0679db22b8d2a00
+      A006 SIZE_BYTES=61911
+           SHA256=a8610b5dc3328c164bceb91921ee9a658bf2721cb1b0384e66b6289255f910b7
+           freeze commit b80410d9802219d9c3a67163b72d84ff90c18a0e
+      A007 SIZE_BYTES=13971
+           SHA256=d33f9c66537e762f08d164bc791f31e3eb18fbc3a5e694507f9f436322ceaf10
+           freeze commit e7b7ea513cf438ef62681a9fc1a8aa5a54ea432c
+           (see Section 2 for the disposition of A007's internal header)
+
+0.5 Frozen Reference identity (byte-exact, materialized in commit
+    390c76957f8ebe0e16b539ef9afaf8ddc0c387f1; MUST remain byte-identical,
+    Section 5.6):
+      backend/recovery/reference/v1_2_reference.py
+        SIZE_BYTES=84763
+        SHA256=f608d69cae4ebf56b19732cb558b91860c64878ba351aef3de520eaf5347651b
+      backend/recovery/reference/tests/test_v1_2_reference.py
+        SIZE_BYTES=86102
+        SHA256=bdc72be42d93de4b41eaaf7e6596a43051b80332a51983b2a12311cd5b9c0373
+      backend/recovery/reference/REFERENCE_INDEPENDENCE_ATTESTATION.txt
+        SIZE_BYTES=7253
+        SHA256=23ef2bbe8795d6037297fc2d22204cf809a1926cb3aca4e2367f130ea4fcf46e
+
+0.6 Frozen engine / collector identities (V2 Section 2, unchanged):
+      ENGINE_SHA256=abedee399c272eff858b109fb448cbda3ad3a49e40be4ba3f486650e3151a3e8
+      COLLECTOR_SHA256=e924edc1b8348d9cc8e74a37eaa17e6bbc80116de29d2f7a00cd43444d1265a3
+
+0.7 Evidence basis. A008 was drafted solely from: the frozen documents
+    of 0.2-0.4; static read-only inspection of the repository at HEAD
+    1078e92389a7876e2e90fbbde45761f6483c866c; read-only metadata of the
+    runtime database (session identifiers, checkpoint hints, stored
+    paths, byte sizes); filesystem stat(). No NEW36 session ZIP was
+    opened. No NEW36 quantitative value, no golden numerical content,
+    no Candidate NEW36 output and no Reference NEW36 output was read.
+    Neither Candidate nor Reference was executed.
+
+======================================================================
+1. PURPOSE, SCOPE AND NON-NEGOTIABLE SCIENTIFIC FREEZE
+======================================================================
+
+1.1 Purpose. Pre-application forensic discovery established:
+      CANDIDATE_NEW36_ENTRYPOINT_STATUS=NOT_FOUND
+      NEW36_EXPECTED_INPUT_MODE=EXISTING_RAW_ZIP_STORE
+      REFERENCE_NEW36_DIRECT_FILESYSTEM_PATH_EXISTS=YES
+      CANDIDATE_NEW36_AUTHORIZED_READ_PATH_FOUND=NO
+      CANDIDATE_NNC3_IMPLEMENTATION_FOUND=NO
+      CANDIDATE_NNC4_IMPLEMENTATION_FOUND=NO
+      CANDIDATE_NNC5_MANIFEST_PARSER_FOUND=NO
+      S1_S2_COMPLETE_EXECUTOR_FOUND=NO
+      NEW_CANDIDATE_ENTRYPOINT_WOULD_BE_REQUIRED=YES
+    A008 closes ONLY these execution-layer contracts.
+
+1.2 Scientific freeze. A008 MUST NOT and does NOT alter any of:
+    HZ/HG/HC/HB definitions; T0/TZ domains; G0/G1; C0/C1; B0/B1;
+    thresholds and threshold domains; horizon definitions; quantiles;
+    forward-return semantics (A004 R-01); overlap semantics;
+    exact_spacing_pair_n semantics (V2 Section 4, A001 A6, A007.5);
+    gate_zero_n; mean_abs_move (A003); metric formulas (A004 R-04);
+    event selection or eligibility; the canonical 25-field row schema;
+    the canonical row key; CSV serialization rules; S1 tolerance
+    (<= 1e-12); S2 invariant semantics (except the frozen A007
+    withdrawal); the NEW36 inventory (V2 Appendix B, A002 B1).
+
+1.3 A007 remains authoritative. A20_I12 and I_HB_I12 are withdrawn.
+    The S2 closed invariant list is A01-A19 and A21-A30. A19_I11
+    remains enforced and fail-closed.
+
+1.4 Explicit statements:
+      QUANTITATIVE_ALGORITHM_CHANGED=NO
+      EVENT_SELECTION_CHANGED=NO
+      THRESHOLD_LOGIC_CHANGED=NO
+      METRIC_LOGIC_CHANGED=NO
+      ROW_SCHEMA_CHANGED=NO
+      MANIFEST_REQUIRED_KEY_SET_CHANGED=NO
+      S1_RULES_CHANGED=NO
+      S2_INVARIANT_LIST_CHANGED=NO (A007 list retained)
+      NEW36_INVENTORY_CHANGED=NO
+
+1.5 Every normative clause of A008 is an EXECUTION-LAYER choice. A008
+    contains zero scientific choices and zero quantitative choices
+    (Section 18).
+
+======================================================================
+2. DISPOSITION OF THE A007 INTERNAL LEGACY HEADER
+======================================================================
+
+    A008_NEW_NORMATIVE_CHOICE_1=A007_EXTERNAL_IDENTITY_CONTROLS
+
+2.1 Finding. The frozen A007 document body contains an internal legacy
+    line equivalent to "STATUS: DRAFT — NOT FROZEN" and an internal
+    filename line ending in "_DRAFT.txt". These strings are part of the
+    frozen bytes of A007.
+
+2.2 Rule. The frozen external identity of A007 controls:
+      path   backend/recovery/specs/V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_007.txt
+      SIZE_BYTES=13971
+      SHA256=d33f9c66537e762f08d164bc791f31e3eb18fbc3a5e694507f9f436322ceaf10
+      commit e7b7ea513cf438ef62681a9fc1a8aa5a54ea432c ("Freeze V1.2 NEW36
+      Validation Protocol V2 Amendment 007").
+    The preserved internal legacy status string is a historical artifact
+    of the freeze procedure. It does NOT reopen A007, does NOT make A007
+    a draft, and SHALL NOT be cited as evidence that A007 is unfrozen.
+
+2.3 No byte of A007 may change. Any change to the bytes of A007 (including
+    "correcting" the internal header) invalidates A007's frozen identity
+    and is FORBIDDEN. A008 does not modify A007. Preflight MUST verify
+    the A007 SIZE_BYTES and SHA256 of 2.2 before any NEW36 application
+    invocation.
+
+2.4 The same rule applies mutatis mutandis to A008 once frozen: the
+    frozen A008 bytes will contain this DRAFT header; the external
+    frozen identity recorded by the freeze procedure controls.
+
+======================================================================
+3. POST-A007 IMPLEMENTATION IDENTITY
+======================================================================
+
+    A008_NEW_NORMATIVE_CHOICE_2=POST_A007_CANDIDATE_IMPLEMENTATION_IDENTITY
+
+3.1 Drift finding (static, evidence-only). V2 Section 2 froze:
+      IMPLEMENTATION_SOURCE_AGGREGATE_SHA256=dbfd311f7b0290a29f546de57d494e77082516cff91ae7e4b5e82587d141356a
+      IMPLEMENTATION_TEST_AGGREGATE_SHA256=b9ffac445641c007b83a0a8e71cd0d40cdff29ee3f968a07cbf7fe3bf675c275
+    over v1_2_preflight.IMPL_SOURCE_PATHS / IMPL_TEST_PATHS. After the
+    A007 conformance cleanup (commit 3d30debf4aee52951321c8a88c42714eb083bf92,
+    which removed the withdrawn I12 enforcement from four files), the
+    same algorithm over the same paths yields at HEAD 1078e92...:
+      IMPLEMENTATION_SOURCE_AGGREGATE_SHA256(current)=7b61a5be4632856b346b24dc48076342e5a1b3e527c7a29e1d432bc8de4325e0
+      IMPLEMENTATION_TEST_AGGREGATE_SHA256(current)=b4dc1a963ade27fa0f65b89bc795c270faddd5dfc3b0c27dba93a97d3fee2457
+    The frozen preflight (v1_2_preflight.run_preflight) would therefore
+    emit IMPLEMENTATION_SOURCE_AGGREGATE_DRIFT and
+    IMPLEMENTATION_TEST_AGGREGATE_DRIFT if the V2 Section 2 values were
+    supplied as expectations. This drift is a consequence of A007 and is
+    NOT bypassed by A008.
+
+3.2 Observed current Candidate-side identities (INFORMATIVE EVIDENCE;
+    these are PRE-A008 working-tree values and are NOT frozen values):
+      backend/recovery/v1_2_candidate.py         |13519|49ec55f68110c22c20fd4fe0879928e9366b27db904402c273a84c5d31425e48
+      backend/recovery/v1_2_stage3.py            |63676|013b8c75b9caf32172e92c8dc6d3adcaf7ad8bb725493e1dea584000f92eba84
+      backend/recovery/v1_2_diagnostics.py       |33645|45731cb23790567904ffa6ff9f369966d0911f05d5cf29faed0a61837f817376
+      backend/recovery/v1_2_acceptance.py        |14025|1a03ea0feda51c5016781b66696802863452f0f896db11de23f4b3e57fe03fc4
+      backend/recovery/v1_2_preflight.py         | 9480|840fd065b530363d625908e78101c9fda593ab0521b4e5785262113b80604ed0
+      backend/recovery/engine.py                 |58268|abedee399c272eff858b109fb448cbda3ad3a49e40be4ba3f486650e3151a3e8
+      backend/recovery/harness.py                |59414|e97f2278b96b8154411de8f5a8c205273b217b65f33feada0986a78c69917e39
+      backend/parquet_validator.py               |14516|3e367a414b222b2aee1be1c0bf459ff21d69dee6c3c5d2aceae363bc34636ee7
+      backend/frozen_engine.py                   | 1206|f969d95c32dbb492678f9556ae9252f970bdd7b731ce71fb1d58c5d195e21330
+      backend/checkpoint_registry.py             | 8477|f5258876c624f213274d262baa73d80e5a7772f3d11dc73aa9a83471aa1f1dbf
+      backend/tests/test_v1_2_candidate.py       |32731|aab4e639cdfeb83644ac84c63d293d70b354a0d9b240fb9280a0f8e53f37f28e
+      backend/tests/test_v1_2_stage3.py          |72049|cfe6aa8ee110fd10823c4bb1d1e6b9d0ea55c1dc9b003b1764b49f68e04639f1
+    Of these, engine.py and checkpoint_registry.py match their frozen
+    V2 / handoff identities; v1_2_preflight.py and v1_2_acceptance.py
+    match the FROZEN_SOURCE_HANDOFF_MANIFEST; v1_2_candidate.py,
+    v1_2_stage3.py and their tests are post-A007.
+
+3.3 Disposition of the V2 Section 2 aggregates. The values dbfd311f...
+    and b9ffac44... are retained as historical identities of the
+    PRE-A007 Candidate implementation. They MUST NOT be supplied as
+    PreflightExpectations for the NEW36 controlled run, and no
+    implementation whose aggregates equal them is NEW36-eligible
+    (it would still contain the withdrawn I12 enforcement).
+
+3.4 New authoritative identity sets. After the execution layer of
+    Sections 4, 10, 11 is implemented, the following EXACT
+    repository-root-relative paths constitute the identity sets.
+
+    3.4.1 CANDIDATE_SOURCE_PATHS (order irrelevant; the aggregate sorts):
+      backend/recovery/v1_2_candidate.py
+      backend/recovery/v1_2_stage3.py
+      backend/recovery/v1_2_diagnostics.py
+      backend/recovery/v1_2_new36_candidate_app.py          (NEW, Section 4)
+      backend/recovery/engine.py
+      backend/checkpoint_registry.py
+      backend/parquet_validator.py
+      backend/frozen_engine.py
+      backend/recovery/CANDIDATE_INDEPENDENCE_ATTESTATION.txt (NEW, Section 5)
+
+    3.4.2 EXECUTOR_SOURCE_PATHS:
+      backend/recovery/v1_2_new36_validators.py             (NEW, Sections 8, 10, 11)
+
+    3.4.3 CANDIDATE_TEST_PATHS:
+      backend/tests/test_v1_2_candidate.py
+      backend/tests/test_v1_2_stage3.py
+      backend/tests/test_v1_2_new36_candidate_app.py         (NEW, Section 13)
+
+    3.4.4 EXECUTOR_TEST_PATHS:
+      backend/tests/test_v1_2_new36_validators.py            (NEW, Section 13)
+
+    3.4.5 Explicitly EXCLUDED from every A008 identity set: every path
+      under backend/recovery/reference/ (frozen separately, 0.5);
+      backend/recovery/v1_2_preflight.py and v1_2_acceptance.py (the
+      frozen PRE-NEW36 acceptance/preflight tooling keeps its handoff
+      identity and is verified by byte identity, not aggregated);
+      backend/recovery/sandbox.py, allowlist.py, harness.py (firewall
+      and OLD36 recovery tooling; verified by byte identity as
+      FIREWALL_INTEGRITY_PATHS, 3.7).
+
+3.5 Aggregate algorithm (identical to v1_2_preflight.aggregate_sha256):
+      for each path P in the set:
+        rec := P + "\t" + lowercase_hex_sha256(raw working-tree bytes of P)
+      records sorted ascending by exact string comparison (code point);
+      blob := "\n".join(records) + "\n", encoded UTF-8;
+      AGGREGATE := lowercase_hex_sha256(blob).
+    Path strings use "/" separators and are repository-root-relative.
+    Four aggregates are defined:
+      CANDIDATE_SOURCE_AGGREGATE_SHA256   over 3.4.1
+      EXECUTOR_SOURCE_AGGREGATE_SHA256    over 3.4.2
+      CANDIDATE_TEST_AGGREGATE_SHA256     over 3.4.3
+      EXECUTOR_TEST_AGGREGATE_SHA256      over 3.4.4
+    No per-file value may be replaced by a digest over more than one
+    file; every per-file SHA256 MUST also be recorded individually.
+
+3.6 Capture and freeze timing.
+    (a) Hashes are captured at Section 16 step 6, only after all
+        synthetic tests of Section 13 pass, in a working tree where
+        every path of 3.4 is committed and byte-identical to its blob
+        at `git rev-parse HEAD` (git show <HEAD>:<P>).
+    (b) The captured values are recorded in a NEW record file
+          backend/recovery/specs/V1_2_CANDIDATE_IMPLEMENTATION_FREEZE_MANIFEST.txt
+        containing: the capture commit; for every path of 3.4 its
+        SIZE_BYTES and SHA256; the four aggregates of 3.5; the byte
+        identities of the FIREWALL_INTEGRITY_PATHS (3.7) and of the
+        frozen Reference paths (0.5). This record file is NOT a member
+        of any aggregate.
+    (c) The record file is frozen at Section 16 step 8 after the
+        independent implementation audit (step 7). Any change to any
+        path of 3.4 after step 8 invalidates the freeze and returns the
+        sequence to step 4.
+    (d) No final SHA256 value for a file that does not yet exist is
+        pre-declared by A008. Any document or manifest presenting such
+        a value before step 6 is non-conforming.
+
+3.7 FIREWALL_INTEGRITY_PATHS (byte identity, not aggregated):
+      backend/recovery/sandbox.py   |4725|7fbe860ed399142ce445fbd5287bd8b327423dcd527127214636e151bea788ca
+      backend/recovery/allowlist.py |2057|3fd893d503201c3a3fec54ba0554c029ac7d0009a736f1a52f80de766dc329be
+    These values are the current frozen-by-behaviour identities of the
+    NEW36 recovery firewall (last modified in commit 124ecf4, 2026-09-16).
+    They MUST be byte-identical at every step of Section 16 and at both
+    NEW36 application invocations.
+
+3.8 Eligibility rule. No implementation is NEW36-eligible until: the
+    record file of 3.6(b) exists, is frozen (3.6(c)), and a renewed
+    narrow preflight (Section 16 step 9) verifies, in the interpreter
+    that will execute the run, that every per-file SHA256, every
+    aggregate, every FIREWALL_INTEGRITY_PATH identity, every Reference
+    identity (0.5) and every protocol identity (0.2-0.4) matches
+    exactly. Any mismatch is PRECONDITION_FAIL; NEW36 is not consumed.
+
+======================================================================
+4. CANDIDATE NEW36 APPLICATION CONTRACT
+======================================================================
+
+    A008_NEW_NORMATIVE_CHOICE_3=CANDIDATE_NEW36_APPLICATION_ENTRYPOINT
+    A008_NEW_NORMATIVE_CHOICE_4=CANDIDATE_COMPOSITION_PRECEDENCE
+
+4.1 Location. Exactly one new module:
+      backend/recovery/v1_2_new36_candidate_app.py
+    It is a COMPOSITION/ORCHESTRATION layer. It MUST NOT define any
+    quantitative computation of its own (no threshold, mask, filter,
+    direction, metric, fingerprint or count formula); it MUST call the
+    existing frozen Candidate-side functions (4.6).
+
+4.2 Invocation interface (explicit invocation only; no import-time
+    side effects; no FastAPI route; no automatic execution):
+      python -m recovery.v1_2_new36_candidate_app environment-identity --out <path>
+      python -m recovery.v1_2_new36_candidate_app preflight
+           --db <sqlite path> --environment-record <path>
+      python -m recovery.v1_2_new36_candidate_app generate
+           --db <sqlite path> --environment-record <path>
+           --session-zip-map <json path> --out-csv <path> --out-manifest <path>
+    Equivalent programmatic entry points with the same parameters MAY
+    exist; no other way of reaching NEW36 data is permitted.
+
+4.3 Inputs.
+    (a) --session-zip-map: a JSON object whose keys are session_id
+        strings and whose values are existing filesystem paths of the
+        canonical session ZIPs already resident in the raw store
+        (Section 14). Parsed with the NNC-5 parser (Section 8). The key
+        set MUST equal exactly the frozen 12 NEW36 session identifiers;
+        an extra, missing or repeated key is PRECONDITION_FAIL before
+        any ZIP is opened.
+    (b) --db: the live runtime SQLite database, opened READ-ONLY
+        (URI mode=ro). Used only for NNC-4 (Section 7) and for the
+        authoritative expected sync_grid_100ms part count of A005 R2.8 /
+        A006 Section 4.10.2. No write, no schema change, no temp table.
+    (c) --environment-record: the NNC-3 record (Section 6.3).
+    (d) --out-csv / --out-manifest: MUST NOT exist; created with
+        exclusive-create semantics (open mode "xb"); a pre-existing
+        file is PRECONDITION_FAIL before any ZIP is opened.
+
+4.4 Inventory. The session order is the frozen Appendix-B order. The
+    application MUST load checkpoint_registry.NEW36_SESSION_IDS and MUST
+    verify it equals, element by element, the 12 literals of V2 Section 3
+    (which A008 does not restate). Any difference is PRECONDITION_FAIL.
+
+4.5 Data access rules.
+    (a) The application reads the existing raw store directly via the
+        map of 4.3(a). It MUST NOT copy, move, re-download, re-transport,
+        extract-to-disk or re-archive any session ZIP; parquet payloads
+        are read from the ZIP into memory only.
+    (b) The application MUST NOT import recovery.sandbox, and MUST NOT
+        call recovery.sandbox.open_reference_zip, recovery.harness.
+        _load_grid_for_block or any function whose call chain reaches
+        recovery.allowlist.assert_recovery_allowed with a NEW36 id.
+    (c) The application MUST NOT modify, monkeypatch, wrap, disable or
+        weaken recovery.allowlist.assert_recovery_allowed or
+        checkpoint_registry.is_new36_registered. The NEW36 recovery
+        firewall remains fully active (3.7). The Candidate preflight
+        MUST verify, without opening any data, that
+        assert_recovery_allowed(NEW36_SESSION_IDS[0]) raises
+        PermissionError (the existing structural self-check pattern);
+        if it does not raise, PRECONDITION_FAIL.
+    (d) frozen_engine.current_status() MUST report status
+        "NOT_CONFIGURED" and accepts_input False before and after the
+        run; otherwise PRECONDITION_FAIL / structural failure.
+
+4.6 Composition and precedence (NO new algorithm).
+    For each (session_id, asset) block, in Appendix-B session order and
+    BTC-before-ETH asset order:
+    (a) obtain the sync_grid_100ms parquet parts exactly per A004
+        Section 5.4-5.8 and A005 R2.1-R2.7 (entry selection, sort,
+        per-part row filter, multi-part concatenation, Case B / Case D);
+        session-level part coverage exactly per A005 R2.8-R2.10 and
+        A006 Section 4.9-4.11 using the existing parquet_validator
+        functions and the DB-derived expected count;
+    (b) pass the asset block DataFrame to engine.build_canonical_grid()
+        (A004 Section 5.4(d)) and then to the existing Candidate-side
+        block preparation (v1_2_diagnostics._prepare_block or its
+        frozen equivalent) before any quantitative computation;
+    (c) produce HZ, HG, HC, HB rows by calling the existing frozen
+        Candidate-side row generators and primitives (v1_2_stage3
+        _hz_block/_hg_block/_hc_block/_hb_block and v1_2_candidate
+        primitives), subject to (d)-(f).
+    (d) FIELD-LEVEL PRECEDENCE RULE. Where an existing Candidate-side
+        helper embodies a definition that a frozen document declares
+        NON-normative, the application MUST NOT emit that helper's
+        value; it MUST obtain the field from the frozen normative
+        Candidate primitive. A008 records one such known case:
+          F-1  v1_2_stage3.exact_spacing_pair_n counts ALL unordered
+               pairs at exact spacing (module-local helper, used inside
+               _hb_block). A001 A6 and A007.5 declare this NON-normative.
+               The normative frozen primitive is
+               v1_2_candidate.exact_spacing_pair_n (consecutive pairs of
+               the sorted pre-overlap positions). The application MUST
+               emit exact_spacing_pair_n from v1_2_candidate.
+               exact_spacing_pair_n applied to the sorted pre-overlap
+               positions of the paired HB case, and MUST NOT emit the
+               v1_2_stage3 helper's value. No primitive is modified.
+        The independent implementation audit (Section 16 step 7) MUST
+        enumerate every emitted field against V2/A001-A007 and record,
+        per field, which frozen function supplies it. If any field
+        cannot be supplied by composing existing frozen primitives
+        without changing a quantitative primitive, implementation
+        STOPS: A008_IMPLEMENTATION_STATUS=BLOCKED_PRIMITIVE_CHANGE_REQUIRED.
+    (e) The application MUST invoke, for every block, the existing
+        frozen assertions v1_2_candidate.assert_g1_parent_subset,
+        v1_2_candidate.assert_c1_gap_subset and
+        v1_2_candidate.assert_hb_i11, and MUST abort (structural
+        application failure, V2 Section 13) if any raises. It MUST NOT
+        invoke any I12 / A20 check (A007).
+    (f) The application MUST NOT read golden artifacts, OLD36
+        quantitative data, Stage1/2/3 output artifacts, Candidate or
+        Reference NEW36 output, or any file under backend/recovery/reference/.
+
+4.7 Row mapping. Each emitted row MUST contain exactly the 25 fields of
+    V2 Section 4 required_row_fields_ordered, in that order. The first
+    field is protocol_version with the exact literal of A001 A1
+    ("V1_2_NEW36_VALIDATION_PROTOCOL_V2"). diagnostic_version MUST NOT
+    appear in the CSV. NULL/COMPUTED status per axis follows A001 A7;
+    serialization follows V2 Section 4 (UTF-8, LF, empty field for NULL,
+    repr(float), no rounding). Canonical sort per V2 Section 4.
+
+4.8 Expected inventory (unchanged): TOTAL=3456, HZ=1728, HG=432, HC=432,
+    HB=864, 24 blocks. Any other count is a structural application
+    failure. Canonical row key uniqueness MUST be verified before
+    writing.
+
+4.9 Manifest. The application MUST emit a manifest conforming to V2
+    Section 5, A002 B1-B6, A004 Section 9 and Section 12 of this
+    Amendment, with implementation_role="CANDIDATE".
+
+4.10 Write discipline. CSV bytes and manifest bytes are fully
+    serialized in memory, SHA256 computed, then written with "xb";
+    after writing, the file bytes MUST be re-read and compared to the
+    serialized bytes (ArtifactSerializationError otherwise). Nothing is
+    written before all 3456 rows exist and all checks pass.
+
+4.11 Provenance stability. runtime_source_commit and the Candidate
+    source_sha256 object (Section 12) MUST be captured at the preflight
+    gate and re-captured after generation; any difference is a
+    structural failure (ProvenanceError).
+
+======================================================================
+5. CLEAN-ROOM CANDIDATE REQUIREMENT
+======================================================================
+
+    A008_NEW_NORMATIVE_CHOICE_5=CANDIDATE_INDEPENDENCE_ATTESTATION
+
+5.1 The author(s) of backend/recovery/v1_2_new36_candidate_app.py,
+    backend/recovery/v1_2_new36_validators.py and their tests MUST NOT
+    derive from, copy from, import, inspect, execute, diff against or
+    consult:
+      backend/recovery/reference/v1_2_reference.py
+      backend/recovery/reference/tests/test_v1_2_reference.py
+    nor any Reference NEW36 output.
+
+5.2 Permitted Candidate authoring inputs, exhaustively:
+    - V2, A001-A007 and this A008 (frozen text);
+    - V1_2_CANDIDATE_SPEC.txt;
+    - existing Candidate-side implementation: v1_2_candidate.py,
+      v1_2_stage3.py, v1_2_diagnostics.py and their tests;
+    - engine.py (frozen), frozen_engine.py, checkpoint_registry.py;
+    - parquet_validator.py and the harness/validator CONTRACTS as
+      codified in A004 Section 5-6, A005 R2, A006 Section 4 (the
+      Candidate MAY read harness.py for those codified contracts but
+      MUST NOT call its sandbox-bound loaders for NEW36, 4.5(b));
+    - REFERENCE_INDEPENDENCE_ATTESTATION.txt is NOT an input.
+
+5.3 A NEW file backend/recovery/CANDIDATE_INDEPENDENCE_ATTESTATION.txt
+    MUST be created with the implementation and MUST record:
+    - the author identity/role;
+    - the exhaustive list of files read during authoring;
+    - an explicit statement that no path under backend/recovery/reference/
+      was read, imported, executed or diffed;
+    - the exact engine.py symbols imported by the Candidate application
+      (by name);
+    - a statement that no NEW36 quantitative content was read during
+      authoring or synthetic testing;
+    - the statement "A20_I12/I_HB_I12 NOT IMPLEMENTED (A007)".
+    It is a member of CANDIDATE_SOURCE_PATHS (3.4.1) and therefore
+    hash-bound.
+
+5.4 The independent implementation audit (Section 16 step 7) MUST
+    include a static import/AST check that no module of 3.4.1-3.4.4
+    imports, opens or references a path under backend/recovery/reference/.
+
+5.5 The comparator/validator module (Section 10-11) is authored under
+    the same clean-room rule. It reads Reference OUTPUT ARTIFACTS only
+    at run time (V2 Section 12), never Reference source.
+
+5.6 The Reference implementation (0.5) MUST remain byte-identical.
+    A008 authorizes no change to any Reference file.
+
+======================================================================
+6. CANDIDATE NNC-3 — RUNTIME ENVIRONMENT IDENTITY
+======================================================================
+
+    A008_NEW_NORMATIVE_CHOICE_6=CANDIDATE_NNC3_APPLICABILITY
+
+6.1 The Candidate application MUST implement the A006 Section 7 NNC-3
+    contract EXACTLY as written (7.3.1 members A-D including the
+    pyarrow "17.0.0" requirement, 7.3.2 canonical serialization and
+    digest, 7.3.3 exclusivity, 7.4 equivalence, 7.6 failure). A008 does
+    not restate or redefine any part of it.
+
+6.2 Timing. The Candidate `preflight` and `generate` commands MUST
+    construct the current identity in the same interpreter that will
+    execute the application, compare it (object equality AND sha256
+    equality) with the recorded identity, and fail closed BEFORE any
+    session ZIP is opened. A failure here is PRECONDITION_FAIL and does
+    NOT consume the Candidate invocation.
+
+6.3 Environment record file. The recorded identity of A006 7.3 is a
+    single JSON file, shared by BOTH roles (A006 7.4: the identity
+    recorded under 7.3 applies to both roles), containing EXACTLY two
+    members:
+      "runtime_environment_identity"          (object of 7.3.1)
+      "runtime_environment_identity_sha256"   (string of 7.3.2)
+    serialized with the V2 Section 5 canonical JSON rule (UTF-8,
+    sort_keys=true, indent=2, final newline), parsed with the NNC-5
+    parser. It is created once by the `environment-identity` command
+    with "xb" semantics, before either role's preflight. The same file
+    MUST be supplied to the Candidate and to the Reference.
+
+6.4 The Candidate manifest MUST carry the recorded
+    runtime_environment_identity_sha256 (Section 12.4).
+
+======================================================================
+7. CANDIDATE NNC-4 — LIVE DATABASE SESSION UNIQUENESS
+======================================================================
+
+    A008_NEW_NORMATIVE_CHOICE_7=CANDIDATE_NNC4_APPLICABILITY
+
+7.1 The Candidate application MUST implement the A006 Section 8 NNC-4
+    gate EXACTLY as written: (A) no duplicate sessions.session_id rows;
+    (B) DB-enforced, non-partial, single-column uniqueness on exactly
+    sessions.session_id (unique index or equivalent constraint). A008
+    does not restate or redefine it.
+
+7.2 Read-only. The database MUST be opened read-only (SQLite URI
+    mode=ro). No write, no PRAGMA that modifies state, no journal
+    creation, no duplicate resolution (A006 8.5).
+
+7.3 Timing. Executed in `preflight` and again at the start of
+    `generate`, BEFORE any session ZIP is opened. Failure or inability
+    to establish (A) or (B) is PRECONDITION_FAIL and does NOT consume
+    the Candidate invocation.
+
+======================================================================
+8. NNC-5 — DUPLICATE-MEMBER-SAFE JSON PARSER (PRODUCTION LOCATION)
+======================================================================
+
+    A008_NEW_NORMATIVE_CHOICE_8=NNC5_PRODUCTION_PARSER_LOCATION
+
+8.1 Location. The production duplicate-member-safe parser for the
+    controlled run lives in backend/recovery/v1_2_new36_validators.py
+    (one function, e.g. strict_json_loads(bytes) -> object). It is
+    implemented from the A006 Section 8A text only.
+
+8.2 Semantics (A006 8A, unchanged): input MUST be the original
+    serialized UTF-8 bytes; parsing MUST preserve member pairs long
+    enough to detect a repeated member name in ANY object at ANY depth;
+    any repetition fails closed (ManifestValidationError or equivalent)
+    BEFORE any mapping collapse; non-UTF-8 or unparseable input fails
+    closed.
+
+8.3 Applicability. This parser MUST be used for: the session-zip map
+    (4.3(a)); the environment record (6.3); the Candidate manifest
+    (self-validation after write, 4.10); the SERIALIZED Candidate and
+    Reference manifests read by the S1 comparator and the S2 validator,
+    before semantic validation, before S1 manifest comparison and before
+    manifest_precomparison_sha256 recomputation.
+
+8.4 The Reference's internal parser remains the Reference's own and is
+    unchanged. The comparator MUST NOT import it (5.5).
+
+======================================================================
+9. FORMAL NEW36 ONE-SHOT AUTHORIZATION
+======================================================================
+
+    A008_NEW_NORMATIVE_CHOICE_9=NEW36_ONE_SHOT_AUTHORIZATION_MECHANISM
+
+9.1 Nature. Forensic discovery found no authorization mechanism in
+    code or in V2/A001-A007 (V2 Section 17: candidate_execution_
+    authorized_by_this_document=NO). A008, ONCE FROZEN and ONLY after
+    the complete Section 16 sequence through step 9, constitutes the
+    authorization. The DRAFT confers no authorization.
+
+9.2 The firewall is NOT lifted. recovery.allowlist.assert_recovery_allowed
+    continues to reject every NEW36 id (3.7, 4.5(c)). Authorization is
+    granted to two named applications, by role, reading the raw store
+    through the explicit session-zip map:
+      CANDIDATE_MAX_NEW36_APPLICATION_INVOCATIONS=1
+        application: backend/recovery/v1_2_new36_candidate_app.py generate
+      REFERENCE_MAX_NEW36_APPLICATION_INVOCATIONS=1
+        application: backend/recovery/reference/v1_2_reference.py generate
+    subject to ALL frozen pre-application gates passing for that role
+    (NNC-1..NNC-4 as applicable, Section 3.8 identities, Section 2.3,
+    firewall self-check, FrozenAnalysisEngine state, output-path
+    non-existence).
+
+9.3 Consumption boundary. For each role, the invocation is CONSUMED at
+    the first quantitative NEW36 read by that application (V2 Section 13).
+    For the Candidate application, A008 fixes the conservative
+    observable boundary: the first successful open of any NEW36 session
+    ZIP by the `generate` command. The Candidate MUST write the ledger
+    entry of 9.6 (state INVOKED) immediately BEFORE that first open.
+    Static checks, path stat(), raw-byte SHA256 of ZIP files, DB
+    metadata reads, environment identity construction and synthetic
+    tests do NOT consume.
+
+9.4 After consumption, for that role: any failure consumes the
+    invocation; no retry; no repair-and-rerun; no parameter change; no
+    criterion, tolerance, invariant or protocol change; no
+    NEW36-informed fix. Outcome is V1_2_NEW36_PROTOCOL_FAIL or
+    INVALID_RUN per V2 Sections 13 and 15.
+
+9.5 Separation. Candidate and Reference consumption states are
+    separate. Consumption of one does not consume, authorize or block
+    the other. Invocations MUST be sequential (never concurrent) so that
+    NNC-3 identity and provenance are stable; the order is not
+    constrained by A008. The comparator (Section 10) runs only after
+    BOTH generate steps have completed and both artifact pairs are
+    sealed (V2 Section 12).
+
+9.6 One-shot ledger. A NEW append-only evidence file
+      backend/recovery/reports/v1_2_new36/one_shot_ledger.jsonl
+    (one JSON object per line; parsed with the NNC-5 parser) records
+    per role and in order: PRE_APPLICATION_GATES_PASS (with commit,
+    identity sha, aggregates), INVOKED (timestamp UTC, role), COMPLETED
+    (csv_sha256, csv_size_bytes, manifest_sha256) or FAILED
+    (classification, message). A role whose ledger already contains
+    INVOKED MUST NOT be invoked again; the applications MUST check this
+    before opening any ZIP. The ledger is evidence; its absence or
+    corruption is PRECONDITION_FAIL (fail closed), never a permission.
+
+======================================================================
+10. S1 EXECUTOR CONTRACT
+======================================================================
+
+    A008_NEW_NORMATIVE_CHOICE_10=S1_COMPARATOR_EXECUTION_CONTRACT
+
+10.1 Location: backend/recovery/v1_2_new36_validators.py, command
+     `s1 --candidate-csv --candidate-manifest --reference-csv
+         --reference-manifest --out-report`.
+     Explicit invocation only.
+
+10.2 Inputs are sealed artifacts only. Before comparison the comparator
+     MUST: compute raw SHA256 and size of each of the four files;
+     require csv_sha256/csv_size_bytes in each manifest to equal the
+     computed values for its CSV; parse each manifest with the NNC-5
+     parser; recompute manifest_precomparison_sha256 per V2 Section 5
+     and require equality; verify both COMPLETED ledger entries (9.6)
+     match. Any failure is S1_INVALID_INPUT (not S1_FAIL, not PASS) and
+     the report says so. The comparator MUST NOT modify any artifact.
+
+10.3 CSV parsing (both roles): UTF-8, LF terminators, no BOM, header
+     exactly the 25 V2 field names in order, exactly one header line,
+     every row exactly 25 fields, no trailing blank line beyond the
+     final LF. Deviation is S1_INVALID_INPUT.
+
+10.4 Key and inventory: key = (session_id, asset, axis, feature_family,
+     variant_id, quantile, horizon_ms). Both files: keys unique
+     (A02), row count exactly 3456, key sets equal, canonical sort
+     equal (V2 Section 6). Every row is compared; no sampling.
+
+10.5 Field comparison per V2 Sections 4 and 6:
+     string fields: exact byte equality;
+     integer fields: exact integer equality after parsing; NULL matches
+       NULL only;
+     float fields (quantile, zero_fraction, calculated_threshold,
+       mean_signed_bps, hit_rate, mean_abs_move): both NULL, or both
+       parse as finite Python floats and abs(c - r) <= 1e-12; any NaN
+       or infinity in either is FAIL;
+     accepted_positions_sha256: exact lowercase-hex equality.
+     No adaptive tolerance, no relative tolerance, no rounding.
+
+10.6 Manifest comparison: all V2 Section 5 semantic fields exactly equal
+     (with A002 B2 shapes) except the role-specific provenance fields
+     implementation_role, runtime_source_commit, source_sha256,
+     csv_sha256, csv_size_bytes, manifest_precomparison_sha256, which
+     are each validated for shape/validity per their own rules. Extra
+     informational keys are ignored for S1 (A002 B5).
+
+10.7 Report (machine-readable JSON, canonical V2 serialization, written
+     "xb"): s1_status ("PASS" | "FAIL" | "INVALID_INPUT"); row counts;
+     key_set_mismatch_n; sort_mismatch (bool); field_mismatch_total;
+     field_mismatch_by_field (object, 25 keys, integer counts);
+     manifest_mismatch_fields (array); mismatches (array of
+     {key, field, candidate, reference}, in canonical key order, ALL
+     mismatches, no cap); input identities (four SHA256 + sizes). Any
+     mismatch_n > 0 => FAIL (IMPLEMENTATION_DISAGREEMENT). Output is
+     deterministic for identical inputs.
+
+======================================================================
+11. S2 EXECUTOR CONTRACT
+======================================================================
+
+    A008_NEW_NORMATIVE_CHOICE_11=S2_VALIDATOR_EXECUTION_CONTRACT
+
+11.1 Location: backend/recovery/v1_2_new36_validators.py, command
+     `s2 --candidate-csv --candidate-manifest --out-report`. Reads the
+     sealed Candidate artifacts only (same 10.2 input sealing for the
+     Candidate pair).
+
+11.2 Invariant set: exactly A01-A19 and A21-A30 (A007). The validator
+     MUST NOT implement, evaluate, mention as a check, or emit an entry
+     for A20 other than the fixed report member
+     withdrawn_invariants=["A20"]. No replacement predicate for A20 is
+     permitted (A007.7). A19 MUST be present and fail-closed.
+
+11.3 Evaluation mode per invariant (definitions unchanged; A008 only
+     fixes HOW each frozen predicate is evaluated from the artifacts):
+     ARTIFACT (from CSV rows): A01, A02, A04, A05, A06, A07, A13, A14
+       (accepted_n consistency and fingerprint/positions accounting as
+       observable: A16, A17, A18, A19, A21-as-observable, A22, A23-as-
+       observable), A16, A17, A18, A19, A21, A22, A30 (only control
+       variants T0/G0/C0/B1 present, none marked candidate);
+     MANIFEST (from manifest values): A25 (golden_artifacts_read=false),
+       A26 (old36_quantitative_data_read=false), A27 (collector_sha256
+       equals frozen), A28 (frozen_analysis_engine_state=NOT_CONFIGURED,
+       accepts_input=false), A29 (protocol_sha256, candidate_spec_sha256,
+       engine_sha256 equal frozen values);
+     GENERATION_TIME_ASSERTION (predicate enforced fail-closed inside
+       the Candidate application, 4.6(e); a completed artifact implies
+       PASS): A08, A11, A19 (also ARTIFACT);
+     STATIC (verified against the hash-bound Candidate source by the
+       validator through the frozen aggregate and a static AST check for
+       forbidden confirmation columns and forbidden z-score symbols):
+       A03, A09, A10, A12, A15, A24.
+     Where a predicate has both an ARTIFACT-observable part and a
+     STATIC/GENERATION part, BOTH are evaluated and BOTH must pass.
+     Predicates involving thresholds within 1e-12 (A06, A07) use the
+     same float rule as 10.5.
+
+11.4 Report (machine-readable JSON, canonical serialization, "xb"):
+     s2_status ("PASS" | "FAIL" | "INVALID_INPUT"); evaluated_invariants
+     (array of exactly 29 ids, A01-A19, A21-A30, in order);
+     withdrawn_invariants=["A20"]; failed_invariant_count (integer);
+     failed_invariant_ids (array, exact ids); per-invariant entries
+     {id, mode, status, detail_count, details[]}; S5 informative
+     degeneracy report (empty/sparse cells counted, WARNING only, never
+     FAIL unless an S5 hard rule is violated — S5 hard rules are
+     reported separately as s5_status). Any failed invariant => FAIL.
+
+11.5 The validator MUST NOT read Reference artifacts and MUST NOT read
+     NEW36 raw data; it operates on the sealed Candidate CSV/manifest
+     and hash-bound Candidate source only.
+
+======================================================================
+12. MANIFEST / PROVENANCE CONTRACT (CANDIDATE)
+======================================================================
+
+    A008_NEW_NORMATIVE_CHOICE_12=CANDIDATE_SOURCE_SHA256_PATH_SET
+
+12.1 Required key set: exactly V2 Section 5 required_manifest_keys,
+     unchanged (candidate_and_reference_manifest_schema_must_be_identical).
+     Values below reference the already-normative definition; A008
+     redefines none of them:
+       protocol_version                 A001 A1 literal
+       implementation_role              "CANDIDATE" (V2 Section 5)
+       runtime_source_commit            A006 5.6: `git rev-parse HEAD`,
+                                        whitespace-stripped, ^[0-9a-f]{40}$,
+                                        captured at generation time
+       csv_sha256 / csv_size_bytes      raw bytes of the emitted CSV
+       manifest_precomparison_sha256    V2 Section 5 definition
+       session_ids, assets, axes, feature_sets_per_axis,
+       variant_sets_per_axis, quantiles_per_axis, horizons_per_axis,
+       expected_row_counts_per_axis, actual_row_counts_per_axis,
+       expected_total_row_count, actual_total_row_count
+                                        A002 B2/B3/B6 shapes and values
+       collector_sha256                 A004 9.1 frozen literal (not recomputed)
+       engine_sha256                    V2 Section 2 frozen literal
+       candidate_spec_sha256            V2 Section 2 frozen literal
+       protocol_sha256                  A004 9.2 (parent V2 SHA256 only)
+       new36_inventory_id               A002 B1 literal
+       golden_artifacts_read=false, old36_quantitative_data_read=false,
+       frozen_analysis_engine_state="NOT_CONFIGURED",
+       frozen_analysis_engine_accepts_input=false,
+       fingerprint_encoding_definition  A002 B4 literal,
+       quantile_method="TYPE7_LINEAR", grid_ms=100   (V2 Section 5)
+
+12.2 source_sha256 (Candidate). Semantics unchanged from A006 6.9
+     (JSON object mapping repository-root-relative Candidate source
+     paths to raw-byte lowercase SHA256 of the working-tree files at
+     generation time). A008 fixes the PATH SET for the NEW36 Candidate
+     application to EXACTLY the nine CANDIDATE_SOURCE_PATHS of 3.4.1
+     (superseding, for this application only, the two-path Stage3 set
+     described parenthetically in A006 6.9; the Stage3 manifest's own
+     historical set is unchanged). HEAD binding: each path MUST exist at
+     runtime_source_commit and its committed blob bytes MUST hash equal
+     to the working-tree value (same predicate as A006 6.5, applied to
+     the Candidate role). Candidate and Reference source_sha256 remain
+     role-specific and are not cross-role equality fields (A006 6.9).
+
+12.3 Serialization: V2 Section 5 (UTF-8 JSON, sort_keys=true, indent=2,
+     final newline); manifest_precomparison_sha256 computed with the
+     field set to null, then written, then serialized again.
+
+12.4 Informational keys (permitted by A002 B5, ignored by S1, never
+     compared cross-role). The Candidate manifest MUST additionally
+     carry, under the single informational object key "a008_provenance":
+       runtime_environment_identity_sha256   (Section 6)
+       candidate_source_aggregate_sha256     (3.5)
+       candidate_test_aggregate_sha256       (3.5)
+       executor_source_aggregate_sha256      (3.5)
+       amendment_identities: object {A001..A008 -> sha256}, where A008 is
+         the FROZEN A008 identity (unknown to this draft; 3.6(d))
+       firewall_integrity: object {path -> sha256} for 3.7
+       one_shot_role_invocation_index=1
+     These keys MUST NOT be added to the Reference manifest (Reference
+     frozen, 5.6) and MUST NOT participate in S1.
+
+======================================================================
+13. SYNTHETIC PRE-NEW36 TESTABILITY
+======================================================================
+
+    A008_NEW_NORMATIVE_CHOICE_13=SYNTHETIC_CONFORMANCE_STRATEGY
+
+13.1 Before NEW36 eligibility, the Candidate application and the
+     S1/S2 executors MUST be fully exercised end-to-end WITHOUT any
+     real NEW36 quantitative byte. Tests live in the files of 3.4.3 and
+     3.4.4 and run under pytest with no network, no real DB and no path
+     under backend/data/.
+
+13.2 Permitted synthetic inputs: generated in-memory/temporary ZIPs
+     containing synthetic sync_grid_100ms parquet parts with the frozen
+     column set; a temporary isolated SQLite DB reproducing the
+     sessions/qa_runs/raw_files schema with the unique index on
+     sessions.session_id; synthetic session metadata; synthetic
+     canonical 25-field rows. Synthetic session identifiers MUST NOT be
+     any of the 12 frozen NEW36 identifiers except where the test
+     verifies inventory enforcement by supplying the frozen id LIST
+     against synthetic ZIP bytes (identifiers are not quantitative
+     data). Real NEW36 ZIP paths MUST NOT be referenced by any test.
+
+13.3 Minimum coverage (each an explicit test):
+     (a) exact 25-field schema and header order; protocol_version
+         literal present, diagnostic_version absent;
+     (b) manifest serialization (sort_keys, indent, final newline,
+         precomparison digest round-trip, A002 B2 shapes);
+     (c) NNC-5: repeated member at top level, nested object, object in
+         array -> rejection; well-formed -> accepted; non-UTF-8 -> reject;
+     (d) inventory enforcement: 11, 13, reordered, duplicated, wrong id
+         maps -> PRECONDITION_FAIL before any ZIP open (assert via a
+         counting resolver that no open occurred);
+     (e) NNC-3: matching record -> pass; altered distribution list,
+         altered python version, altered requirements sha, pyarrow
+         mismatch -> fail before open;
+     (f) NNC-4: duplicate session rows -> fail; missing unique index ->
+         fail; read-only enforcement (attempted write raises);
+     (g) Candidate generation path over 12 synthetic sessions x 2 assets
+         -> exactly 3456 rows, per-axis counts, canonical sort, key
+         uniqueness, "xb" refusal when outputs exist, byte re-read check;
+     (h) F-1 precedence: HB rows carry consecutive-pair
+         exact_spacing_pair_n (synthetic positions where unordered-pair
+         and consecutive-pair counts differ);
+     (i) S1 PASS fixture (identical synthetic artifacts) and S1 mismatch
+         fixtures (string, integer, float > 1e-12, float <= 1e-12 passes,
+         NULL vs value, NaN -> FAIL, key-set difference, sort difference,
+         manifest semantic difference, role-specific difference ignored);
+     (j) every S2 handler A01-A19, A21-A30 with a passing fixture and a
+         failing fixture; report enumerates exactly 29 ids;
+     (k) A20/I12 absence: static scan of validator and application
+         sources for "A20", "I12", "I_HB_I12" outside the
+         withdrawn_invariants literal and comments -> none; A19 handler
+         present and failing on B1.accepted_n > B0.accepted_n;
+     (l) one-shot state machine: ledger without INVOKED -> generate
+         proceeds; ledger with INVOKED for the role -> refuses before
+         open; PRECONDITION failure writes no INVOKED entry; failure
+         after synthetic open writes FAILED and a second call refuses;
+     (m) firewall integrity: assert_recovery_allowed(NEW36 id) still
+         raises after importing the Candidate application; sandbox not
+         imported (sys.modules check).
+
+13.4 Synthetic runs do NOT consume NEW36 and do NOT write to
+     backend/recovery/reports/v1_2_new36/.
+
+======================================================================
+14. STORAGE CONTRACT
+======================================================================
+
+    A008_NEW_NORMATIVE_CHOICE_14=EXISTING_RAW_STORE_EXECUTION
+
+14.1 Evidence. The 12 NEW36 canonical session ZIPs are resident in
+     backend/data/raw_zips/ as content-addressed files <sha256>.zip,
+     registered in the runtime DB (checkpoint_hint=NEW36, retained=1),
+     total 2931646803 bytes; their file names and sizes equal the 12
+     frozen (size, sha256) identities recorded in transport_pipeline.py
+     EXPECTED_SESSION_ZIPS. No NEW36 content was opened to establish this.
+
+14.2 Rules. The Candidate application and the Reference operate directly
+     on these files through the explicit session-id-to-path map. No
+     duplication, extraction to disk, re-download or transport wrapper
+     is part of the scientific execution contract. Transport wrappers
+     (/app/SUPERBOT_NEW36_TRANSPORT_*_OF_15.zip) and upload residue are
+     outside the contract; their retention or deletion is an
+     operational decision that MUST NOT touch backend/data/raw_zips/.
+
+14.3 Identity check without quantitative access: before invocation,
+     preflight MAY verify each mapped path by stat() size equality with
+     the frozen size and by raw-byte SHA256 equality with the frozen
+     content hash (byte hashing is not a quantitative read, 9.3). It
+     MUST NOT open the ZIP structure during preflight.
+
+14.4 Output location: backend/recovery/reports/v1_2_new36/ with fixed
+     names candidate_new36.csv, candidate_new36_manifest.json,
+     reference_new36.csv, reference_new36_manifest.json,
+     runtime_environment_identity.json, s1_report.json, s2_report.json,
+     one_shot_ledger.jsonl. Estimated total output < 5 MB; current free
+     space in /app (112050176 bytes at drafting) is sufficient. No
+     temporary staging of raw data is permitted.
+
+======================================================================
+15. FILE SCOPE
+======================================================================
+
+    A008_NEW_NORMATIVE_CHOICE_15=MINIMUM_NEW_FILE_SET
+
+15.1 NEW files (exactly these; no others):
+      backend/recovery/v1_2_new36_candidate_app.py        Candidate application
+      backend/recovery/v1_2_new36_validators.py           NNC-5 parser, S1, S2
+      backend/tests/test_v1_2_new36_candidate_app.py      synthetic tests
+      backend/tests/test_v1_2_new36_validators.py         synthetic tests
+      backend/recovery/CANDIDATE_INDEPENDENCE_ATTESTATION.txt
+      backend/recovery/specs/V1_2_CANDIDATE_IMPLEMENTATION_FREEZE_MANIFEST.txt
+                                                          (created at step 6 only)
+
+15.2 MUST NOT be modified: every path under backend/recovery/reference/;
+     v1_2_candidate.py; v1_2_stage3.py; v1_2_diagnostics.py; engine.py;
+     checkpoint_registry.py; sandbox.py; allowlist.py; harness.py;
+     parquet_validator.py; frozen_engine.py; v1_2_preflight.py;
+     v1_2_acceptance.py; every frozen spec file; existing Stage1/2/3
+     artifacts; the runtime DB; backend/data/raw_zips/.
+
+15.3 If implementing 15.1 reveals that a quantitative Candidate
+     primitive MUST change to satisfy a frozen specification (i.e. the
+     4.6(d) precedence rule cannot supply a field from existing frozen
+     primitives), implementation STOPS with
+     A008_IMPLEMENTATION_STATUS=BLOCKED_PRIMITIVE_CHANGE_REQUIRED and a
+     further amendment is required. A008 itself is not blocked by the
+     known case F-1, whose normative primitive already exists.
+
+======================================================================
+16. FREEZE SEQUENCE (MANDATORY ORDER)
+======================================================================
+
+    A008_NEW_NORMATIVE_CHOICE_16=PRE_NEW36_FREEZE_SEQUENCE
+
+     1. A008 draft (this document).
+     2. Independent static audit of A008 (determinacy, scientific
+        non-alteration, clean-room, no NEW36 authorization leakage).
+     3. Exact-byte A008 freeze (external identity recorded; DRAFT
+        header preserved per 2.4).
+     4. Implementation of 15.1 under Section 5 clean-room rules.
+     5. Synthetic tests only (Section 13); full existing test suites
+        (Candidate-side and Reference) still PASS; Reference bytes
+        unchanged (0.5).
+     6. Implementation identity capture (3.6(a)-(b)).
+     7. Independent implementation audit: 4.6(d) field-by-field
+        precedence table; 5.4 import/AST check; 11.2 A20 absence;
+        13.3 coverage; firewall integrity (3.7); Reference identity (0.5).
+     8. Final implementation freeze (3.6(c)).
+     9. Renewed narrow pre-NEW36 readiness (3.8), in the execution
+        interpreter, including environment-identity record creation
+        (6.3), both roles' `preflight`, ledger initialization (9.6),
+        raw-store identity check (14.3). Nothing quantitative opened.
+    10. ONLY THEN the controlled NEW36 one-shot: Candidate `generate`
+        and Reference `generate` (sequential, 9.5), seal, then S1, S2
+        (S3/S4/S5 per V2 as implemented in the executors), evidence
+        bundle.
+
+16.1 No OLD36 quantitative rerun is required by A008 unless a new
+     finding specifically demonstrates that it would affect effective
+     Candidate/Reference validity; such a finding requires its own
+     amendment.
+
+16.2 No real NEW36 quantitative content may be opened during steps
+     1-9. Any such opening before step 10 is a protocol violation and
+     consumes the corresponding role invocation (9.3).
+
+16.3 Any change to any path of 3.4, 3.7, 0.5, or to any frozen
+     document, after step 8 and before step 10, returns the sequence to
+     step 4 (implementation) or step 1 (specification), respectively.
+
+======================================================================
+17. SAFETY AND ONE-SHOT STATEMENT
+======================================================================
+
+17.1 A008 was drafted with zero NEW36 quantitative access (0.7).
+17.2 A008 does not itself modify any source code, test, artifact,
+     database, frozen document or firewall.
+17.3 A008 does not authorize a retry of any consumed invocation; none
+     has been consumed (CANDIDATE_EXECUTION_COUNT=0,
+     REFERENCE_EXECUTION_COUNT=0, ONE_SHOT_CONSUMED=NO).
+17.4 A008 as a DRAFT authorizes nothing. Authorization arises only per
+     Section 9 after Section 16 step 9.
+
+======================================================================
+18. CHOICE ACCOUNTING AND SELF-AUDIT FLAGS
+======================================================================
+
+18.1 NORMATIVE_CHOICE_COUNT=16 (A008_NEW_NORMATIVE_CHOICE_1 .. _16, all
+     execution-layer: identity, entrypoint, precedence-of-frozen-
+     primitives, clean-room, gate applicability, parser location,
+     authorization, executor contracts, provenance path set, testing,
+     storage, file scope, sequence).
+18.2 SCIENTIFIC_CHOICE_COUNT=0
+18.3 QUANTITATIVE_CHOICE_COUNT=0
+18.4 QUANTITATIVE_ALGORITHM_CHANGED=NO
+     EVENT_SELECTION_CHANGED=NO
+     THRESHOLD_LOGIC_CHANGED=NO
+     METRIC_LOGIC_CHANGED=NO
+18.5 Known finding carried into implementation: F-1 (4.6(d)) —
+     resolved by composition with the existing frozen primitive
+     v1_2_candidate.exact_spacing_pair_n; no primitive change.
+18.6 Risk register (non-blocking for A008; blocking criteria in 15.3):
+     R-1 v1_2_stage3 block generators predate A001-A007; the step-7
+         field-by-field precedence table may reveal further
+         non-normative embedded definitions. Resolution path: 4.6(d)
+         composition; otherwise 15.3 STOP.
+     R-2 A006 7.3.1(D) requires pyarrow exactly "17.0.0" in the
+         execution interpreter; verified at step 9, not assumed here.
+18.7 Precedence. Where V2 Section 17 or the Candidate specification
+     Section 8 state that NEW36/candidate execution is not authorized
+     by those documents, A008 (once frozen, Section 9) supplies the
+     authorization and nothing else. All other clauses of V2, A001-A007
+     and the Candidate specification remain in force with their
+     existing precedence.
+
+document_terminates_here=true
+append_after_freeze=FORBIDDEN
