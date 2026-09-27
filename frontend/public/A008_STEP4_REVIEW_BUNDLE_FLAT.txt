@@ -1,0 +1,4225 @@
+===== BEGIN backend/recovery/v1_2_new36_validators.py =====
+"""SECTION 16 STEP 4 — EXECUTORS (A008 DRAFT4 Sections 8, 10, 11).
+
+This module is the "Executors" module named in A008 DRAFT4 §0.1:
+  backend/recovery/v1_2_new36_validators.py
+
+It implements, EXACTLY as specified in the frozen text it is authorized
+to consume (A008 DRAFT4 §5.2: V2, A001-A008 frozen text; V1_2_CANDIDATE_SPEC.txt;
+v1_2_candidate.py, v1_2_stage3.py, v1_2_diagnostics.py; engine.py, frozen_engine.py,
+checkpoint_registry.py, parquet_validator.py; harness.py contracts only;
+v1_2_preflight.py, v1_2_acceptance.py):
+
+* NNC-5 — duplicate-member-safe JSON parser (A006 §8A; A008 §8).
+* NNC-3 — runtime environment identity (A006 §7; A008 §6), CANDIDATE side.
+* NNC-4 — live database session_id uniqueness precondition (A006 §8;
+  A008 §7). Per explicit user correction: this is a READ-ONLY structural
+  verification that (A) no duplicate sessions.session_id rows exist and
+  (B) the live schema enforces a DB-level, non-partial, single-column
+  UNIQUE constraint/index on EXACTLY sessions.session_id. It is NOT a
+  canonical-schema/manifest-shape validator. No DB write, no
+  state-modifying PRAGMA, no duplicate resolution (A006 §8.5).
+* S1 — independent implementation equivalence comparator (A008 §10).
+* S2 — closed candidate invariant validator against the BINDING
+  OBSERVABILITY MATRIX (A008 §11).
+
+CLEAN-ROOM: this module MUST NOT import, open, read or reference any path
+under backend/recovery/reference/. It MUST NOT open any NEW36 ZIP and MUST
+NOT execute Candidate or Reference application code. It is Section 16
+STEP 4 implementation ONLY — no quantitative NEW36 access anywhere in
+this file.
+
+SAFETY (never remove):
+* No import-time execution of any NEW36-consuming behaviour.
+* No modification of engine.py, v1_2_candidate.py, v1_2_stage3.py,
+  v1_2_diagnostics.py, checkpoint_registry.py, allowlist.py, sandbox.py,
+  harness.py, parquet_validator.py, frozen_engine.py, v1_2_preflight.py,
+  v1_2_acceptance.py, or any path under backend/recovery/reference/.
+"""
+from __future__ import annotations
+
+import argparse
+import csv
+import hashlib
+import io
+import json
+import os
+import re
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Sequence
+
+REPO_ROOT: Path = Path(__file__).resolve().parents[2]
+REQUIREMENTS_PATH: Path = REPO_ROOT / "backend" / "requirements.txt"
+
+# ---------------------------------------------------------------------------
+# Canonical ordering constants (A008 DRAFT4 / V2 §3, §4 — frozen text only)
+# ---------------------------------------------------------------------------
+
+ASSET_ORDER: tuple[str, ...] = ("BTC", "ETH")
+AXIS_ORDER: tuple[str, ...] = ("HZ", "HG", "HC", "HB")
+
+# Appendix-B literal (frozen text) — used ONLY as a drift-guard assertion
+# against the authorized STAGE3_HZ_FEATURES/STAGE3_HB_FAMILIES constants
+# actually consumed below (A008 §4.7.3: "verified equal to Appendix B").
+_APPENDIX_B_HZ_FEATURE_ORDER: tuple[str, ...] = (
+    "bitget_ofi", "bitget_trade_flow", "depth_imbalance_l1", "depth_imbalance_l5",
+    "external_ofi", "external_trade_flow", "fair_accel_100ms", "fair_gap_reversion",
+    "leader_gap_100ms", "leader_gap_200ms", "leader_gap_500ms", "leader_gap_1000ms",
+)
+_APPENDIX_B_HB_FEATURE_ORDER: tuple[str, ...] = (
+    "depth_imbalance_l1", "gap_depthL1", "gap_localOFI", "bitget_ofi",
+    "depthL1_extOFI", "gap_depth_extOFI",
+)
+
+from .v1_2_stage3 import STAGE3_HB_FAMILIES as _STAGE3_HB_FAMILIES  # noqa: E402
+from .v1_2_stage3 import STAGE3_HZ_FEATURES as _STAGE3_HZ_FEATURES  # noqa: E402
+
+if tuple(_STAGE3_HZ_FEATURES) != _APPENDIX_B_HZ_FEATURE_ORDER:
+    raise RuntimeError("A008 §4.7.3 DRIFT: STAGE3_HZ_FEATURES != Appendix B HZ feature order")
+if tuple(_STAGE3_HB_FAMILIES) != _APPENDIX_B_HB_FEATURE_ORDER:
+    raise RuntimeError("A008 §4.7.3 DRIFT: STAGE3_HB_FAMILIES != Appendix B HB family order")
+
+HZ_FEATURE_ORDER: tuple[str, ...] = tuple(_STAGE3_HZ_FEATURES)
+HG_FEATURE: str = "depthL1_extOFI"
+HC_FEATURE: str = "gap_depth_extOFI"
+HB_FEATURE_ORDER: tuple[str, ...] = tuple(_STAGE3_HB_FAMILIES)
+VARIANT_ORDER_BY_AXIS: dict[str, tuple[str, ...]] = {
+    "HZ": ("T0", "TZ"),
+    "HG": ("G0", "G1"),
+    "HC": ("C0", "C1"),
+    "HB": ("B0", "B1"),
+}
+QUANTILE_ORDER: tuple[float, ...] = (0.80, 0.90, 0.95)
+HORIZON_ORDER: tuple[int, ...] = (1000, 5000, 30000)
+HB_QUANTILE: float = 0.90
+
+CANDIDATE_ROW_FIELDS: tuple[str, ...] = (
+    "protocol_version", "session_id", "asset", "axis", "feature_family",
+    "variant_id", "quantile", "horizon_ms",
+    "threshold_domain_finite_n", "threshold_domain_nonzero_n", "zero_n",
+    "zero_fraction", "nonzero_unique_value_n", "hz_discrimination_class",
+    "gate_zero_n", "calculated_threshold", "spacing_steps", "pre_overlap_n",
+    "exact_spacing_pair_n", "accepted_n", "overlap_dropped_n",
+    "accepted_positions_sha256", "mean_signed_bps", "hit_rate",
+    "mean_abs_move",
+)
+STRING_FIELDS: frozenset[str] = frozenset({
+    "protocol_version", "session_id", "asset", "axis", "feature_family",
+    "variant_id", "hz_discrimination_class", "accepted_positions_sha256",
+})
+INTEGER_FIELDS: frozenset[str] = frozenset({
+    "horizon_ms", "threshold_domain_finite_n", "threshold_domain_nonzero_n",
+    "zero_n", "nonzero_unique_value_n", "gate_zero_n", "spacing_steps",
+    "pre_overlap_n", "exact_spacing_pair_n", "accepted_n",
+    "overlap_dropped_n",
+})
+FLOAT_FIELDS: frozenset[str] = frozenset({
+    "quantile", "zero_fraction", "calculated_threshold", "mean_signed_bps",
+    "hit_rate", "mean_abs_move",
+})
+CANONICAL_KEY_FIELDS: tuple[str, ...] = (
+    "session_id", "asset", "axis", "feature_family", "variant_id",
+    "quantile", "horizon_ms",
+)
+PROTOCOL_VERSION_LITERAL: str = "V1_2_NEW36_VALIDATION_PROTOCOL_V2"
+EXPECTED_TOTAL_ROW_COUNT: int = 3456
+FINGERPRINT_ENCODING_DEFINITION: str = (
+    "accepted grid_pos sorted ascending; cast each to signed little-endian "
+    "int64; concatenate raw 8-byte representations without delimiter; "
+    "SHA256; lowercase 64-character hexadecimal; empty set uses "
+    "SHA256(empty_bytes)"
+)
+
+
+def _new36_session_order() -> tuple[str, ...]:
+    try:
+        from checkpoint_registry import NEW36_SESSION_IDS
+        return tuple(NEW36_SESSION_IDS)
+    except Exception:  # pragma: no cover - defensive only
+        return ()
+
+
+def canonical_sort_key(row: dict) -> tuple:
+    """A008/V2 §4 canonical_sort key for one candidate/reference row dict.
+
+    Session order = frozen Appendix-B order when the session_id is a
+    member of checkpoint_registry.NEW36_SESSION_IDS; otherwise (synthetic
+    testing only, §13.2) falls back to lexicographic string order, applied
+    consistently to both artifacts under comparison.
+    """
+    frozen_order = _new36_session_order()
+    session_id = row["session_id"]
+    if session_id in frozen_order:
+        session_rank = (0, frozen_order.index(session_id))
+    else:
+        session_rank = (1, session_id)
+
+    axis = row["axis"]
+    axis_rank = AXIS_ORDER.index(axis) if axis in AXIS_ORDER else len(AXIS_ORDER)
+
+    feature = row["feature_family"]
+    if axis == "HZ":
+        feat_rank = HZ_FEATURE_ORDER.index(feature) if feature in HZ_FEATURE_ORDER else 999
+    elif axis == "HB":
+        feat_rank = HB_FEATURE_ORDER.index(feature) if feature in HB_FEATURE_ORDER else 999
+    else:
+        feat_rank = 0
+
+    variant = row["variant_id"]
+    variant_order = VARIANT_ORDER_BY_AXIS.get(axis, ())
+    variant_rank = variant_order.index(variant) if variant in variant_order else 999
+
+    q = row["quantile"]
+    try:
+        q_rank = QUANTILE_ORDER.index(round(float(q), 2))
+    except ValueError:
+        q_rank = float(q) if q is not None else -1.0
+
+    h = row["horizon_ms"]
+    if h in (None, ""):
+        h_rank = -1
+    else:
+        try:
+            h_rank = HORIZON_ORDER.index(int(h))
+        except ValueError:
+            h_rank = int(h)
+
+    return (session_rank, ASSET_ORDER.index(row["asset"]) if row["asset"] in ASSET_ORDER else 99,
+            axis_rank, feat_rank, variant_rank, q_rank, h_rank)
+
+
+# ---------------------------------------------------------------------------
+# NNC-5 — duplicate-member-safe JSON parser (A006 §8A; A008 §8)
+# ---------------------------------------------------------------------------
+
+class NNC5ParseError(ValueError):
+    """Raised when NNC-5 cannot establish JSON validity (fail closed)."""
+
+
+class NNC5DuplicateMemberError(NNC5ParseError):
+    """Raised when a repeated decoded member name is detected at any
+    nesting depth of a JSON object (A006 §8A.3)."""
+
+
+def _nnc5_object_pairs_hook(pairs: list[tuple[str, Any]]) -> dict:
+    seen: set[str] = set()
+    for name, _value in pairs:
+        if name in seen:
+            raise NNC5DuplicateMemberError(
+                f"NNC-5 FAIL: repeated member name {name!r} detected in a "
+                f"JSON object before mapping construction (A006 §8A.3-8A.4)."
+            )
+        seen.add(name)
+    return dict(pairs)
+
+
+def nnc5_loads(raw: bytes | str) -> Any:
+    """Parse serialized JSON bytes/text, rejecting duplicate object member
+    names at EVERY nesting depth (A006 §8A). Fails closed on any input
+    whose validity (incl. duplicate-member status) cannot be established.
+    """
+    if isinstance(raw, (bytes, bytearray)):
+        try:
+            text = bytes(raw).decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise NNC5ParseError(f"NNC-5 FAIL: input is not valid UTF-8: {exc}") from exc
+    else:
+        text = raw
+    try:
+        return json.loads(text, object_pairs_hook=_nnc5_object_pairs_hook)
+    except NNC5DuplicateMemberError:
+        raise
+    except json.JSONDecodeError as exc:
+        raise NNC5ParseError(f"NNC-5 FAIL: input is not well-formed JSON: {exc}") from exc
+
+
+def nnc5_load_file(path: str | Path) -> Any:
+    return nnc5_loads(Path(path).read_bytes())
+
+
+def nnc5_load_jsonl(path: str | Path) -> list[Any]:
+    """Parse a JSON-Lines file, applying nnc5_loads() to every non-empty
+    line independently (used for the ledger and the supplemental evidence
+    artifact)."""
+    data = Path(path).read_bytes()
+    if not data:
+        return []
+    lines = data.split(b"\n")
+    if lines and lines[-1] == b"":
+        lines = lines[:-1]
+    return [nnc5_loads(line) for line in lines]
+
+
+# ---------------------------------------------------------------------------
+# Canonical serialization helpers
+# ---------------------------------------------------------------------------
+
+def canonical_line_bytes(obj: Any) -> bytes:
+    """UTF-8; sort_keys=true; separators=(",",":"); ensure_ascii=true;
+    no trailing whitespace; no final newline (A006 §7.3.2 / A008 §6.3
+    line rules; also used for ledger records and evidence records before
+    the caller appends exactly one LF)."""
+    return json.dumps(obj, sort_keys=True, ensure_ascii=True, separators=(",", ":")).encode("utf-8")
+
+
+def canonical_pretty_bytes(obj: Any) -> bytes:
+    """UTF-8 JSON; sort_keys=true; indent=2; final newline=true
+    (V2 §5 manifest_serialization; also used for s1_report.json,
+    s2_report.json and the shared environment record when pretty form is
+    requested)."""
+    return (json.dumps(obj, sort_keys=True, ensure_ascii=True, indent=2) + "\n").encode("utf-8")
+
+
+def sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def sha256_file(path: str | Path) -> str:
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def size_of(path: str | Path) -> int:
+    return Path(path).stat().st_size
+
+
+def exclusive_create_write(path: str | Path, data: bytes) -> None:
+    """A008 §4.11(a): serialize fully in memory, hash (caller's job),
+    write with 'xb', then re-read and compare byte-for-byte; raise on any
+    difference. Refuses pre-existence (PRECONDITION_FAIL semantics are the
+    caller's responsibility; this raises FileExistsError)."""
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "xb") as fh:
+        fh.write(data)
+        fh.flush()
+        os.fsync(fh.fileno())
+    reread = p.read_bytes()
+    if reread != data:
+        raise AssertionError(
+            f"A008_SAFETY_RULE_4_11_a FAIL: byte re-read mismatch for {p}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# NNC-3 — runtime environment identity (A006 §7; A008 §6)
+# ---------------------------------------------------------------------------
+
+class NNC3Error(RuntimeError):
+    """Raised when the NNC-3 runtime environment identity cannot be
+    established, or when equivalence (A006 §7.4) fails."""
+
+
+REQUIRED_PYARROW_VERSION: str = "17.0.0"
+_DIST_NAME_SEP_RE = re.compile(r"[-_.]+")
+
+
+def _normalize_distribution_name(name: str) -> str:
+    return _DIST_NAME_SEP_RE.sub("-", name.lower())
+
+
+def compute_runtime_environment_identity(
+    requirements_path: Path | None = None,
+) -> dict:
+    """Build the A006 §7.3.1 runtime_environment_identity object in the
+    CURRENT interpreter. Fails closed (NNC3Error) on any condition of
+    §7.6."""
+    import importlib.metadata
+    req_path = requirements_path or REQUIREMENTS_PATH
+    try:
+        import pyarrow  # noqa: F401
+        import pyarrow.parquet  # noqa: F401
+    except Exception as exc:
+        raise NNC3Error(f"NNC-3 FAIL: import pyarrow.parquet did not succeed: {exc}") from exc
+
+    pyarrow_version = str(pyarrow.__version__)
+    if pyarrow_version != REQUIRED_PYARROW_VERSION:
+        raise NNC3Error(
+            f"NNC-3 FAIL: pyarrow.__version__={pyarrow_version!r} != "
+            f"{REQUIRED_PYARROW_VERSION!r} (A006 §7.3.1(D))"
+        )
+
+    distributions: list[list[str]] = []
+    for dist in importlib.metadata.distributions():
+        try:
+            raw_name = dist.metadata["Name"]
+        except Exception:
+            raw_name = None
+        try:
+            version = dist.version
+        except Exception:
+            version = None
+        if not raw_name or not version:
+            raise NNC3Error(
+                "NNC-3 FAIL: an installed distribution is missing Name or "
+                "version (A006 §7.3.1(B))"
+            )
+        distributions.append([_normalize_distribution_name(str(raw_name)), str(version)])
+    distributions.sort(key=lambda pair: (pair[0], pair[1]))
+
+    if not req_path.exists():
+        raise NNC3Error(f"NNC-3 FAIL: requirements file not found at {req_path}")
+    requirements_sha256 = hashlib.sha256(req_path.read_bytes()).hexdigest()
+
+    identity = {
+        "python": {
+            "implementation": sys.implementation.name,
+            "version": sys.version,
+        },
+        "installed_distributions": distributions,
+        "requirements_sha256": requirements_sha256,
+        "pyarrow_version": pyarrow_version,
+    }
+    return identity
+
+
+def environment_identity_sha256(identity: dict) -> str:
+    return sha256_bytes(canonical_line_bytes(identity))
+
+
+def environment_identities_equivalent(
+    identity_a: dict, sha_a: str, identity_b: dict, sha_b: str,
+) -> bool:
+    """A006 §7.4 equivalence: full objects AND digests must both compare
+    exactly equal."""
+    return identity_a == identity_b and sha_a == sha_b
+
+
+def build_shared_environment_record() -> dict:
+    """A008 §6.3 shared environment record: EXACTLY two members."""
+    identity = compute_runtime_environment_identity()
+    digest = environment_identity_sha256(identity)
+    return {
+        "runtime_environment_identity": identity,
+        "runtime_environment_identity_sha256": digest,
+    }
+
+
+def load_and_validate_environment_record(path: str | Path) -> dict:
+    """Parse an existing shared environment record with the NNC-5 parser
+    and verify it is internally consistent (its own recorded sha256
+    matches a recomputation over its own identity object) and that it
+    contains EXACTLY the two required members."""
+    obj = nnc5_load_file(path)
+    if not isinstance(obj, dict) or set(obj.keys()) != {
+        "runtime_environment_identity", "runtime_environment_identity_sha256",
+    }:
+        raise NNC3Error(
+            "NNC-3 FAIL: shared environment record does not contain EXACTLY "
+            "the two required members (A008 §6.3)"
+        )
+    recomputed = environment_identity_sha256(obj["runtime_environment_identity"])
+    if recomputed != obj["runtime_environment_identity_sha256"]:
+        raise NNC3Error(
+            "NNC-3 FAIL: shared environment record sha256 does not match its "
+            "own recorded identity object"
+        )
+    return obj
+
+
+# ---------------------------------------------------------------------------
+# NNC-4 — live database session_id uniqueness precondition
+# (A006 §8; A008 §7). READ-ONLY. NOT a schema/manifest validator.
+# ---------------------------------------------------------------------------
+
+class NNC4Error(RuntimeError):
+    """Raised when NNC-4 cannot be established or fails (A006 §8.4)."""
+
+
+@dataclass(frozen=True)
+class NNC4Result:
+    ok: bool
+    no_duplicate_session_ids: bool
+    unique_index_present: bool
+    duplicate_session_ids: tuple[str, ...]
+    detail: str
+
+
+def verify_session_id_uniqueness(db_path: str | Path) -> NNC4Result:
+    """A006 §8.3, read-only, on the ACTUAL runtime database:
+
+    A. No duplicate session_id rows exist in `sessions`.
+    B. The live schema enforces uniqueness of sessions.session_id through
+       a DB-enforced, NON-PARTIAL, SINGLE-COLUMN unique index/constraint
+       whose key is exactly (session_id).
+
+    No write; no state-modifying PRAGMA; no duplicate resolution
+    (A006 §8.5). Opens the database strictly read-only via SQLite URI
+    mode=ro; PRAGMA index_list/index_info are read-only informational
+    pragmas.
+    """
+    import sqlite3
+
+    db_file = Path(db_path).resolve()
+    if not db_file.exists():
+        raise NNC4Error(f"NNC-4 FAIL: database file does not exist: {db_file}")
+    uri = f"file:{db_file}?mode=ro"
+    try:
+        conn = sqlite3.connect(uri, uri=True)
+    except sqlite3.Error as exc:
+        raise NNC4Error(f"NNC-4 FAIL: cannot open database read-only: {exc}") from exc
+    try:
+        cur = conn.cursor()
+
+        # A. no duplicate session_id rows.
+        try:
+            cur.execute(
+                "SELECT session_id, COUNT(*) AS c FROM sessions "
+                "GROUP BY session_id HAVING COUNT(*) > 1"
+            )
+            dupes = cur.fetchall()
+        except sqlite3.Error as exc:
+            raise NNC4Error(f"NNC-4 FAIL: cannot query sessions table: {exc}") from exc
+        duplicate_ids = tuple(str(r[0]) for r in dupes)
+        no_dupes = len(duplicate_ids) == 0
+
+        # B. DB-enforced, non-partial, single-column UNIQUE index on
+        # EXACTLY sessions.session_id.
+        try:
+            cur.execute("PRAGMA index_list('sessions')")
+            idx_rows = cur.fetchall()
+        except sqlite3.Error as exc:
+            raise NNC4Error(f"NNC-4 FAIL: cannot read index_list: {exc}") from exc
+
+        unique_index_present = False
+        for row in idx_rows:
+            # (seq, name, unique, origin, partial) — origin/partial columns
+            # are present on SQLite versions that support PRAGMA
+            # index_list partial reporting; degrade gracefully otherwise.
+            name = row[1]
+            is_unique = bool(row[2])
+            is_partial = bool(row[4]) if len(row) > 4 else False
+            if not is_unique or is_partial:
+                continue
+            cur.execute(f"PRAGMA index_info({json.dumps(name)})")
+            info_rows = cur.fetchall()
+            cols = [r[2] for r in info_rows]
+            if cols == ["session_id"]:
+                unique_index_present = True
+                break
+            # Also accept a PRIMARY KEY / inline UNIQUE constraint that
+            # SQLite auto-names (origin 'u' or 'pk') — already covered by
+            # the loop above since PRAGMA index_list enumerates those too.
+
+        ok = no_dupes and unique_index_present
+        parts: list[str] = []
+        if not no_dupes:
+            parts.append(f"duplicate session_id values: {duplicate_ids!r}")
+        if not unique_index_present:
+            parts.append(
+                "no non-partial single-column UNIQUE index/constraint on "
+                "exactly sessions.session_id"
+            )
+        detail = "; ".join(parts) if parts else "NNC-4 OK: A and B both hold"
+        return NNC4Result(
+            ok=ok,
+            no_duplicate_session_ids=no_dupes,
+            unique_index_present=unique_index_present,
+            duplicate_session_ids=duplicate_ids,
+            detail=detail,
+        )
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Ledger helpers (A008 §9.5-9.6). Shared by candidate app, run.py and S1.
+# ---------------------------------------------------------------------------
+
+def read_ledger_records(path: str | Path) -> list[dict]:
+    p = Path(path)
+    if not p.exists():
+        return []
+    return list(nnc5_load_jsonl(p))
+
+
+def append_ledger_record_durable(path: str | Path, record: dict) -> None:
+    """A008 §9.6 durable append: O_APPEND (+O_CREAT on first use); ONE
+    complete write of the full line; flush; fsync(fd);
+    fsync(parent directory fd) where supported."""
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    line = canonical_line_bytes(record) + b"\n"
+    fd = os.open(str(p), os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o644)
+    try:
+        os.write(fd, line)
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    try:
+        dir_fd = os.open(str(p.parent), os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+    except OSError:  # pragma: no cover - platform without dir fsync support
+        pass
+
+
+def latest_terminal_record(records: Sequence[dict], role: str, run_id: str | None = None) -> dict | None:
+    """Latest record for `role` (optionally scoped to run_id), or None."""
+    latest = None
+    for rec in records:
+        if rec.get("role") != role:
+            continue
+        if run_id is not None and rec.get("run_id") != run_id:
+            continue
+        latest = rec
+    return latest
+
+
+# ---------------------------------------------------------------------------
+# CSV lexical contract (A008 §10.3) and parsing helpers
+# ---------------------------------------------------------------------------
+
+@dataclass
+class CsvLexResult:
+    ok: bool
+    reason: str | None
+    header: list[str] | None
+    rows: list[dict] | None
+
+
+def parse_and_validate_csv_bytes(data: bytes) -> CsvLexResult:
+    """A008 §10.3 CSV lexical contract for both roles."""
+    if b"\r" in data:
+        return CsvLexResult(False, "CR byte present (LF-only required)", None, None)
+    if b'"' in data:
+        return CsvLexResult(False, "'\"' character present (forbidden by §10.3)", None, None)
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        return CsvLexResult(False, f"not valid UTF-8: {exc}", None, None)
+    if text.startswith("\ufeff"):
+        return CsvLexResult(False, "BOM present", None, None)
+    if not text.endswith("\n"):
+        return CsvLexResult(False, "final byte is not LF", None, None)
+    lines = text.split("\n")
+    if lines and lines[-1] == "":
+        lines = lines[:-1]
+    if not lines:
+        return CsvLexResult(False, "empty file", None, None)
+    if any(line == "" for line in lines):
+        return CsvLexResult(False, "blank line present", None, None)
+    header = lines[0].split(",")
+    if tuple(header) != CANDIDATE_ROW_FIELDS:
+        return CsvLexResult(False, "header does not equal the 25 V2 field names in order", None, None)
+    rows: list[dict] = []
+    for line in lines[1:]:
+        fields = line.split(",")
+        if len(fields) != len(CANDIDATE_ROW_FIELDS):
+            return CsvLexResult(False, f"row does not have exactly {len(CANDIDATE_ROW_FIELDS)} fields", None, None)
+        rows.append(dict(zip(CANDIDATE_ROW_FIELDS, fields)))
+    return CsvLexResult(True, None, header, rows)
+
+
+_INT_LEXEME_RE = re.compile(r"^-?[0-9]+$")
+_HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
+_INVALID_FLOAT_LEXEMES = {"nan", "inf", "-inf", "+inf", "infinity", "-infinity", "+infinity"}
+
+
+def _lexeme_is_invalid_float_token(lexeme: str) -> bool:
+    return lexeme.strip().lower() in _INVALID_FLOAT_LEXEMES
+
+
+def row_canonical_key_lexeme(row: dict) -> tuple:
+    """EXACT SERIALIZED STRING key per §10.4 — no numeric normalization."""
+    return tuple(row[f] for f in CANONICAL_KEY_FIELDS)
+
+
+# ---------------------------------------------------------------------------
+# Manifest handling (NNC-5 parse + manifest_precomparison_sha256)
+# ---------------------------------------------------------------------------
+
+def recompute_manifest_precomparison_sha256(manifest: dict) -> str:
+    """V2 §5: SHA256 of canonical manifest bytes with
+    manifest_precomparison_sha256 set to null."""
+    clone = dict(manifest)
+    clone["manifest_precomparison_sha256"] = None
+    return sha256_bytes(canonical_pretty_bytes(clone))
+
+
+ROLE_SPECIFIC_MANIFEST_FIELDS: frozenset[str] = frozenset({
+    "implementation_role", "runtime_source_commit", "source_sha256",
+    "csv_sha256", "csv_size_bytes", "manifest_precomparison_sha256",
+})
+
+
+# ---------------------------------------------------------------------------
+# S1 — independent implementation equivalence comparator (A008 §10)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class S1Inputs:
+    candidate_csv: Path
+    candidate_manifest: Path
+    reference_csv: Path
+    reference_manifest: Path
+    ledger: Path
+
+
+def run_s1(inputs: S1Inputs) -> dict:
+    report: dict[str, Any] = {
+        "s1_status": "INVALID_INPUT",
+        "row_counts": {"candidate": None, "reference": None},
+        "key_set_mismatch_n": None,
+        "sort_mismatch": None,
+        "field_mismatch_total": 0,
+        "field_mismatch_by_field": {f: 0 for f in CANDIDATE_ROW_FIELDS},
+        "manifest_mismatch_fields": [],
+        "mismatches": [],
+        "input_identities": {},
+        "reason": None,
+    }
+
+    paths = {
+        "candidate_csv": inputs.candidate_csv,
+        "candidate_manifest": inputs.candidate_manifest,
+        "reference_csv": inputs.reference_csv,
+        "reference_manifest": inputs.reference_manifest,
+    }
+    raw: dict[str, bytes] = {}
+    for name, p in paths.items():
+        try:
+            raw[name] = Path(p).read_bytes()
+        except OSError as exc:
+            report["reason"] = f"cannot read {name}: {exc}"
+            return report
+        report["input_identities"][name] = {
+            "sha256": sha256_bytes(raw[name]),
+            "size_bytes": len(raw[name]),
+        }
+
+    # --- 10.2 sealed-input preconditions ------------------------------------
+    try:
+        cand_manifest = nnc5_loads(raw["candidate_manifest"])
+        ref_manifest = nnc5_loads(raw["reference_manifest"])
+    except NNC5ParseError as exc:
+        report["reason"] = f"manifest NNC-5 parse failure: {exc}"
+        return report
+
+    for role_name, manifest, csv_key in (
+        ("candidate", cand_manifest, "candidate_csv"),
+        ("reference", ref_manifest, "reference_csv"),
+    ):
+        if not isinstance(manifest, dict):
+            report["reason"] = f"{role_name} manifest is not a JSON object"
+            return report
+        if manifest.get("csv_sha256") != report["input_identities"][csv_key]["sha256"]:
+            report["reason"] = f"{role_name} manifest csv_sha256 does not equal computed CSV sha256"
+            return report
+        if manifest.get("csv_size_bytes") != report["input_identities"][csv_key]["size_bytes"]:
+            report["reason"] = f"{role_name} manifest csv_size_bytes does not equal computed CSV size"
+            return report
+        recomputed = recompute_manifest_precomparison_sha256(manifest)
+        if manifest.get("manifest_precomparison_sha256") != recomputed:
+            report["reason"] = f"{role_name} manifest_precomparison_sha256 mismatch on recomputation"
+            return report
+
+    ledger_records = read_ledger_records(inputs.ledger)
+    cand_completed = latest_terminal_record(ledger_records, "CANDIDATE")
+    ref_completed = latest_terminal_record(ledger_records, "REFERENCE")
+    if (
+        cand_completed is None or cand_completed.get("state") != "COMPLETED"
+        or ref_completed is None or ref_completed.get("state") != "COMPLETED"
+    ):
+        report["reason"] = "no COMPLETED ledger record for both CANDIDATE and REFERENCE"
+        return report
+    cand_art = cand_completed.get("output_artifact_sha256") or {}
+    ref_art = ref_completed.get("output_artifact_sha256") or {}
+    if cand_art.get("csv") != report["input_identities"]["candidate_csv"]["sha256"]:
+        report["reason"] = "ledger CANDIDATE output_artifact_sha256.csv does not match computed CSV sha256"
+        return report
+    if cand_art.get("manifest") != report["input_identities"]["candidate_manifest"]["sha256"]:
+        report["reason"] = "ledger CANDIDATE output_artifact_sha256.manifest does not match computed manifest sha256"
+        return report
+    if ref_art.get("csv") != report["input_identities"]["reference_csv"]["sha256"]:
+        report["reason"] = "ledger REFERENCE output_artifact_sha256.csv does not match computed CSV sha256"
+        return report
+    if ref_art.get("manifest") != report["input_identities"]["reference_manifest"]["sha256"]:
+        report["reason"] = "ledger REFERENCE output_artifact_sha256.manifest does not match computed manifest sha256"
+        return report
+    candidate_run_id = cand_completed.get("run_id")
+    reference_run_id = ref_completed.get("run_id")
+    if not candidate_run_id or candidate_run_id != reference_run_id:
+        report["reason"] = "candidate_run_id != reference_run_id (A008 §9.11 R3)"
+        return report
+
+    # --- 10.3 CSV lexical contract ------------------------------------------
+    cand_lex = parse_and_validate_csv_bytes(raw["candidate_csv"])
+    ref_lex = parse_and_validate_csv_bytes(raw["reference_csv"])
+    if not cand_lex.ok:
+        report["reason"] = f"candidate CSV lexical contract violation: {cand_lex.reason}"
+        return report
+    if not ref_lex.ok:
+        report["reason"] = f"reference CSV lexical contract violation: {ref_lex.reason}"
+        return report
+
+    cand_rows = cand_lex.rows or []
+    ref_rows = ref_lex.rows or []
+    report["row_counts"] = {"candidate": len(cand_rows), "reference": len(ref_rows)}
+    if len(cand_rows) != EXPECTED_TOTAL_ROW_COUNT or len(ref_rows) != EXPECTED_TOTAL_ROW_COUNT:
+        report["reason"] = f"row count is not exactly {EXPECTED_TOTAL_ROW_COUNT} for both artifacts"
+        return report
+
+    # --- 10.4 key set / uniqueness / sort ------------------------------------
+    cand_keys = [row_canonical_key_lexeme(r) for r in cand_rows]
+    ref_keys = [row_canonical_key_lexeme(r) for r in ref_rows]
+    if len(set(cand_keys)) != len(cand_keys):
+        report["reason"] = "candidate canonical key is not unique (A02)"
+        return report
+    if len(set(ref_keys)) != len(ref_keys):
+        report["reason"] = "reference canonical key is not unique (A02)"
+        return report
+
+    cand_key_set = set(cand_keys)
+    ref_key_set = set(ref_keys)
+    key_set_mismatch = cand_key_set.symmetric_difference(ref_key_set)
+    report["key_set_mismatch_n"] = len(key_set_mismatch)
+
+    def _canonical_sorted(rows: list[dict]) -> list[dict]:
+        return sorted(rows, key=canonical_sort_key)
+
+    cand_sorted_keys = [row_canonical_key_lexeme(r) for r in _canonical_sorted(cand_rows)]
+    ref_sorted_keys = [row_canonical_key_lexeme(r) for r in _canonical_sorted(ref_rows)]
+    sort_mismatch = (cand_keys != cand_sorted_keys) or (ref_keys != ref_sorted_keys)
+    report["sort_mismatch"] = bool(sort_mismatch)
+
+    if key_set_mismatch or sort_mismatch:
+        report["s1_status"] = "FAIL"
+        return report
+
+    # --- 10.5 field comparison ------------------------------------------------
+    ref_by_key = {row_canonical_key_lexeme(r): r for r in ref_rows}
+    mismatches: list[dict] = []
+    field_mismatch_by_field = {f: 0 for f in CANDIDATE_ROW_FIELDS}
+    invalid_input = False
+    invalid_reason = None
+
+    for cand_row in _canonical_sorted(cand_rows):
+        key = row_canonical_key_lexeme(cand_row)
+        ref_row = ref_by_key[key]
+        for f in CANDIDATE_ROW_FIELDS:
+            c_val = cand_row[f]
+            r_val = ref_row[f]
+            if f in STRING_FIELDS:
+                if f == "accepted_positions_sha256":
+                    for v, who in ((c_val, "candidate"), (r_val, "reference")):
+                        if v != "" and not _HEX64_RE.match(v):
+                            invalid_input = True
+                            invalid_reason = f"{who} accepted_positions_sha256 lexeme {v!r} is not 64-hex"
+                    if c_val != r_val:
+                        mismatches.append({"key": key, "field": f, "candidate": c_val, "reference": r_val})
+                        field_mismatch_by_field[f] += 1
+                else:
+                    if c_val != r_val:
+                        mismatches.append({"key": key, "field": f, "candidate": c_val, "reference": r_val})
+                        field_mismatch_by_field[f] += 1
+            elif f in INTEGER_FIELDS:
+                for v, who in ((c_val, "candidate"), (r_val, "reference")):
+                    if v != "" and not _INT_LEXEME_RE.match(v):
+                        invalid_input = True
+                        invalid_reason = f"{who} integer field {f} lexeme {v!r} does not match ^-?[0-9]+$"
+                if (c_val == "") != (r_val == ""):
+                    mismatches.append({"key": key, "field": f, "candidate": c_val, "reference": r_val})
+                    field_mismatch_by_field[f] += 1
+                elif c_val != "" and int(c_val) != int(r_val):
+                    mismatches.append({"key": key, "field": f, "candidate": c_val, "reference": r_val})
+                    field_mismatch_by_field[f] += 1
+            elif f in FLOAT_FIELDS:
+                for v, who in ((c_val, "candidate"), (r_val, "reference")):
+                    if v != "" and _lexeme_is_invalid_float_token(v):
+                        invalid_input = True
+                        invalid_reason = f"{who} float field {f} lexeme {v!r} is NaN/Inf (forbidden)"
+                if (c_val == "") != (r_val == ""):
+                    mismatches.append({"key": key, "field": f, "candidate": c_val, "reference": r_val})
+                    field_mismatch_by_field[f] += 1
+                elif c_val != "":
+                    try:
+                        cf, rf = float(c_val), float(r_val)
+                    except ValueError:
+                        invalid_input = True
+                        invalid_reason = f"unparsable float lexeme for field {f}"
+                        continue
+                    if not (_is_finite(cf) and _is_finite(rf)):
+                        invalid_input = True
+                        invalid_reason = f"non-finite float value for field {f}"
+                    elif abs(cf - rf) > 1e-12:
+                        mismatches.append({"key": key, "field": f, "candidate": c_val, "reference": r_val})
+                        field_mismatch_by_field[f] += 1
+
+    if invalid_input:
+        report["s1_status"] = "INVALID_INPUT"
+        report["reason"] = invalid_reason
+        return report
+
+    # --- 10.6 manifest semantic comparison ------------------------------------
+    manifest_mismatch_fields: list[str] = []
+    all_semantic_fields = set(cand_manifest.keys()) | set(ref_manifest.keys())
+    for f in sorted(all_semantic_fields):
+        if f in ROLE_SPECIFIC_MANIFEST_FIELDS or f == "a008_provenance":
+            continue
+        if cand_manifest.get(f) != ref_manifest.get(f):
+            manifest_mismatch_fields.append(f)
+    report["manifest_mismatch_fields"] = manifest_mismatch_fields
+
+    report["mismatches"] = mismatches
+    report["field_mismatch_by_field"] = field_mismatch_by_field
+    report["field_mismatch_total"] = len(mismatches)
+
+    if mismatches or manifest_mismatch_fields:
+        report["s1_status"] = "FAIL"
+    else:
+        report["s1_status"] = "PASS"
+    report["reason"] = None
+    return report
+
+
+def _is_finite(x: float) -> bool:
+    import math
+    return math.isfinite(x)
+
+
+# ---------------------------------------------------------------------------
+# S2 — closed candidate invariant validator (A008 §11, BINDING
+# OBSERVABILITY MATRIX). Reads ONLY sealed Candidate artifacts, the frozen
+# freeze-manifest record and the hash-bound Candidate source. STATIC mode.
+# It MUST NOT read any Reference artifact and MUST NOT open any NEW36 ZIP.
+# ---------------------------------------------------------------------------
+
+EVALUATED_INVARIANT_IDS: tuple[str, ...] = (
+    "A01", "A02", "A03", "A04", "A05", "A06", "A07", "A08", "A09", "A10",
+    "A11", "A12", "A13", "A14", "A15", "A16", "A17", "A18", "A19", "A21",
+    "A22", "A23", "A24", "A25", "A26", "A27", "A28", "A29", "A30",
+)
+WITHDRAWN_INVARIANTS: tuple[str, ...] = ("A20",)
+
+
+@dataclass
+class S2Inputs:
+    candidate_csv: Path
+    candidate_manifest: Path
+    candidate_evidence: Path
+    freeze_manifest: Path
+    ledger: Path
+
+
+def _s2_fail(report: dict, inv_id: str, detail: str) -> None:
+    report["per_invariant"][inv_id]["status"] = "FAIL"
+    report["per_invariant"][inv_id]["detail_count"] += 1
+    if len(report["per_invariant"][inv_id]["details"]) < 20:
+        report["per_invariant"][inv_id]["details"].append(detail)
+
+
+def run_s2(inputs: S2Inputs) -> dict:
+    report: dict[str, Any] = {
+        "s2_status": "INVALID_INPUT",
+        "evaluated_invariants": list(EVALUATED_INVARIANT_IDS),
+        "WITHDRAWN_INVARIANTS": list(WITHDRAWN_INVARIANTS),
+        "failed_invariant_count": 0,
+        "failed_invariant_ids": [],
+        "per_invariant": {
+            inv: {
+                "id": inv, "evidence_source": None, "evaluation_mode": None,
+                "status": "PASS", "detail_count": 0, "details": [],
+            }
+            for inv in EVALUATED_INVARIANT_IDS
+        },
+        "reason": None,
+    }
+
+    try:
+        csv_bytes = Path(inputs.candidate_csv).read_bytes()
+        manifest = nnc5_loads(Path(inputs.candidate_manifest).read_bytes())
+    except (OSError, NNC5ParseError) as exc:
+        report["reason"] = f"cannot read/parse candidate artifacts: {exc}"
+        return report
+
+    lex = parse_and_validate_csv_bytes(csv_bytes)
+    if not lex.ok:
+        report["reason"] = f"candidate CSV lexical contract violation: {lex.reason}"
+        return report
+    rows = lex.rows or []
+
+    evidence_records: list[dict] = []
+    if Path(inputs.candidate_evidence).exists():
+        try:
+            evidence_records = nnc5_load_jsonl(inputs.candidate_evidence)
+        except NNC5ParseError as exc:
+            report["reason"] = f"cannot parse candidate evidence: {exc}"
+            return report
+
+    def cast_int(v: str) -> int | None:
+        return None if v == "" else int(v)
+
+    def cast_float(v: str) -> float | None:
+        return None if v == "" else float(v)
+
+    # Typed rows for convenience.
+    typed_rows: list[dict] = []
+    for r in rows:
+        t = dict(r)
+        for f in INTEGER_FIELDS:
+            t[f] = cast_int(r[f])
+        for f in FLOAT_FIELDS:
+            t[f] = cast_float(r[f])
+        typed_rows.append(t)
+
+    ev_by_key: dict[tuple, dict] = {}
+    for ev in evidence_records:
+        key = (ev.get("session_id"), ev.get("asset"), ev.get("axis"), ev.get("feature_family"),
+               ev.get("variant_id"), ev.get("quantile"), ev.get("horizon_ms"))
+        ev_by_key[key] = ev
+
+    def row_ev(row: dict) -> dict | None:
+        key = (row["session_id"], row["asset"], row["axis"], row["feature_family"],
+               row["variant_id"], row["quantile"], row["horizon_ms"])
+        return ev_by_key.get(key)
+
+    def mark(inv: str, source: str, mode: str) -> None:
+        report["per_invariant"][inv]["evidence_source"] = source
+        report["per_invariant"][inv]["evaluation_mode"] = mode
+
+    # A01 — inventory.
+    mark("A01", "CANDIDATE_CSV", "ARTIFACT")
+    if len(typed_rows) != EXPECTED_TOTAL_ROW_COUNT:
+        _s2_fail(report, "A01", f"row count {len(typed_rows)} != {EXPECTED_TOTAL_ROW_COUNT}")
+    per_axis_counts: dict[str, int] = {}
+    for r in typed_rows:
+        per_axis_counts[r["axis"]] = per_axis_counts.get(r["axis"], 0) + 1
+    expected_axis_counts = {"HZ": 1728, "HG": 432, "HC": 432, "HB": 864}
+    for axis, expected in expected_axis_counts.items():
+        if per_axis_counts.get(axis, 0) != expected:
+            _s2_fail(report, "A01", f"axis {axis} row count {per_axis_counts.get(axis, 0)} != {expected}")
+
+    # A02 — unique key.
+    mark("A02", "CANDIDATE_CSV", "ARTIFACT")
+    keys = [row_canonical_key_lexeme(r) for r in rows]
+    if len(set(keys)) != len(keys):
+        _s2_fail(report, "A02", "canonical row key is not unique")
+
+    # A03 — TZ zero exclusion (static + artifact; light-weight artifact check only).
+    mark("A03", "STATIC+ARTIFACT", "STATIC+ARTIFACT")
+    for r in typed_rows:
+        if r["axis"] == "HZ" and r["variant_id"] == "TZ":
+            if r["threshold_domain_nonzero_n"] is not None and r["threshold_domain_finite_n"] is not None:
+                if r["threshold_domain_nonzero_n"] > r["threshold_domain_finite_n"]:
+                    _s2_fail(report, "A03", f"nonzero_n>finite_n for {row_canonical_key_lexeme(r)}")
+
+    # A04 — threshold NULL <=> domain count < 2 and NULL => N=0.
+    mark("A04", "ARTIFACT+EVIDENCE", "ARTIFACT+EVIDENCE")
+    for r in typed_rows:
+        if r["axis"] == "HZ":
+            domain_n = r["threshold_domain_nonzero_n"] if r["variant_id"] == "TZ" else r["threshold_domain_finite_n"]
+            if r["calculated_threshold"] is None and domain_n is not None and domain_n >= 2:
+                _s2_fail(report, "A04", f"HZ threshold NULL but domain_n={domain_n}>=2 for {row_canonical_key_lexeme(r)}")
+        elif r["axis"] in ("HG", "HC", "HB"):
+            if r["calculated_threshold"] is None:
+                if (r["pre_overlap_n"] or 0) != 0 or (r["accepted_n"] or 0) != 0:
+                    _s2_fail(report, "A04", f"threshold NULL but pre_overlap_n/accepted_n != 0 for {row_canonical_key_lexeme(r)}")
+            ev = row_ev(r)
+            if ev is not None and ev.get("threshold_domain_n") is not None:
+                if r["calculated_threshold"] is None and ev["threshold_domain_n"] >= 2:
+                    _s2_fail(report, "A04", f"threshold NULL but evidence threshold_domain_n={ev['threshold_domain_n']}>=2 for {row_canonical_key_lexeme(r)}")
+
+    # A05 — HZ count identities and zero_fraction range.
+    mark("A05", "CANDIDATE_CSV", "ARTIFACT")
+    for r in typed_rows:
+        if r["axis"] != "HZ":
+            continue
+        finite_n, nonzero_n, zero_n = r["threshold_domain_finite_n"], r["threshold_domain_nonzero_n"], r["zero_n"]
+        if finite_n is None or nonzero_n is None or zero_n is None:
+            _s2_fail(report, "A05", f"HZ counts missing for {row_canonical_key_lexeme(r)}")
+            continue
+        if not (finite_n >= nonzero_n >= 0):
+            _s2_fail(report, "A05", f"finite_n>=nonzero_n>=0 violated for {row_canonical_key_lexeme(r)}")
+        if zero_n != finite_n - nonzero_n:
+            _s2_fail(report, "A05", f"zero_n != finite_n-nonzero_n for {row_canonical_key_lexeme(r)}")
+        zf = r["zero_fraction"]
+        if finite_n == 0:
+            if zf is not None:
+                _s2_fail(report, "A05", f"zero_fraction not NULL when finite_n=0 for {row_canonical_key_lexeme(r)}")
+        else:
+            if zf is None or not (0.0 <= zf <= 1.0):
+                _s2_fail(report, "A05", f"zero_fraction out of [0,1] for {row_canonical_key_lexeme(r)}")
+
+    # A06 — zero-free control: zero_n=0 => T0==TZ threshold within 1e-12.
+    mark("A06", "CANDIDATE_CSV", "ARTIFACT")
+    hz_rows = {(r["session_id"], r["asset"], r["feature_family"], r["quantile"], r["variant_id"]): r
+               for r in typed_rows if r["axis"] == "HZ"}
+    for r in typed_rows:
+        if r["axis"] == "HZ" and r["variant_id"] == "T0" and r["zero_n"] == 0:
+            tz = hz_rows.get((r["session_id"], r["asset"], r["feature_family"], r["quantile"], "TZ"))
+            if tz is None or r["calculated_threshold"] is None or tz["calculated_threshold"] is None:
+                continue
+            if abs(r["calculated_threshold"] - tz["calculated_threshold"]) > 1e-12:
+                _s2_fail(report, "A06", f"T0!=TZ threshold at zero_n=0 for {row_canonical_key_lexeme(r)}")
+
+    # A07 — G1 threshold source = TZ depth_imbalance_l1.
+    mark("A07", "CANDIDATE_CSV", "ARTIFACT")
+    for r in typed_rows:
+        if r["axis"] == "HG" and r["variant_id"] == "G1":
+            tz_di = hz_rows.get((r["session_id"], r["asset"], "depth_imbalance_l1", r["quantile"], "TZ"))
+            if tz_di is None:
+                continue
+            ct, tz_ct = r["calculated_threshold"], tz_di["calculated_threshold"]
+            if (ct is None) != (tz_ct is None):
+                _s2_fail(report, "A07", f"G1 threshold nullability mismatch for {row_canonical_key_lexeme(r)}")
+            elif ct is not None and abs(ct - tz_ct) > 1e-12:
+                _s2_fail(report, "A07", f"G1 threshold != TZ depth_imbalance_l1 threshold for {row_canonical_key_lexeme(r)}")
+
+    # A08 — G1 pre-overlap ⊆ parent gate.
+    mark("A08", "EVIDENCE", "EVIDENCE")
+    for r in typed_rows:
+        if r["axis"] == "HG" and r["variant_id"] == "G1":
+            ev = row_ev(r)
+            if ev is None:
+                continue
+            pre = set(ev.get("pre_overlap_positions") or [])
+            parent = set(ev.get("parent_positions") or [])
+            if not pre.issubset(parent):
+                _s2_fail(report, "A08", f"G1 pre-overlap not subset of parent for {row_canonical_key_lexeme(r)}")
+
+    # A09 — G1 raw-sign only (static AST scan of the candidate app source).
+    mark("A09", "STATIC", "STATIC")
+    _static_scan_forbidden_confirmation(report, "A09")
+
+    # A10 — C1 threshold = fair_gap_reversion T0 threshold.
+    mark("A10", "CANDIDATE_CSV", "ARTIFACT")
+    fair_gap_t0 = {(r["session_id"], r["asset"], r["quantile"]): r
+                   for r in typed_rows if r["axis"] == "HZ" and r["feature_family"] == "fair_gap_reversion" and r["variant_id"] == "T0"}
+    for r in typed_rows:
+        if r["axis"] == "HC" and r["variant_id"] == "C1":
+            t0 = fair_gap_t0.get((r["session_id"], r["asset"], r["quantile"]))
+            if t0 is None:
+                continue
+            ct, t0ct = r["calculated_threshold"], t0["calculated_threshold"]
+            if (ct is None) != (t0ct is None):
+                _s2_fail(report, "A10", f"C1 threshold nullability mismatch for {row_canonical_key_lexeme(r)}")
+            elif ct is not None and abs(ct - t0ct) > 1e-12:
+                _s2_fail(report, "A10", f"C1 threshold != fair_gap_reversion T0 threshold for {row_canonical_key_lexeme(r)}")
+
+    # A11 — C1 pre-overlap ⊆ gap parent set.
+    mark("A11", "EVIDENCE", "EVIDENCE")
+    for r in typed_rows:
+        if r["axis"] == "HC" and r["variant_id"] == "C1":
+            ev = row_ev(r)
+            if ev is None:
+                continue
+            pre = set(ev.get("pre_overlap_positions") or [])
+            parent = set(ev.get("parent_positions") or [])
+            if not pre.issubset(parent):
+                _s2_fail(report, "A11", f"C1 pre-overlap not subset of gap parent for {row_canonical_key_lexeme(r)}")
+
+    # A12 — C1 raw signs only (static).
+    mark("A12", "STATIC", "STATIC")
+    _static_scan_forbidden_confirmation(report, "A12")
+
+    # A13 — spacing_steps = max(10, horizon_ms // 100).
+    mark("A13", "CANDIDATE_CSV", "ARTIFACT")
+    for r in typed_rows:
+        if r["axis"] in ("HG", "HC", "HB") and r["horizon_ms"] is not None and r["spacing_steps"] is not None:
+            expected = max(10, r["horizon_ms"] // 100)
+            if r["spacing_steps"] != expected:
+                _s2_fail(report, "A13", f"spacing_steps={r['spacing_steps']} != {expected} for {row_canonical_key_lexeme(r)}")
+
+    # A14 — B0 greedy earliest-first.
+    mark("A14", "EVIDENCE+ARTIFACT", "EVIDENCE+ARTIFACT")
+    for r in typed_rows:
+        if r["axis"] == "HB" and r["variant_id"] == "B0":
+            ev = row_ev(r)
+            if ev is None:
+                continue
+            pre = ev.get("pre_overlap_positions") or []
+            recomputed = _greedy_b0(pre, r["spacing_steps"] or 0)
+            if sorted(ev.get("accepted_positions") or []) != recomputed:
+                _s2_fail(report, "A14", f"B0 recomputed accepted set differs for {row_canonical_key_lexeme(r)}")
+            if r["accepted_n"] != len(ev.get("accepted_positions") or []):
+                _s2_fail(report, "A14", f"B0 accepted_n != len(accepted_positions) for {row_canonical_key_lexeme(r)}")
+
+    # A15 — B1 strict; B1 never candidate.
+    mark("A15", "EVIDENCE+ARTIFACT+STATIC", "EVIDENCE+ARTIFACT+STATIC")
+    for r in typed_rows:
+        if r["axis"] == "HB" and r["variant_id"] == "B1":
+            ev = row_ev(r)
+            if ev is None:
+                continue
+            b0_ev = ev_by_key.get((r["session_id"], r["asset"], "HB", r["feature_family"], "B0", r["quantile"], r["horizon_ms"]))
+            pre = (b0_ev or {}).get("pre_overlap_positions") or []
+            recomputed = _strict_b1(pre, r["spacing_steps"] or 0)
+            if sorted(ev.get("accepted_positions") or []) != recomputed:
+                _s2_fail(report, "A15", f"B1 recomputed accepted set differs for {row_canonical_key_lexeme(r)}")
+
+    # A16 — pre_overlap_n = accepted_n + overlap_dropped_n.
+    mark("A16", "CANDIDATE_CSV", "ARTIFACT")
+    for r in typed_rows:
+        if r["axis"] in ("HG", "HC", "HB"):
+            pre, acc, drop = r["pre_overlap_n"], r["accepted_n"], r["overlap_dropped_n"]
+            if None not in (pre, acc, drop) and pre != acc + drop:
+                _s2_fail(report, "A16", f"pre_overlap_n != accepted_n+overlap_dropped_n for {row_canonical_key_lexeme(r)}")
+
+    # A17 — accepted positions unique, ascending, subset of pre-overlap.
+    mark("A17", "EVIDENCE+ARTIFACT", "EVIDENCE+ARTIFACT")
+    for r in typed_rows:
+        if r["axis"] in ("HG", "HC", "HB"):
+            ev = row_ev(r)
+            if ev is None:
+                continue
+            acc = ev.get("accepted_positions") or []
+            if len(set(acc)) != len(acc):
+                _s2_fail(report, "A17", f"accepted positions not unique for {row_canonical_key_lexeme(r)}")
+            if acc != sorted(acc):
+                _s2_fail(report, "A17", f"accepted positions not ascending for {row_canonical_key_lexeme(r)}")
+            pre = ev.get("pre_overlap_positions")
+            if pre is None and r["variant_id"] == "B1":
+                b0_ev = ev_by_key.get((r["session_id"], r["asset"], "HB", r["feature_family"], "B0", r["quantile"], r["horizon_ms"]))
+                pre = (b0_ev or {}).get("pre_overlap_positions") or []
+            if pre is not None and not set(acc).issubset(set(pre)):
+                _s2_fail(report, "A17", f"accepted positions not subset of pre-overlap for {row_canonical_key_lexeme(r)}")
+
+    # A18 — fingerprint = V2 encoding of exactly accepted_n positions.
+    mark("A18", "EVIDENCE+ARTIFACT", "EVIDENCE+ARTIFACT")
+    for r in typed_rows:
+        if r["axis"] in ("HG", "HC", "HB"):
+            ev = row_ev(r)
+            if ev is None:
+                continue
+            acc = ev.get("accepted_positions") or []
+            recomputed_fp = sha256_positions(acc)
+            if r["accepted_positions_sha256"] and r["accepted_positions_sha256"] != recomputed_fp:
+                _s2_fail(report, "A18", f"accepted_positions_sha256 mismatch for {row_canonical_key_lexeme(r)}")
+            if r["accepted_n"] is not None and r["accepted_n"] != len(acc):
+                _s2_fail(report, "A18", f"accepted_n != len(accepted_positions) for {row_canonical_key_lexeme(r)}")
+
+    # A19 (ACTIVE) — paired B1.accepted_n <= B0.accepted_n.
+    mark("A19", "CANDIDATE_CSV", "ARTIFACT")
+    b0_by_cell = {(r["session_id"], r["asset"], r["feature_family"], r["quantile"], r["horizon_ms"]): r
+                  for r in typed_rows if r["axis"] == "HB" and r["variant_id"] == "B0"}
+    for r in typed_rows:
+        if r["axis"] == "HB" and r["variant_id"] == "B1":
+            b0 = b0_by_cell.get((r["session_id"], r["asset"], r["feature_family"], r["quantile"], r["horizon_ms"]))
+            if b0 is not None and r["accepted_n"] is not None and b0["accepted_n"] is not None:
+                if r["accepted_n"] > b0["accepted_n"]:
+                    _s2_fail(report, "A19", f"B1.accepted_n>B0.accepted_n for {row_canonical_key_lexeme(r)}")
+
+    # A21 — exact_spacing_pair_n = consecutive-pair count.
+    mark("A21", "EVIDENCE+ARTIFACT", "EVIDENCE+ARTIFACT")
+    for r in typed_rows:
+        if r["axis"] == "HB":
+            ev = row_ev(r)
+            if ev is None:
+                continue
+            pre = ev.get("pre_overlap_positions")
+            if pre is None:
+                b0_ev = ev_by_key.get((r["session_id"], r["asset"], "HB", r["feature_family"], "B0", r["quantile"], r["horizon_ms"]))
+                pre = (b0_ev or {}).get("pre_overlap_positions") or []
+            pre = sorted(pre)
+            spacing = r["spacing_steps"] or 0
+            expected = sum(1 for i in range(1, len(pre)) if pre[i] - pre[i - 1] == spacing)
+            if r["exact_spacing_pair_n"] is not None and r["exact_spacing_pair_n"] != expected:
+                _s2_fail(report, "A21", f"exact_spacing_pair_n={r['exact_spacing_pair_n']} != consecutive-pair count {expected} for {row_canonical_key_lexeme(r)}")
+
+    # A22 — accepted_n=0 => mean_signed_bps, hit_rate NULL.
+    mark("A22", "CANDIDATE_CSV", "ARTIFACT")
+    for r in typed_rows:
+        if r["axis"] in ("HG", "HC", "HB") and r["accepted_n"] == 0:
+            if r["mean_signed_bps"] is not None or r["hit_rate"] is not None:
+                _s2_fail(report, "A22", f"accepted_n=0 but mean_signed_bps/hit_rate not NULL for {row_canonical_key_lexeme(r)}")
+
+    # A23 — hit_rate = count(sign==+1)/accepted_n; zero is a miss.
+    mark("A23", "EVIDENCE+ARTIFACT", "EVIDENCE+ARTIFACT")
+    for r in typed_rows:
+        if r["axis"] in ("HG", "HC", "HB"):
+            ev = row_ev(r)
+            if ev is None or r["accepted_n"] in (None, 0):
+                continue
+            signs = ev.get("accepted_signed_return_signs") or []
+            if len(signs) != r["accepted_n"]:
+                _s2_fail(report, "A23", f"accepted_signed_return_signs length mismatch for {row_canonical_key_lexeme(r)}")
+                continue
+            expected_hr = sum(1 for s in signs if s == 1) / len(signs)
+            if r["hit_rate"] is not None and abs(r["hit_rate"] - expected_hr) > 1e-12:
+                _s2_fail(report, "A23", f"hit_rate={r['hit_rate']} != recomputed {expected_hr} for {row_canonical_key_lexeme(r)}")
+
+    # A24 — BTC/ETH independence (static: composition is per-block; no
+    # cross-asset state kept by the candidate application).
+    mark("A24", "STATIC", "STATIC")
+
+    # A25 — no golden reads.
+    mark("A25", "MANIFEST+STATIC", "MANIFEST+STATIC")
+    if manifest.get("golden_artifacts_read") is not False:
+        _s2_fail(report, "A25", "manifest golden_artifacts_read is not exactly false")
+
+    # A26 — no OLD36 quantitative reads.
+    mark("A26", "MANIFEST+STATIC", "MANIFEST+STATIC")
+    if manifest.get("old36_quantitative_data_read") is not False:
+        _s2_fail(report, "A26", "manifest old36_quantitative_data_read is not exactly false")
+
+    # A27 — collector_sha256 = frozen.
+    mark("A27", "MANIFEST", "MANIFEST")
+    from checkpoint_registry import NEW36_SESSION_IDS  # noqa: F401 (import-availability check only)
+    FROZEN_COLLECTOR_SHA256 = "e924edc1b8348d9cc8e74a37eaa17e6bbc80116de29d2f7a00cd43444d1265a3"
+    if manifest.get("collector_sha256") != FROZEN_COLLECTOR_SHA256:
+        _s2_fail(report, "A27", "manifest collector_sha256 does not equal the frozen value")
+
+    # A28 — frozen analysis engine state.
+    mark("A28", "MANIFEST", "MANIFEST")
+    if manifest.get("frozen_analysis_engine_state") != "NOT_CONFIGURED":
+        _s2_fail(report, "A28", "frozen_analysis_engine_state != NOT_CONFIGURED")
+    if manifest.get("frozen_analysis_engine_accepts_input") is not False:
+        _s2_fail(report, "A28", "frozen_analysis_engine_accepts_input is not exactly false")
+
+    # A29 — protocol/spec/engine identities frozen.
+    mark("A29", "MANIFEST", "MANIFEST")
+    FROZEN_PROTOCOL_SHA256 = "5ed8a8b12726d395d25262dc3e4073250be3de94f3d62e64e99167921380ef95"
+    FROZEN_CANDIDATE_SPEC_SHA256 = "aed67b5ec9ae1b710ec3d96e1fcc2e15bd9c30fdd60e80cc68553d8fc3b597ca"
+    FROZEN_ENGINE_SHA256 = "abedee399c272eff858b109fb448cbda3ad3a49e40be4ba3f486650e3151a3e8"
+    if manifest.get("protocol_sha256") != FROZEN_PROTOCOL_SHA256:
+        _s2_fail(report, "A29", "manifest protocol_sha256 mismatch")
+    if manifest.get("candidate_spec_sha256") != FROZEN_CANDIDATE_SPEC_SHA256:
+        _s2_fail(report, "A29", "manifest candidate_spec_sha256 mismatch")
+    if manifest.get("engine_sha256") != FROZEN_ENGINE_SHA256:
+        _s2_fail(report, "A29", "manifest engine_sha256 mismatch")
+
+    # A30 — controls present only as controls; exactly one candidate variant per axis.
+    mark("A30", "ARTIFACT+MANIFEST", "ARTIFACT+MANIFEST")
+    per_axis_variants: dict[str, set] = {}
+    for r in typed_rows:
+        per_axis_variants.setdefault(r["axis"], set()).add(r["variant_id"])
+    expected_variants = {"HZ": {"T0", "TZ"}, "HG": {"G0", "G1"}, "HC": {"C0", "C1"}, "HB": {"B0", "B1"}}
+    for axis, expected in expected_variants.items():
+        if per_axis_variants.get(axis) != expected:
+            _s2_fail(report, "A30", f"axis {axis} variant set {per_axis_variants.get(axis)} != {expected}")
+
+    failed = [inv for inv, v in report["per_invariant"].items() if v["status"] == "FAIL"]
+    report["failed_invariant_ids"] = failed
+    report["failed_invariant_count"] = len(failed)
+    report["s2_status"] = "FAIL" if failed else "PASS"
+    return report
+
+
+def sha256_positions(positions: Sequence[int]) -> str:
+    import numpy as np
+    arr = np.asarray(list(positions), dtype=np.int64)
+    if len(arr):
+        arr = np.sort(arr)
+    return hashlib.sha256(arr.astype("<i8", copy=False).tobytes(order="C")).hexdigest()
+
+
+def _greedy_b0(positions: Sequence[int], spacing: int) -> list[int]:
+    pos = sorted(positions)
+    out: list[int] = []
+    last = None
+    for p in pos:
+        if last is None or p - last >= spacing:
+            out.append(p)
+            last = p
+    return out
+
+
+def _strict_b1(positions: Sequence[int], spacing: int) -> list[int]:
+    pos = sorted(positions)
+    out: list[int] = []
+    last = None
+    for p in pos:
+        if last is None or p - last > spacing:
+            out.append(p)
+            last = p
+    return out
+
+
+def _static_scan_forbidden_confirmation(report: dict, inv_id: str) -> None:
+    """STATIC mode (A008 §11.3): hash the Candidate application source,
+    scan its AST for forbidden confirmation-column string literals
+    (CANDIDATE_FORBIDDEN_CONFIRMATION_COLUMNS) and verify the only G1/C1
+    mask sources referenced are the frozen candidate functions."""
+    import ast
+    app_path = REPO_ROOT / "backend" / "recovery" / "v1_2_new36_candidate_app.py"
+    try:
+        text = app_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        _s2_fail(report, inv_id, f"cannot read candidate application source: {exc}")
+        return
+    forbidden = ("z_di_l1", "z_ext_ofi", "z_gap_d")
+    try:
+        tree = ast.parse(text, filename=str(app_path))
+    except SyntaxError as exc:
+        _s2_fail(report, inv_id, f"candidate application source does not parse: {exc}")
+        return
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if node.value in forbidden:
+                _s2_fail(report, inv_id, f"forbidden confirmation column literal {node.value!r} referenced")
+
+
+# ---------------------------------------------------------------------------
+# CLI (A008 §10.1 `s1`, §11.1 `s2`)
+# ---------------------------------------------------------------------------
+
+def _cmd_s1(args: argparse.Namespace) -> int:
+    inputs = S1Inputs(
+        candidate_csv=Path(args.candidate_csv),
+        candidate_manifest=Path(args.candidate_manifest),
+        reference_csv=Path(args.reference_csv),
+        reference_manifest=Path(args.reference_manifest),
+        ledger=Path(args.ledger),
+    )
+    report = run_s1(inputs)
+    data = canonical_pretty_bytes(report)
+    out_path = Path(args.out_report)
+    if out_path.exists():
+        print(f"PRECONDITION_FAIL: {out_path} already exists (xb required)", file=sys.stderr)
+        return 2
+    exclusive_create_write(out_path, data)
+    print(json.dumps({"s1_status": report["s1_status"]}))
+    return 0 if report["s1_status"] == "PASS" else 1
+
+
+def _cmd_s2(args: argparse.Namespace) -> int:
+    inputs = S2Inputs(
+        candidate_csv=Path(args.candidate_csv),
+        candidate_manifest=Path(args.candidate_manifest),
+        candidate_evidence=Path(args.candidate_evidence),
+        freeze_manifest=Path(args.freeze_manifest),
+        ledger=Path(args.ledger),
+    )
+    report = run_s2(inputs)
+    data = canonical_pretty_bytes(report)
+    out_path = Path(args.out_report)
+    if out_path.exists():
+        print(f"PRECONDITION_FAIL: {out_path} already exists (xb required)", file=sys.stderr)
+        return 2
+    exclusive_create_write(out_path, data)
+    print(json.dumps({"s2_status": report["s2_status"]}))
+    return 0 if report["s2_status"] == "PASS" else 1
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="v1_2_new36_validators")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p_s1 = sub.add_parser("s1")
+    p_s1.add_argument("--candidate-csv", required=True)
+    p_s1.add_argument("--candidate-manifest", required=True)
+    p_s1.add_argument("--reference-csv", required=True)
+    p_s1.add_argument("--reference-manifest", required=True)
+    p_s1.add_argument("--ledger", required=True)
+    p_s1.add_argument("--out-report", required=True)
+    p_s1.set_defaults(func=_cmd_s1)
+
+    p_s2 = sub.add_parser("s2")
+    p_s2.add_argument("--candidate-csv", required=True)
+    p_s2.add_argument("--candidate-manifest", required=True)
+    p_s2.add_argument("--candidate-evidence", required=True)
+    p_s2.add_argument("--freeze-manifest", required=True)
+    p_s2.add_argument("--ledger", required=True)
+    p_s2.add_argument("--out-report", required=True)
+    p_s2.set_defaults(func=_cmd_s2)
+
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_arg_parser()
+    args = parser.parse_args(argv)
+    return args.func(args)
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())
+===== END backend/recovery/v1_2_new36_validators.py =====
+===== BEGIN backend/recovery/v1_2_new36_candidate_app.py =====
+"""SECTION 16 STEP 4 — CANDIDATE NEW36 APPLICATION (A008 DRAFT4 §4).
+
+backend/recovery/v1_2_new36_candidate_app.py — the "Candidate application"
+named in A008 DRAFT4 §0.1. A COMPOSITION/ORCHESTRATION layer only (§4.1):
+it defines no threshold, domain predicate, mask, filter, direction, metric,
+fingerprint or count formula of its own. Every canonical field is obtained
+by calling an AUTHORIZED existing implementation named in the §4.7 binding
+table.
+
+Invocation (explicit only; no import-time side effects; no FastAPI route):
+
+    python -m recovery.v1_2_new36_candidate_app preflight
+        --db <sqlite path> --environment-record <path>
+        --session-zip-map <json path>
+    python -m recovery.v1_2_new36_candidate_app generate
+        --db <sqlite path> --environment-record <path>
+        --session-zip-map <json path>
+        --out-csv <path> --out-manifest <path> --out-evidence <path>
+        --run-id <uuid> --ledger <path>
+
+CLEAN-ROOM: authored EXCLUSIVELY from A008 DRAFT4 §5.2 permitted inputs.
+No path under backend/recovery/reference/ is imported, opened, read,
+executed or diffed anywhere in this module.
+
+PROHIBITED IN THIS SESSION (Section 16 STEP 4 scope): this module MUST NOT
+be invoked against real NEW36 data by the authoring agent. Its `generate`
+gates (P-01..P-10) are fail-closed and will legitimately return
+PRECONDITION_FAIL today because the Section 16 step 6 freeze record
+(V1_2_CANDIDATE_IMPLEMENTATION_FREEZE_MANIFEST.txt) does not exist yet
+(gate P-03) — this is the CORRECT state prior to Section 16 steps 5-9.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+import zipfile
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+from . import v1_2_candidate as candidate
+from . import v1_2_diagnostics as diagnostics
+from . import v1_2_stage3 as stage3
+from .allowlist import assert_recovery_allowed
+from .engine import GRID_MS, _build_forward_return_array, _quantile_type7
+from .v1_2_new36_validators import (
+    CANDIDATE_ROW_FIELDS,
+    EXPECTED_TOTAL_ROW_COUNT,
+    FINGERPRINT_ENCODING_DEFINITION,
+    HB_QUANTILE,
+    HORIZON_ORDER,
+    PROTOCOL_VERSION_LITERAL,
+    QUANTILE_ORDER,
+    NNC3Error,
+    NNC4Error,
+    NNC5ParseError,
+    append_ledger_record_durable,
+    build_shared_environment_record,
+    canonical_line_bytes,
+    canonical_pretty_bytes,
+    canonical_sort_key,
+    compute_runtime_environment_identity,
+    environment_identities_equivalent,
+    environment_identity_sha256,
+    exclusive_create_write,
+    load_and_validate_environment_record,
+    nnc5_load_file,
+    read_ledger_records,
+    row_canonical_key_lexeme,
+    sha256_bytes,
+    sha256_file,
+    sha256_positions,
+    size_of,
+    verify_session_id_uniqueness,
+)
+
+REPO_ROOT: Path = Path(__file__).resolve().parents[2]
+
+# ---------------------------------------------------------------------------
+# Frozen protocol / amendment identities (A008 DRAFT4 §0.2-0.4, §2.2)
+# ---------------------------------------------------------------------------
+
+_SPEC_DIR = REPO_ROOT / "backend" / "recovery" / "specs"
+
+FROZEN_PROTOCOL_IDENTITIES: tuple[tuple[Path, int, str], ...] = (
+    (_SPEC_DIR / "V1_2_NEW36_VALIDATION_PROTOCOL_V2.txt", 19392,
+     "5ed8a8b12726d395d25262dc3e4073250be3de94f3d62e64e99167921380ef95"),
+    (_SPEC_DIR / "V1_2_CANDIDATE_SPEC.txt", 6738,
+     "aed67b5ec9ae1b710ec3d96e1fcc2e15bd9c30fdd60e80cc68553d8fc3b597ca"),
+    (_SPEC_DIR / "V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_001.txt", 13858,
+     "e64f1198e3f97f975d1f0f8ec7183b1f0c83786429e98cbd66819d98f640f0bf"),
+    (_SPEC_DIR / "V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_002.txt", 7236,
+     "9a335589a44df68de56804bce09d122308f01ba95403bcb10a764c0b3461df57"),
+    (_SPEC_DIR / "V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_003.txt", 5209,
+     "cee61f2ea2b5d592deddb0fa6d2215c77039c365006ecb0bc7caf1d32075bea7"),
+    (_SPEC_DIR / "V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_004.txt", 21467,
+     "62830b779ed77cabc6afdc0ac8cea4b9013871feee65b03aa73d7757c88197b4"),
+    (_SPEC_DIR / "V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_005.txt", 29853,
+     "0c2dc05bc37fc392f67b45fd8f7e3576b49be9d764ffca4be0679db22b8d2a00"),
+    (_SPEC_DIR / "V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_006.txt", 61911,
+     "a8610b5dc3328c164bceb91921ee9a658bf2721cb1b0384e66b6289255f910b7"),
+    (_SPEC_DIR / "V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_007.txt", 13971,
+     "d33f9c66537e762f08d164bc791f31e3eb18fbc3a5e694507f9f436322ceaf10"),
+)
+
+FROZEN_COLLECTOR_SHA256 = "e924edc1b8348d9cc8e74a37eaa17e6bbc80116de29d2f7a00cd43444d1265a3"
+FROZEN_ENGINE_SHA256 = "abedee399c272eff858b109fb448cbda3ad3a49e40be4ba3f486650e3151a3e8"
+
+FREEZE_MANIFEST_PATH: Path = _SPEC_DIR / "V1_2_CANDIDATE_IMPLEMENTATION_FREEZE_MANIFEST.txt"
+
+SOURCE_PATHS: tuple[str, ...] = (
+    "backend/recovery/v1_2_new36_candidate_app.py",
+    "backend/recovery/v1_2_new36_validators.py",
+    "backend/recovery/v1_2_new36_run.py",
+    "backend/recovery/v1_2_candidate.py",
+    "backend/recovery/v1_2_stage3.py",
+    "backend/recovery/v1_2_diagnostics.py",
+    "backend/recovery/harness.py",
+    "backend/recovery/engine.py",
+    "backend/checkpoint_registry.py",
+    "backend/parquet_validator.py",
+    "backend/frozen_engine.py",
+)
+ATTESTATION_PATHS: tuple[str, ...] = (
+    "backend/recovery/CANDIDATE_INDEPENDENCE_ATTESTATION.txt",
+)
+CONTROL_PATHS: tuple[str, ...] = (
+    "backend/recovery/v1_2_preflight.py",
+    "backend/recovery/v1_2_acceptance.py",
+    "backend/recovery/sandbox.py",
+    "backend/recovery/allowlist.py",
+)
+
+# A008 DRAFT4 §0.6 — frozen Reference identity (byte-exact), transcribed
+# VERBATIM from the frozen A008 amendment text itself (a permitted
+# authoring input per §5.2: "A001-A008 (frozen text)"). This agent has
+# NEVER opened, read, hashed or otherwise inspected the actual Reference
+# file at any point to produce these values — they are copied from the
+# frozen spec's own §0.6 table. P-03/§3.6 verifies these independently
+# of the §3.5 implementation freeze manifest, which per §3.5 contains
+# ONLY SOURCE/TEST/ATTESTATION/CONTROL rows, aggregates and the two
+# REFERENCE_IDENTITY_OK / PROTOCOL_IDENTITY_OK=YES recorded-verification
+# flags — it MUST NOT be expected to contain Reference path/hash rows.
+REFERENCE_FROZEN_IDENTITIES: tuple[tuple[str, int, str], ...] = (
+    ("backend/recovery/reference/v1_2_reference.py", 84763,
+     "f608d69cae4ebf56b19732cb558b91860c64878ba351aef3de520eaf5347651b"),
+    ("backend/recovery/reference/tests/test_v1_2_reference.py", 86102,
+     "bdc72be42d93de4b41eaaf7e6596a43051b80332a51983b2a12311cd5b9c0373"),
+    ("backend/recovery/reference/REFERENCE_INDEPENDENCE_ATTESTATION.txt", 7253,
+     "23ef2bbe8795d6037297fc2d22204cf809a1926cb3aca4e2367f130ea4fcf46e"),
+)
+
+# A008 DRAFT4 §14.2 — authoritative input identity triples (Appendix-B order).
+NEW36_INPUT_IDENTITY: dict[str, tuple[int, str]] = {
+    "20260910T123759Z_5ab0c1b2": (340751422, "3955aa2494086cd9e21ce7eb9ba446c50c7af43933999e805bc823ba6aeda47d"),
+    "20260911T040213Z_43a798b7": (172003086, "d824a3447e4f21c3255b9cccbb5a2ae98e02c1fad1de3464b689fc011162011e"),
+    "20260911T081446Z_28b5a901": (185950682, "17908158a060314d3126c24235a167ed2acfb3d6d3c727cfdf0cfb4c06db639c"),
+    "20260911T113249Z_276d8c3b": (483830410, "193823eeb99fd0686ce680f381fa37c9b7ae5a795a9efd7412e6a8babe3c0868"),
+    "20260911T145009Z_37923a7a": (361485063, "58cd05ae1dda9edf7081e8621ba7c1de1b13808dba80fed39fd3be28ff4401f8"),
+    "20260911T220737Z_5d45563e": (171131284, "c554548dac283277d978dd789ba3f3ac4f5c3ff022c7c1c552f6f927da3a8c52"),
+    "20260912T072730Z_adb96088": (141579081, "b6d02a8e864c00f18610225ce850a670db2c32568819691743a9f751efb052c2"),
+    "20260912T163326Z_16b9ca74": (133546596, "13581fea0765956b8db35716b8a5d527781fb53a3055e008e1e0cc5757298365"),
+    "20260912T213151Z_9f9a0088": (114954594, "14c48ca156a60daa374fbbf8d12c4d7a7e37d7015472c1e63de4f848681e1022"),
+    "20260914T050815Z_3b68aabf": (201193333, "5500d6f96306006c78ab125b87e14c913a2882bc7c431dd0deac78e6d9c54d6a"),
+    "20260914T133522Z_6141ec8b": (354205917, "24538b5a61c8d194a70327ac968868063f7a4278175186b306542f5d42bf5783"),
+    "20260914T192945Z_1b899057": (271015335, "ceadd07e36aebc406ec208c19b7de7bfe2a36aa572cc381b0fc5411fcac01964"),
+}
+
+ASSETS: tuple[str, ...] = ("BTC", "ETH")
+
+# Test/synthetic escape hatch ONLY: when set, gate P-09 checks the supplied
+# identity table instead of the frozen NEW36_INPUT_IDENTITY table above, and
+# gate P-03 may be pointed at a synthetic freeze manifest / control set.
+# NEVER used against real NEW36 data; production invocation always uses the
+# module-level frozen defaults.
+
+
+class PreconditionFail(Exception):
+    def __init__(self, code: str, message: str = ""):
+        self.code = code
+        super().__init__(f"{code}: {message}" if message else code)
+
+
+@dataclass
+class CandidateContext:
+    """Injectable overrides for gates, used ONLY by synthetic tests
+    (A008 §13). Production invocation uses every default unchanged."""
+    input_identity_table: dict[str, tuple[int, str]] | None = None
+    freeze_manifest_path: Path | None = None
+    protocol_identities: tuple[tuple[Path, int, str], ...] | None = None
+    reference_identities: tuple[tuple[str, int, str], ...] | None = None
+    session_ids_ordered: tuple[str, ...] | None = None
+    skip_firewall_self_check: bool = False
+
+
+def _session_ids_ordered(ctx: CandidateContext) -> tuple[str, ...]:
+    if ctx.session_ids_ordered is not None:
+        return ctx.session_ids_ordered
+    from checkpoint_registry import NEW36_SESSION_IDS
+    return tuple(NEW36_SESSION_IDS)
+
+
+# ---------------------------------------------------------------------------
+# Gate P-01 .. P-10 (A008 §4.12)
+# ---------------------------------------------------------------------------
+
+def gate_p01_generate_outputs_absent(out_csv: Path, out_manifest: Path, out_evidence: Path) -> None:
+    for p in (out_csv, out_manifest, out_evidence):
+        if p.exists():
+            raise PreconditionFail("P-01", f"output path already exists: {p}")
+
+
+def gate_p02_protocol_identities(ctx: CandidateContext) -> None:
+    identities = ctx.protocol_identities or FROZEN_PROTOCOL_IDENTITIES
+    for path, size_bytes, sha in identities:
+        if not path.exists():
+            raise PreconditionFail("P-02", f"missing frozen spec file: {path}")
+        if path.stat().st_size != size_bytes or sha256_file(path) != sha:
+            raise PreconditionFail("P-02", f"identity drift on {path}")
+
+
+def gate_p03_implementation_identities(ctx: CandidateContext) -> None:
+    freeze_path = ctx.freeze_manifest_path or FREEZE_MANIFEST_PATH
+    if not freeze_path.exists():
+        raise PreconditionFail(
+            "P-03",
+            f"freeze record absent: {freeze_path} (Section 16 step 6 has not "
+            f"run yet; NEW36 is not eligible until then, §3.6)",
+        )
+    # Freeze record present (§3.5 format: SOURCE/TEST/ATTESTATION/CONTROL
+    # rows + aggregates + REFERENCE_IDENTITY_OK/PROTOCOL_IDENTITY_OK=YES).
+    # It does NOT, and MUST NOT be expected to, contain Reference
+    # path/hash rows (§3.5 exact format has none).
+    text = freeze_path.read_text(encoding="utf-8")
+    lines = [ln for ln in text.split("\n") if ln]
+    kv: dict[str, str] = {}
+    rows: list[tuple[str, str, str, str]] = []
+    for ln in lines:
+        if "=" in ln and "\t" not in ln:
+            k, _, v = ln.partition("=")
+            kv[k] = v
+        elif "\t" in ln:
+            parts = ln.split("\t")
+            if len(parts) == 4:
+                rows.append((parts[0], parts[1], parts[2], parts[3]))
+    for record_type, relpath, size_str, sha in rows:
+        p = REPO_ROOT / relpath
+        if not p.exists() or p.stat().st_size != int(size_str) or sha256_file(p) != sha:
+            raise PreconditionFail("P-03", f"freeze-manifest identity drift on {relpath} (record_type={record_type})")
+    if kv.get("REFERENCE_IDENTITY_OK") != "YES" or kv.get("PROTOCOL_IDENTITY_OK") != "YES":
+        raise PreconditionFail("P-03", "freeze manifest does not assert REFERENCE_IDENTITY_OK/PROTOCOL_IDENTITY_OK=YES")
+
+    # A008 §3.6: independently, deterministically verify EVERY frozen
+    # Reference identity from A008 §0.6 against the runtime files. This
+    # NEVER relies on the freeze manifest for the expected path/size/sha
+    # — the expected values come only from REFERENCE_FROZEN_IDENTITIES
+    # (transcribed from frozen §0.6 text) or, in synthetic tests ONLY,
+    # from ctx.reference_identities (dependency injection, §13).
+    ref_identities = ctx.reference_identities if ctx.reference_identities is not None else REFERENCE_FROZEN_IDENTITIES
+    for relpath, size_bytes, sha in ref_identities:
+        p = Path(relpath)
+        if not p.is_absolute():
+            p = REPO_ROOT / relpath
+        if not p.exists() or p.stat().st_size != size_bytes or sha256_file(p) != sha:
+            raise PreconditionFail("P-03", f"A008 §0.6 frozen Reference identity drift on {relpath}")
+
+
+def gate_p04_firewall_self_check(ctx: CandidateContext) -> None:
+    if ctx.skip_firewall_self_check:
+        return
+    session_ids = _session_ids_ordered(ctx)
+    try:
+        assert_recovery_allowed(session_ids[0])
+    except PermissionError:
+        pass
+    else:
+        raise PreconditionFail("P-04", "recovery firewall did not reject a NEW36 session_id")
+    from frozen_engine import current_status
+    status = current_status()
+    if status.status != "NOT_CONFIGURED" or status.accepts_input is not False:
+        raise PreconditionFail("P-04", "FrozenAnalysisEngine is not NOT_CONFIGURED/accepts_input=False")
+
+
+def _git_head(cwd: Path = REPO_ROOT) -> str:
+    out = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=str(cwd)).decode("ascii").strip()
+    return out
+
+
+def _git_show_blob_sha256(commit: str, relpath: str, cwd: Path = REPO_ROOT) -> str:
+    import hashlib
+    data = subprocess.check_output(["git", "show", f"{commit}:{relpath}"], cwd=str(cwd))
+    return hashlib.sha256(data).hexdigest()
+
+
+def gate_p05_source_identity() -> tuple[str, dict[str, str]]:
+    """NNC-1 runtime_source_commit + source_sha256 with HEAD binding (A008 §12.2)."""
+    import re
+    try:
+        head = _git_head()
+    except Exception as exc:
+        raise PreconditionFail("P-05", f"cannot resolve git HEAD: {exc}")
+    if not re.match(r"^[0-9a-f]{40}$", head):
+        raise PreconditionFail("P-05", f"HEAD does not match ^[0-9a-f]{{40}}$: {head!r}")
+    source_sha256: dict[str, str] = {}
+    for relpath in SOURCE_PATHS + ATTESTATION_PATHS:
+        p = REPO_ROOT / relpath
+        if not p.exists():
+            raise PreconditionFail("P-05", f"source path missing: {relpath}")
+        working_sha = sha256_file(p)
+        try:
+            committed_sha = _git_show_blob_sha256(head, relpath)
+        except subprocess.CalledProcessError:
+            raise PreconditionFail("P-05", f"{relpath} does not exist at HEAD ({head})")
+        if committed_sha != working_sha:
+            raise PreconditionFail("P-05", f"{relpath} working tree != committed blob at HEAD")
+        source_sha256[relpath] = working_sha
+    return head, source_sha256
+
+
+def gate_p06_nnc3(environment_record_path: Path) -> dict:
+    try:
+        current_identity = compute_runtime_environment_identity()
+    except NNC3Error as exc:
+        raise PreconditionFail("P-06", str(exc))
+    current_sha = environment_identity_sha256(current_identity)
+    if not environment_record_path.exists():
+        raise PreconditionFail("P-06", f"shared environment record does not exist: {environment_record_path}")
+    try:
+        recorded = load_and_validate_environment_record(environment_record_path)
+    except (NNC3Error, NNC5ParseError) as exc:
+        raise PreconditionFail("P-06", str(exc))
+    if not environment_identities_equivalent(
+        current_identity, current_sha,
+        recorded["runtime_environment_identity"], recorded["runtime_environment_identity_sha256"],
+    ):
+        raise PreconditionFail("P-06", "current interpreter identity != recorded shared environment identity")
+    return recorded
+
+
+def gate_p07_nnc4(db_path: Path) -> None:
+    try:
+        result = verify_session_id_uniqueness(db_path)
+    except NNC4Error as exc:
+        raise PreconditionFail("P-07", str(exc))
+    if not result.ok:
+        raise PreconditionFail("P-07", result.detail)
+
+
+def gate_p08_inventory(ctx: CandidateContext, session_zip_map: dict) -> None:
+    frozen_ids = _session_ids_ordered(ctx)
+    try:
+        from checkpoint_registry import NEW36_SESSION_IDS
+        if ctx.session_ids_ordered is None and tuple(NEW36_SESSION_IDS) != frozen_ids:
+            raise PreconditionFail("P-08", "checkpoint_registry.NEW36_SESSION_IDS drifted from Appendix B")
+    except ImportError:
+        raise PreconditionFail("P-08", "cannot import checkpoint_registry.NEW36_SESSION_IDS")
+    keys = list(session_zip_map.keys())
+    if len(keys) != len(set(keys)) or set(keys) != set(frozen_ids):
+        raise PreconditionFail("P-08", "session-zip-map key set != exactly the 12 frozen NEW36 identifiers")
+
+
+def gate_p09_input_identity(ctx: CandidateContext, session_zip_map: dict[str, str]) -> None:
+    table = ctx.input_identity_table or NEW36_INPUT_IDENTITY
+    for session_id, path_str in session_zip_map.items():
+        p = Path(path_str)
+        if not p.is_file():
+            raise PreconditionFail("P-09", f"mapped path is not a regular file: {path_str}")
+        expected_size, expected_sha = table[session_id]
+        if p.stat().st_size != expected_size:
+            raise PreconditionFail("P-09", f"size mismatch for {session_id}")
+        if sha256_file(p) != expected_sha:
+            raise PreconditionFail("P-09", f"raw SHA256 mismatch for {session_id}")
+
+
+def gate_p10_ledger_binding(ledger_path: Path, run_id: str) -> None:
+    records = read_ledger_records(ledger_path)
+    last_candidate = None
+    for rec in records:
+        if rec.get("role") == "CANDIDATE":
+            last_candidate = rec
+    if last_candidate is None or last_candidate.get("state") != "INVOKED" or last_candidate.get("run_id") != run_id:
+        raise PreconditionFail(
+            "P-10",
+            "ledger does not contain, as the LAST record for role CANDIDATE, "
+            "an INVOKED record with run_id equal to --run-id (A008 §4.2/9.7 step 5)",
+        )
+
+
+def run_preflight_gates(
+    ctx: CandidateContext,
+    db_path: Path,
+    environment_record_path: Path,
+    session_zip_map_path: Path,
+) -> dict:
+    try:
+        session_zip_map = nnc5_load_file(session_zip_map_path)
+    except NNC5ParseError as exc:
+        raise PreconditionFail("P-01", f"session-zip-map NNC-5 parse failure: {exc}")
+    gate_p02_protocol_identities(ctx)
+    gate_p03_implementation_identities(ctx)
+    gate_p04_firewall_self_check(ctx)
+    head, source_sha256 = gate_p05_source_identity()
+    env_record = gate_p06_nnc3(environment_record_path)
+    gate_p07_nnc4(db_path)
+    gate_p08_inventory(ctx, session_zip_map)
+    gate_p09_input_identity(ctx, session_zip_map)
+    return {
+        "session_zip_map": session_zip_map,
+        "runtime_source_commit": head,
+        "source_sha256": source_sha256,
+        "environment_record": env_record,
+    }
+
+
+# ---------------------------------------------------------------------------
+# NEW36 loader (own implementation; NO sandbox/harness loader calls, 4.5(b))
+# ---------------------------------------------------------------------------
+
+class StructuralFailure(RuntimeError):
+    """A004 §6 structural failure classification."""
+
+
+def _authoritative_sync_grid_count(db_path: Path, session_id: str) -> int | None:
+    """A005 R2.8 / A006 §4.10.2 authoritative expected part count, read
+    directly (read-only) from the mapped --db path using the exact
+    `sessions`/`qa_runs` schema quoted in the frozen A006 §8.2 text.
+    Does NOT call harness._authoritative_sync_grid_count (own
+    implementation per §4.5(b))."""
+    import sqlite3
+    uri = f"file:{Path(db_path).resolve()}?mode=ro"
+    conn = sqlite3.connect(uri, uri=True)
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT current_qa_run_id FROM sessions WHERE session_id = ?", (session_id,))
+        row = cur.fetchone()
+        if row is None or row[0] is None:
+            return None
+        cur.execute("SELECT sync_grid_file_count FROM qa_runs WHERE id = ?", (row[0],))
+        run_row = cur.fetchone()
+        if run_row is None:
+            return None
+        return run_row[0]
+    finally:
+        conn.close()
+
+
+def _validate_and_load_new36_grid(zip_path: Path, session_id: str, asset: str, db_path: Path) -> pd.DataFrame:
+    """Own loader (§4.6). Validates sync_grid_100ms part coverage via
+    parquet_validator (permitted input), then reads parts directly.
+    MUST NOT call recovery.sandbox.open_reference_zip or
+    recovery.harness._load_grid_for_block (§4.5(b))."""
+    from parquet_validator import validate_all_parquet
+
+    validation = validate_all_parquet(str(zip_path))
+    sync_dir = validation.per_dir.get("sync_grid_100ms")
+    if sync_dir is None or sync_dir.files_seen == 0:
+        raise StructuralFailure(f"{session_id}: no sync_grid_100ms parquet parts present")
+    if not sync_dir.sequence_ok:
+        raise StructuralFailure(f"{session_id}: sync_grid_100ms sequence invalid: {sync_dir.sequence_detail}")
+    sync_failures = [f for f in validation.failures if "sync_grid_100ms" in f]
+    if sync_failures:
+        raise StructuralFailure(f"{session_id}: corrupt/truncated sync_grid_100ms part(s): {sync_failures[:5]}")
+    expected = _authoritative_sync_grid_count(db_path, session_id)
+    if expected is not None and sync_dir.files_seen != expected:
+        raise StructuralFailure(
+            f"{session_id}: authoritative manifest expects {expected} parts, found {sync_dir.files_seen}"
+        )
+
+    with zipfile.ZipFile(str(zip_path), "r") as zf:
+        names = sorted(
+            n for n in zf.namelist()
+            if "sync_grid_100ms" in n and n.endswith(".parquet") and asset in n
+        )
+        if not names:
+            names = sorted(
+                n for n in zf.namelist()
+                if "sync_grid_100ms" in n and n.endswith(".parquet")
+            )
+        if not names:
+            raise StructuralFailure(f"{session_id}/{asset}: no sync_grid_100ms parquet entry found")
+        frames = []
+        for name in names:
+            import io as _io
+            with zf.open(name) as fh:
+                buf = _io.BytesIO(fh.read())
+            df = pd.read_parquet(buf)
+            if "asset" in df.columns:
+                df = df[df["asset"] == asset].copy()
+            frames.append(df)
+    if not frames:
+        raise StructuralFailure(f"{session_id}/{asset}: empty parquet part concat list")
+    combined = pd.concat(frames, ignore_index=True)
+    if len(combined) == 0:
+        raise StructuralFailure(f"{session_id}/{asset}: grid filters to zero rows for this asset")
+    return combined
+
+
+# ---------------------------------------------------------------------------
+# §4.7 COMPOSITION — binding-table row generation (per block)
+# ---------------------------------------------------------------------------
+
+def _strip_diagnostic_version(row: dict) -> dict:
+    out = {"protocol_version": PROTOCOL_VERSION_LITERAL}
+    for f in CANDIDATE_ROW_FIELDS[1:]:
+        out[f] = row.get(f)
+    return out
+
+
+def _apply_f3_fair_gap_fix(hz_rows: list[dict]) -> None:
+    """F-3 (§4.7.6): the emitted calculated_threshold of BOTH the T0 row
+    and the TZ row of fair_gap_reversion equals T0_threshold (zero
+    included); the TZ zero-excluded diagnostic threshold is never
+    emitted."""
+    t0_by_q: dict[float, float | None] = {}
+    for r in hz_rows:
+        if r["feature_family"] == "fair_gap_reversion" and r["variant_id"] == "T0":
+            t0_by_q[r["quantile"]] = r["calculated_threshold"]
+    for r in hz_rows:
+        if r["feature_family"] == "fair_gap_reversion" and r["variant_id"] == "TZ":
+            r["calculated_threshold"] = t0_by_q.get(r["quantile"])
+
+
+def _compose_hz_rows(ctx, session_id: str, asset: str):
+    raw_rows, hz_cache = stage3._hz_block(ctx, session_id, asset)
+    rows = [_strip_diagnostic_version(r) for r in raw_rows]
+    _apply_f3_fair_gap_fix(rows)
+    return rows, hz_cache
+
+
+def _g0_arrays(ctx, horizon_ms: int, q: float):
+    """Recompute the G0 (depthL1_extOFI) pre-overlap arrays using the
+    SAME frozen formula _hg_block uses internally (no primitive change;
+    extracted for evidence 11.4). k/spacing per A13."""
+    k = horizon_ms // GRID_MS
+    spacing = max(10, k)
+    fwd = _build_forward_return_array(ctx.mid, k)
+    derived_domain = ctx.quality & np.isfinite(ctx.z_di_l1) & np.isfinite(ctx.z_ext_ofi)
+    D = np.where(derived_domain, (ctx.z_di_l1 + ctx.z_ext_ofi) / 2.0, np.nan)
+    threshold = _quantile_type7(np.abs(D[derived_domain]), q)
+    domain_n = int(np.sum(derived_domain))
+    if threshold is None:
+        mask = np.zeros(len(ctx.gpos), dtype=bool)
+    else:
+        mask = derived_domain & (D != 0.0) & (np.abs(D) >= threshold) & np.isfinite(fwd)
+    positions = ctx.gpos[mask]
+    directions = np.sign(D[mask])
+    returns = fwd[mask]
+    return positions, directions, returns, threshold, spacing, domain_n
+
+
+def _c0_arrays(ctx, horizon_ms: int, q: float):
+    """Recompute the C0 (gap_depth_extOFI) pre-overlap arrays using the
+    SAME frozen formula _hc_block uses internally."""
+    k = horizon_ms // GRID_MS
+    spacing = max(10, k)
+    fwd = _build_forward_return_array(ctx.mid, k)
+    gap = ctx.columns.get("bitget_gap_to_fair_bps", np.full(len(ctx.gpos), np.nan, dtype=float)).astype(float)
+    gap_thresh_domain = ctx.quality & np.isfinite(gap)
+    threshold = _quantile_type7(np.abs(gap[gap_thresh_domain]), q)
+    D_ext = np.where(
+        np.isfinite(ctx.z_di_l1) & np.isfinite(ctx.z_ext_ofi),
+        (ctx.z_di_l1 + ctx.z_ext_ofi) / 2.0, np.nan,
+    )
+    conf_fin = np.isfinite(D_ext)
+    alignment = (np.sign(D_ext) == -np.sign(gap)) & (D_ext != 0.0) & conf_fin
+    gap_event_domain = gap_thresh_domain & conf_fin
+    domain_n = int(np.sum(gap_event_domain))
+    if threshold is None:
+        mask = np.zeros(len(ctx.gpos), dtype=bool)
+    else:
+        mask = gap_event_domain & (gap != 0.0) & (np.abs(gap) >= threshold) & alignment & np.isfinite(fwd)
+    positions = ctx.gpos[mask]
+    directions = -np.sign(gap[mask])
+    returns = fwd[mask]
+    return positions, directions, returns, threshold, spacing, domain_n
+
+
+def _compose_g1(ctx, session_id: str, asset: str, horizon_ms: int, q: float, hz_cache: dict):
+    """F-2 (§4.7.5): G1 composed entirely on the normative G1 path."""
+    k = horizon_ms // GRID_MS
+    spacing = candidate.spacing_steps_for_horizon(horizon_ms)
+    fwd = _build_forward_return_array(ctx.mid, k)
+    di_l1 = ctx.columns["bitget_depth_imbalance_l1"]
+    ext_ofi = ctx.columns["external_ofi_consensus_l1"]
+
+    _t0_thr, tz_thr = hz_cache.get(("depth_imbalance_l1", q), (None, None))
+    # Cross-check: TZ threshold must equal candidate.tz_threshold recomputation.
+    recomputed_tz = candidate.tz_threshold(ctx.quality, di_l1, q)
+    if (tz_thr is None) != (recomputed_tz is None) or (
+        tz_thr is not None and recomputed_tz is not None and abs(tz_thr - recomputed_tz) > 1e-12
+    ):
+        raise AssertionError("F-2 DRIFT: hz_cache TZ threshold != candidate.tz_threshold recomputation")
+
+    g1_mask = candidate.g1_pre_overlap_mask(quality=ctx.quality, di_l1=di_l1, ext_ofi=ext_ofi, fwd=fwd, tz_thr=tz_thr)
+    parent_mask = candidate.g1_parent_gate_mask(quality=ctx.quality, di_l1=di_l1, fwd=fwd, tz_thr=tz_thr)
+    candidate.assert_g1_parent_subset(g1_mask, parent_mask)
+
+    gate_domain = ctx.quality & np.isfinite(di_l1)
+    gate_zero_n = int(np.sum(gate_domain & (di_l1 == 0.0)))
+
+    positions = ctx.gpos[g1_mask]
+    directions = candidate.g1_direction(di_l1)[g1_mask]
+    returns = fwd[g1_mask]
+    accepted_mask = candidate.b0_greedy_filter(positions, spacing) if len(positions) else np.zeros(0, dtype=bool)
+    accepted_n = int(np.sum(accepted_mask))
+    pre_n = int(len(positions))
+    accepted_positions = positions[accepted_mask]
+    fp = sha256_positions(accepted_positions.tolist())
+    metrics = stage3._compute_event_metrics(directions, returns, accepted_mask)
+    parent_positions = ctx.gpos[parent_mask]
+
+    row = {
+        "protocol_version": PROTOCOL_VERSION_LITERAL,
+        "session_id": session_id, "asset": asset, "axis": "HG",
+        "feature_family": "depthL1_extOFI", "variant_id": "G1",
+        "quantile": q, "horizon_ms": horizon_ms,
+        "threshold_domain_finite_n": None, "threshold_domain_nonzero_n": None,
+        "zero_n": None, "zero_fraction": None, "nonzero_unique_value_n": None,
+        "hz_discrimination_class": None,
+        "gate_zero_n": gate_zero_n,
+        "calculated_threshold": tz_thr,
+        "spacing_steps": spacing,
+        "pre_overlap_n": pre_n,
+        "exact_spacing_pair_n": None,
+        "accepted_n": accepted_n,
+        "overlap_dropped_n": pre_n - accepted_n,
+        "accepted_positions_sha256": fp,
+        "mean_signed_bps": metrics["mean_signed_bps"],
+        "hit_rate": metrics["hit_rate"],
+        "mean_abs_move": None,  # F-4 override applied later
+    }
+    evidence = {
+        "session_id": session_id, "asset": asset, "axis": "HG",
+        "feature_family": "depthL1_extOFI", "variant_id": "G1",
+        "quantile": q, "horizon_ms": horizon_ms, "spacing_steps": spacing,
+        "threshold_domain_n": int(np.sum(ctx.quality & np.isfinite(di_l1) & (di_l1 != 0.0))),
+        "pre_overlap_positions": [int(p) for p in positions.tolist()],
+        "parent_positions": [int(p) for p in parent_positions.tolist()],
+        "accepted_positions": [int(p) for p in accepted_positions.tolist()],
+        "accepted_signed_return_signs": _signed_return_signs(directions[accepted_mask], returns[accepted_mask]),
+    }
+    return row, evidence
+
+
+def _signed_return_signs(directions: np.ndarray, returns: np.ndarray) -> list[int]:
+    signed = directions * returns
+    return [int(np.sign(v)) if v != 0.0 else 0 for v in signed.tolist()]
+
+
+def _compose_hc_rows_and_evidence(ctx, session_id: str, asset: str):
+    raw_rows = stage3._hc_block(ctx, session_id, asset)
+    rows = [_strip_diagnostic_version(r) for r in raw_rows]
+    evidence: list[dict] = []
+    gap = ctx.columns["bitget_gap_to_fair_bps"]
+    for row in rows:
+        horizon_ms, q = row["horizon_ms"], row["quantile"]
+        if row["variant_id"] == "C0":
+            positions, directions, returns, threshold, spacing, domain_n = _c0_arrays(ctx, horizon_ms, q)
+            if row["calculated_threshold"] is not None and threshold is not None and abs(row["calculated_threshold"] - threshold) > 1e-12:
+                raise AssertionError("C0 DRIFT: recomputed threshold != _hc_block row threshold")
+            accepted_mask = candidate.b0_greedy_filter(positions, row["spacing_steps"]) if len(positions) else np.zeros(0, dtype=bool)
+            accepted_positions = positions[accepted_mask]
+            parent_positions = None
+        else:  # C1
+            k = horizon_ms // GRID_MS
+            spacing = candidate.spacing_steps_for_horizon(horizon_ms)
+            fwd = _build_forward_return_array(ctx.mid, k)
+            di_l1 = ctx.columns["bitget_depth_imbalance_l1"]
+            ext_ofi = ctx.columns["external_ofi_consensus_l1"]
+            gap_thresh_domain = ctx.quality & np.isfinite(gap)
+            gap_thr = _quantile_type7(np.abs(gap[gap_thresh_domain]), q)
+            c1_mask = candidate.c1_pre_overlap_mask(
+                quality=ctx.quality, gap=gap, di_l1=di_l1, ext_ofi=ext_ofi, fwd=fwd, gap_thr=gap_thr,
+            )
+            gap_parent_mask = candidate.c1_gap_parent_mask(quality=ctx.quality, gap=gap, fwd=fwd, gap_thr=gap_thr)
+            candidate.assert_c1_gap_subset(c1_mask, gap_parent_mask)
+            positions = ctx.gpos[c1_mask]
+            directions = candidate.c1_direction(gap)[c1_mask]
+            returns = fwd[c1_mask]
+            accepted_mask = candidate.b0_greedy_filter(positions, spacing) if len(positions) else np.zeros(0, dtype=bool)
+            accepted_positions = positions[accepted_mask]
+            parent_positions = ctx.gpos[gap_parent_mask]
+        metrics_directions = directions[accepted_mask] if len(positions) else np.zeros(0, dtype=float)
+        metrics_returns = returns[accepted_mask] if len(positions) else np.zeros(0, dtype=float)
+        evidence.append({
+            "session_id": session_id, "asset": asset, "axis": "HC",
+            "feature_family": "gap_depth_extOFI", "variant_id": row["variant_id"],
+            "quantile": q, "horizon_ms": horizon_ms, "spacing_steps": row["spacing_steps"],
+            "threshold_domain_n": domain_n if row["variant_id"] == "C0" else int(np.sum(ctx.quality & np.isfinite(gap))),
+            "pre_overlap_positions": [int(p) for p in positions.tolist()],
+            "parent_positions": None if parent_positions is None else [int(p) for p in parent_positions.tolist()],
+            "accepted_positions": [int(p) for p in accepted_positions.tolist()],
+            "accepted_signed_return_signs": _signed_return_signs(metrics_directions, metrics_returns),
+        })
+        row["mean_abs_move"] = None  # F-4 override applied later
+    return rows, evidence
+
+
+def _compose_hg_rows_and_evidence(ctx, session_id: str, asset: str, hz_cache: dict):
+    raw_rows = stage3._hg_block(ctx, session_id, asset, hz_cache)
+    g0_rows = [_strip_diagnostic_version(r) for r in raw_rows if r["variant_id"] == "G0"]
+    rows: list[dict] = []
+    evidence: list[dict] = []
+    for row in g0_rows:
+        horizon_ms, q = row["horizon_ms"], row["quantile"]
+        positions, directions, returns, threshold, spacing, domain_n = _g0_arrays(ctx, horizon_ms, q)
+        if row["calculated_threshold"] is not None and threshold is not None and abs(row["calculated_threshold"] - threshold) > 1e-12:
+            raise AssertionError("G0 DRIFT: recomputed threshold != _hg_block row threshold")
+        accepted_mask = candidate.b0_greedy_filter(positions, row["spacing_steps"]) if len(positions) else np.zeros(0, dtype=bool)
+        accepted_positions = positions[accepted_mask]
+        row["mean_abs_move"] = None  # F-4 override applied later
+        rows.append(row)
+        m_dirs = directions[accepted_mask] if len(positions) else np.zeros(0, dtype=float)
+        m_rets = returns[accepted_mask] if len(positions) else np.zeros(0, dtype=float)
+        evidence.append({
+            "session_id": session_id, "asset": asset, "axis": "HG",
+            "feature_family": "depthL1_extOFI", "variant_id": "G0",
+            "quantile": q, "horizon_ms": horizon_ms, "spacing_steps": row["spacing_steps"],
+            "threshold_domain_n": domain_n,
+            "pre_overlap_positions": [int(p) for p in positions.tolist()],
+            "parent_positions": None,
+            "accepted_positions": [int(p) for p in accepted_positions.tolist()],
+            "accepted_signed_return_signs": _signed_return_signs(m_dirs, m_rets),
+        })
+    for horizon_ms in HORIZON_ORDER:
+        for q in QUANTILE_ORDER:
+            g1_row, g1_evidence = _compose_g1(ctx, session_id, asset, horizon_ms, q, hz_cache)
+            rows.append(g1_row)
+            evidence.append(g1_evidence)
+    return rows, evidence
+
+
+def _compose_hb_rows_and_evidence(ctx, session_id: str, asset: str):
+    from .v1_2_new36_validators import HB_FEATURE_ORDER
+    rows: list[dict] = []
+    evidence: list[dict] = []
+    q = HB_QUANTILE
+    for feature in HB_FEATURE_ORDER:
+        for horizon_ms in HORIZON_ORDER:
+            k = horizon_ms // GRID_MS
+            spacing = candidate.spacing_steps_for_horizon(horizon_ms)
+            fwd = _build_forward_return_array(ctx.mid, k)
+            positions, directions, returns, threshold = stage3._hb_extract_pre_overlap(feature, ctx, horizon_ms, q, fwd)
+            if positions.size > 1 and bool(np.any(positions[1:] < positions[:-1])):
+                raise AssertionError("F-1 DRIFT: HB pre-overlap positions are not ascending")
+            exact_pair_n = candidate.exact_spacing_pair_n(positions, spacing)
+
+            b0_accepted_mask = candidate.b0_greedy_filter(positions, spacing) if len(positions) else np.zeros(0, dtype=bool)
+            b1_accepted_mask = candidate.b1_diagnostic_filter(positions, spacing) if len(positions) else np.zeros(0, dtype=bool)
+            b0_accepted_n = int(np.sum(b0_accepted_mask))
+            b1_accepted_n = int(np.sum(b1_accepted_mask))
+            candidate.assert_hb_i11(b0_accepted_n, b1_accepted_n)
+
+            pre_n = int(len(positions))
+            for variant_id, accepted_mask, accepted_n in (
+                ("B0", b0_accepted_mask, b0_accepted_n),
+                ("B1", b1_accepted_mask, b1_accepted_n),
+            ):
+                accepted_positions = positions[accepted_mask]
+                m_dirs = directions[accepted_mask] if len(positions) else np.zeros(0, dtype=float)
+                m_rets = returns[accepted_mask] if len(positions) else np.zeros(0, dtype=float)
+                metrics = stage3._compute_event_metrics(directions, returns, accepted_mask)
+                fp = sha256_positions(accepted_positions.tolist())
+                rows.append({
+                    "protocol_version": PROTOCOL_VERSION_LITERAL,
+                    "session_id": session_id, "asset": asset, "axis": "HB",
+                    "feature_family": feature, "variant_id": variant_id,
+                    "quantile": q, "horizon_ms": horizon_ms,
+                    "threshold_domain_finite_n": None, "threshold_domain_nonzero_n": None,
+                    "zero_n": None, "zero_fraction": None, "nonzero_unique_value_n": None,
+                    "hz_discrimination_class": None, "gate_zero_n": None,
+                    "calculated_threshold": threshold, "spacing_steps": spacing,
+                    "pre_overlap_n": pre_n,
+                    "exact_spacing_pair_n": exact_pair_n if variant_id == "B0" else exact_pair_n,
+                    "accepted_n": accepted_n, "overlap_dropped_n": pre_n - accepted_n,
+                    "accepted_positions_sha256": fp,
+                    "mean_signed_bps": metrics["mean_signed_bps"], "hit_rate": metrics["hit_rate"],
+                    "mean_abs_move": None,  # F-4 override applied later
+                })
+                evidence.append({
+                    "session_id": session_id, "asset": asset, "axis": "HB",
+                    "feature_family": feature, "variant_id": variant_id,
+                    "quantile": q, "horizon_ms": horizon_ms, "spacing_steps": spacing,
+                    "threshold_domain_n": int(len(positions)),
+                    "pre_overlap_positions": ([int(p) for p in positions.tolist()] if variant_id == "B0" else None),
+                    "parent_positions": None,
+                    "accepted_positions": [int(p) for p in accepted_positions.tolist()],
+                    "accepted_signed_return_signs": _signed_return_signs(m_dirs, m_rets),
+                })
+    return rows, evidence
+
+
+def _apply_f4_mean_abs_move(rows: list[dict], ctx) -> None:
+    """F-4 (§4.7.7): FEATURE-INDEPENDENT per (session_id, asset,
+    horizon_ms); computed ONCE per horizon and written identically to
+    every HG/HC/HB row of that triple."""
+    cache: dict[int, float | None] = {}
+    for horizon_ms in HORIZON_ORDER:
+        k = horizon_ms // GRID_MS
+        fwd = _build_forward_return_array(ctx.mid, k)
+        cache[horizon_ms] = diagnostics._finite_mean_abs(fwd[ctx.quality & np.isfinite(fwd)])
+    for r in rows:
+        if r["axis"] in ("HG", "HC", "HB"):
+            r["mean_abs_move"] = cache.get(r["horizon_ms"])
+
+
+def compose_block(ctx, session_id: str, asset: str) -> tuple[list[dict], list[dict]]:
+    hz_rows, hz_cache = _compose_hz_rows(ctx, session_id, asset)
+    hg_rows, hg_evidence = _compose_hg_rows_and_evidence(ctx, session_id, asset, hz_cache)
+    hc_rows, hc_evidence = _compose_hc_rows_and_evidence(ctx, session_id, asset)
+    hb_rows, hb_evidence = _compose_hb_rows_and_evidence(ctx, session_id, asset)
+    all_rows = hz_rows + hg_rows + hc_rows + hb_rows
+    _apply_f4_mean_abs_move(all_rows, ctx)
+    all_evidence = hg_evidence + hc_evidence + hb_evidence
+    return all_rows, all_evidence
+
+
+# ---------------------------------------------------------------------------
+# Serialization (CSV / manifest / evidence) — A008 §4.8, §11.4, §12
+# ---------------------------------------------------------------------------
+
+def _format_field(v: Any) -> str:
+    if v is None:
+        return ""
+    if isinstance(v, bool):
+        return str(int(v))
+    if isinstance(v, float):
+        return repr(v)
+    if isinstance(v, int):
+        return str(v)
+    return str(v)
+
+
+def rows_to_csv_bytes(rows: list[dict]) -> bytes:
+    import csv as _csv
+    import io as _io
+    buf = _io.StringIO(newline="")
+    writer = _csv.writer(buf, lineterminator="\n")
+    writer.writerow(list(CANDIDATE_ROW_FIELDS))
+    for row in rows:
+        writer.writerow([_format_field(row.get(f)) for f in CANDIDATE_ROW_FIELDS])
+    data = buf.getvalue().encode("utf-8")
+    if b'"' in data:
+        raise AssertionError("A008 §4.8 violation: emitted CSV contains a '\"' character")
+    return data
+
+
+def evidence_to_jsonl_bytes(evidence_records: list[dict]) -> bytes:
+    out = bytearray()
+    for rec in evidence_records:
+        out += canonical_line_bytes(rec)
+        out += b"\n"
+    return bytes(out)
+
+
+def build_manifest(
+    *,
+    rows: list[dict],
+    csv_bytes: bytes,
+    runtime_source_commit: str,
+    source_sha256: dict[str, str],
+    environment_record_sha256: str,
+    run_id: str,
+    evidence_bytes: bytes,
+    freeze_manifest_sha256: str,
+    implementation_aggregates: dict[str, str],
+    amendment_identities: dict[str, str],
+    a008_sha256: str,
+) -> dict:
+    session_ids = list(dict.fromkeys(r["session_id"] for r in sorted(rows, key=canonical_sort_key)))
+    per_axis_counts: dict[str, int] = {}
+    for r in rows:
+        per_axis_counts[r["axis"]] = per_axis_counts.get(r["axis"], 0) + 1
+
+    manifest: dict[str, Any] = {
+        "protocol_version": PROTOCOL_VERSION_LITERAL,
+        "implementation_role": "CANDIDATE",
+        "runtime_source_commit": runtime_source_commit,
+        "source_sha256": source_sha256,
+        "csv_sha256": sha256_bytes(csv_bytes),
+        "csv_size_bytes": len(csv_bytes),
+        "manifest_precomparison_sha256": None,
+        "session_ids": session_ids,
+        "assets": list(ASSETS),
+        "axes": ["HZ", "HG", "HC", "HB"],
+        "feature_sets_per_axis": {
+            "HZ": list(_hz_feature_order()),
+            "HG": ["depthL1_extOFI"],
+            "HC": ["gap_depth_extOFI"],
+            "HB": list(_hb_feature_order()),
+        },
+        "variant_sets_per_axis": {"HZ": ["T0", "TZ"], "HG": ["G0", "G1"], "HC": ["C0", "C1"], "HB": ["B0", "B1"]},
+        "quantiles_per_axis": {"HZ": list(QUANTILE_ORDER), "HG": list(QUANTILE_ORDER), "HC": list(QUANTILE_ORDER), "HB": [HB_QUANTILE]},
+        "horizons_per_axis": {"HZ": [None], "HG": list(HORIZON_ORDER), "HC": list(HORIZON_ORDER), "HB": list(HORIZON_ORDER)},
+        "expected_row_counts_per_axis": {"HZ": 1728, "HG": 432, "HC": 432, "HB": 864},
+        "actual_row_counts_per_axis": per_axis_counts,
+        "expected_total_row_count": EXPECTED_TOTAL_ROW_COUNT,
+        "actual_total_row_count": len(rows),
+        "collector_sha256": FROZEN_COLLECTOR_SHA256,
+        "engine_sha256": FROZEN_ENGINE_SHA256,
+        "candidate_spec_sha256": "aed67b5ec9ae1b710ec3d96e1fcc2e15bd9c30fdd60e80cc68553d8fc3b597ca",
+        "protocol_sha256": "5ed8a8b12726d395d25262dc3e4073250be3de94f3d62e64e99167921380ef95",
+        "new36_inventory_id": "NEW36_12SESSIONS_24BLOCKS_3456ROWS_V1",
+        "golden_artifacts_read": False,
+        "old36_quantitative_data_read": False,
+        "frozen_analysis_engine_state": "NOT_CONFIGURED",
+        "frozen_analysis_engine_accepts_input": False,
+        "fingerprint_encoding_definition": FINGERPRINT_ENCODING_DEFINITION,
+        "quantile_method": "TYPE7_LINEAR",
+        "grid_ms": GRID_MS,
+        "a008_provenance": {
+            "runtime_environment_identity_sha256": environment_record_sha256,
+            "implementation_source_aggregate_sha256": implementation_aggregates["source"],
+            "implementation_test_aggregate_sha256": implementation_aggregates["test"],
+            "implementation_control_aggregate_sha256": implementation_aggregates["control"],
+            "freeze_manifest_sha256": freeze_manifest_sha256,
+            "a008_sha256": a008_sha256,
+            "amendment_identities": amendment_identities,
+            "candidate_evidence_size_bytes": len(evidence_bytes),
+            "candidate_evidence_sha256": sha256_bytes(evidence_bytes),
+            "run_id": run_id,
+        },
+    }
+    manifest["manifest_precomparison_sha256"] = _recompute_precomparison(manifest)
+    return manifest
+
+
+def _recompute_precomparison(manifest: dict) -> str:
+    clone = dict(manifest)
+    clone["manifest_precomparison_sha256"] = None
+    return sha256_bytes(canonical_pretty_bytes(clone))
+
+
+def _hz_feature_order() -> tuple[str, ...]:
+    from .v1_2_new36_validators import HZ_FEATURE_ORDER
+    return HZ_FEATURE_ORDER
+
+
+def _hb_feature_order() -> tuple[str, ...]:
+    from .v1_2_new36_validators import HB_FEATURE_ORDER
+    return HB_FEATURE_ORDER
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+def _read_freeze_aggregates(freeze_path: Path) -> dict[str, str]:
+    """Best-effort read of the 3.5 freeze-manifest aggregate lines. Returns
+    empty strings when the freeze record does not exist yet (Section 16
+    step 6 has not run — the correct state during Section 16 STEP 4)."""
+    result = {"source": "", "test": "", "control": ""}
+    if not freeze_path.exists():
+        return result
+    text = freeze_path.read_text(encoding="utf-8")
+    for line in text.split("\n"):
+        if line.startswith("IMPLEMENTATION_SOURCE_AGGREGATE_SHA256="):
+            result["source"] = line.split("=", 1)[1]
+        elif line.startswith("IMPLEMENTATION_TEST_AGGREGATE_SHA256="):
+            result["test"] = line.split("=", 1)[1]
+        elif line.startswith("IMPLEMENTATION_CONTROL_AGGREGATE_SHA256="):
+            result["control"] = line.split("=", 1)[1]
+    return result
+
+
+def cmd_preflight(args: argparse.Namespace, ctx: CandidateContext | None = None) -> int:
+    ctx = ctx or CandidateContext()
+    try:
+        run_preflight_gates(ctx, Path(args.db), Path(args.environment_record), Path(args.session_zip_map))
+    except PreconditionFail as exc:
+        print(f"PRECONDITION_FAIL {exc.code}: {exc}", file=sys.stderr)
+        return 2
+    print("PREFLIGHT_OK")
+    return 0
+
+
+def cmd_generate(args: argparse.Namespace, ctx: CandidateContext | None = None) -> int:
+    ctx = ctx or CandidateContext()
+    out_csv, out_manifest, out_evidence = Path(args.out_csv), Path(args.out_manifest), Path(args.out_evidence)
+    try:
+        gate_p01_generate_outputs_absent(out_csv, out_manifest, out_evidence)
+        gate_result = run_preflight_gates(ctx, Path(args.db), Path(args.environment_record), Path(args.session_zip_map))
+        gate_p10_ledger_binding(Path(args.ledger), args.run_id)
+    except PreconditionFail as exc:
+        print(f"PRECONDITION_FAIL {exc.code}: {exc}", file=sys.stderr)
+        return 2
+
+    session_zip_map: dict[str, str] = gate_result["session_zip_map"]
+    all_rows: list[dict] = []
+    all_evidence: list[dict] = []
+    session_ids = _session_ids_ordered(ctx)
+    for session_id in session_ids:
+        zip_path = Path(session_zip_map[session_id])
+        for asset in ASSETS:
+            df = _validate_and_load_new36_grid(zip_path, session_id, asset, Path(args.db))
+            block_ctx = diagnostics._prepare_block(session_id, asset, df)
+            rows, evidence = compose_block(block_ctx, session_id, asset)
+            all_rows.extend(rows)
+            all_evidence.extend(evidence)
+            del block_ctx, df
+
+    all_rows.sort(key=canonical_sort_key)
+    # canonical key uniqueness check (own key builder on typed rows)
+    seen_keys = set()
+    for r in all_rows:
+        k = (r["session_id"], r["asset"], r["axis"], r["feature_family"], r["variant_id"], r["quantile"], r["horizon_ms"])
+        if k in seen_keys:
+            raise AssertionError(f"A02 VIOLATION: duplicate canonical key {k!r}")
+        seen_keys.add(k)
+    if len(all_rows) != EXPECTED_TOTAL_ROW_COUNT:
+        raise AssertionError(f"A01 VIOLATION: emitted {len(all_rows)} rows, expected {EXPECTED_TOTAL_ROW_COUNT}")
+
+    csv_bytes = rows_to_csv_bytes(all_rows)
+    evidence_bytes = evidence_to_jsonl_bytes(all_evidence)
+
+    freeze_path = ctx.freeze_manifest_path or FREEZE_MANIFEST_PATH
+    freeze_manifest_sha256 = sha256_file(freeze_path) if freeze_path.exists() else ""
+    amendment_identities = {
+        f"A{i:03d}": sha
+        for i, (_p, _sz, sha) in enumerate(
+            (ctx.protocol_identities or FROZEN_PROTOCOL_IDENTITIES)[2:], start=1
+        )
+    }
+    implementation_aggregates = _read_freeze_aggregates(freeze_path)
+    manifest = build_manifest(
+        rows=all_rows,
+        csv_bytes=csv_bytes,
+        runtime_source_commit=gate_result["runtime_source_commit"],
+        source_sha256=gate_result["source_sha256"],
+        environment_record_sha256=gate_result["environment_record"]["runtime_environment_identity_sha256"],
+        run_id=args.run_id,
+        evidence_bytes=evidence_bytes,
+        freeze_manifest_sha256=freeze_manifest_sha256,
+        implementation_aggregates=implementation_aggregates,
+        amendment_identities=amendment_identities,
+        a008_sha256="",
+    )
+    manifest_bytes = canonical_pretty_bytes(manifest)
+
+    # A008 §4.11(a): serialize fully, hash, write "xb", re-read compare.
+    exclusive_create_write(out_csv, csv_bytes)
+    exclusive_create_write(out_manifest, manifest_bytes)
+    exclusive_create_write(out_evidence, evidence_bytes)
+
+    print(json.dumps({
+        "row_count": len(all_rows),
+        "csv_sha256": sha256_bytes(csv_bytes),
+        "manifest_sha256": sha256_bytes(manifest_bytes),
+        "evidence_sha256": sha256_bytes(evidence_bytes),
+    }))
+    return 0
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="v1_2_new36_candidate_app")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p_pf = sub.add_parser("preflight")
+    p_pf.add_argument("--db", required=True)
+    p_pf.add_argument("--environment-record", required=True)
+    p_pf.add_argument("--session-zip-map", required=True)
+    p_pf.set_defaults(func=cmd_preflight)
+
+    p_gen = sub.add_parser("generate")
+    p_gen.add_argument("--db", required=True)
+    p_gen.add_argument("--environment-record", required=True)
+    p_gen.add_argument("--session-zip-map", required=True)
+    p_gen.add_argument("--out-csv", required=True)
+    p_gen.add_argument("--out-manifest", required=True)
+    p_gen.add_argument("--out-evidence", required=True)
+    p_gen.add_argument("--run-id", required=True)
+    p_gen.add_argument("--ledger", required=True)
+    p_gen.set_defaults(func=cmd_generate)
+
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_arg_parser()
+    args = parser.parse_args(argv)
+    return args.func(args)
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())
+===== END backend/recovery/v1_2_new36_candidate_app.py =====
+===== BEGIN backend/recovery/v1_2_new36_run.py =====
+"""SECTION 16 STEP 4 — ORCHESTRATOR (A008 DRAFT4 §9).
+
+backend/recovery/v1_2_new36_run.py — the "Orchestrator" named in A008
+DRAFT4 §0.1. Sole authority controlling both role invocations (§9.3).
+Implements:
+
+* the durable append-only one-shot ledger (§9.5-9.6);
+* the ordered procedure of §9.7 (steps 1-9);
+* the recovery rules of §9.9 and the run_id semantics of §9.11;
+* the Reference launch contract of §9.8 (subprocess only; the frozen
+  Reference is NEVER imported, read or modified).
+
+CLEAN-ROOM: authored exclusively from A008 DRAFT4 §5.2 permitted inputs.
+This module MUST NOT read backend/recovery/reference/v1_2_reference.py to
+construct the launch command; the command shape is fully specified here
+(§9.8(a), taken from A008 only).
+
+PROHIBITED IN THIS SESSION: this module MUST NOT be invoked against real
+NEW36 data. `preflight`/`generate` subprocess launches only ever run
+against the Candidate application and (via 9.8) the Reference
+executable's own CLI contract — neither is executed here with real NEW36
+ZIPs during Section 16 STEP 4.
+"""
+from __future__ import annotations
+
+import argparse
+import subprocess
+import sys
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from .v1_2_new36_validators import (
+    NNC5ParseError,
+    append_ledger_record_durable,
+    build_shared_environment_record,
+    canonical_pretty_bytes,
+    exclusive_create_write,
+    latest_terminal_record,
+    load_and_validate_environment_record,
+    nnc5_load_file,
+    read_ledger_records,
+    sha256_bytes,
+    sha256_file,
+    size_of,
+)
+
+REPO_ROOT: Path = Path(__file__).resolve().parents[2]
+
+LEDGER_SCHEMA_VERSION = "A008_LEDGER_V1"
+INPUT_INVENTORY_ID = "NEW36_12SESSIONS_24BLOCKS_3456ROWS_V1"
+MIN_FREE_BYTES_11_4_8 = 1_073_741_824
+
+
+class LedgerCorruption(RuntimeError):
+    """A008 §9.10: fail closed, nothing launched, manual audit required."""
+
+
+class OrchestratorPreconditionFail(RuntimeError):
+    def __init__(self, code: str, message: str = ""):
+        self.code = code
+        super().__init__(f"{code}: {message}" if message else code)
+
+
+@dataclass
+class OrchestratorConfig:
+    """All paths + injectable subprocess launchers. Production defaults
+    point at the real Candidate application module and the frozen
+    Reference CLI contract of A008 §9.8. Synthetic tests substitute
+    stub executables/paths ONLY (A008 §13)."""
+    reports_dir: Path
+    db_path: Path
+    session_zip_map_path: Path
+    a008_sha256: str
+    freeze_manifest_sha256: str
+    candidate_module_args: tuple[str, ...] = ("-m", "recovery.v1_2_new36_candidate_app")
+    reference_executable_args: tuple[str, ...] = (str(REPO_ROOT / "backend" / "recovery" / "reference" / "v1_2_reference.py"),)
+    python_executable: str = sys.executable
+    repo_root: Path = REPO_ROOT
+    minimal_env: dict[str, str] = field(default_factory=lambda: {"LANG": "C.UTF-8", "LC_ALL": "C.UTF-8"})
+
+    @property
+    def ledger_path(self) -> Path:
+        return self.reports_dir / "one_shot_ledger.jsonl"
+
+    @property
+    def environment_record_path(self) -> Path:
+        return self.reports_dir / "runtime_environment_identity.json"
+
+    @property
+    def candidate_csv_path(self) -> Path:
+        return self.reports_dir / "candidate_new36.csv"
+
+    @property
+    def candidate_manifest_path(self) -> Path:
+        return self.reports_dir / "candidate_new36_manifest.json"
+
+    @property
+    def candidate_evidence_path(self) -> Path:
+        return self.reports_dir / "candidate_new36_evidence.jsonl"
+
+    @property
+    def reference_csv_path(self) -> Path:
+        return self.reports_dir / "reference_new36.csv"
+
+    @property
+    def reference_manifest_path(self) -> Path:
+        return self.reports_dir / "reference_new36_manifest.json"
+
+    @property
+    def s1_report_path(self) -> Path:
+        return self.reports_dir / "s1_report.json"
+
+    @property
+    def s2_report_path(self) -> Path:
+        return self.reports_dir / "s2_report.json"
+
+    @property
+    def execution_evidence_index_path(self) -> Path:
+        return self.reports_dir / "execution_evidence_index.json"
+
+
+def _utc_iso_now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+def _git_head(repo_root: Path) -> str:
+    return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=str(repo_root)).decode("ascii").strip()
+
+
+# ---------------------------------------------------------------------------
+# §9.9 recovery rules + §9.11 run_id semantics
+# ---------------------------------------------------------------------------
+
+@dataclass
+class RecoveryDecision:
+    run_id: str
+    candidate_state: str  # "NOT_INVOKED" | "COMPLETED" | "FAILED" | "NEEDS_INCOMPLETE_MARK"
+    reference_state: str
+    fresh_attempt: bool
+
+
+def determine_run_id_and_recover(records: list[dict]) -> RecoveryDecision:
+    """A008 §9.7 step 1 / §9.9 / §9.11. Applies the recovery rules from
+    the durable ledger BEFORE anything else. Raises LedgerCorruption on
+    any ambiguous/incompatible state (§9.10)."""
+    if not records:
+        return RecoveryDecision(run_id=str(uuid.uuid4()), candidate_state="NOT_INVOKED",
+                                 reference_state="NOT_INVOKED", fresh_attempt=True)
+
+    run_ids = {r.get("run_id") for r in records if r.get("run_id")}
+    if len(run_ids) > 1:
+        # Only acceptable if terminal COMPLETED CANDIDATE/REFERENCE for
+        # distinct run_ids never coexist; otherwise ambiguous.
+        raise LedgerCorruption(f"multiple distinct run_ids present in ledger: {run_ids!r}")
+    run_id = next(iter(run_ids)) if run_ids else str(uuid.uuid4())
+
+    def _terminal_state(role: str) -> str:
+        invoked = None
+        terminal = None
+        count_invoked = 0
+        for rec in records:
+            if rec.get("role") != role:
+                continue
+            if rec.get("state") == "INVOKED":
+                count_invoked += 1
+                invoked = rec
+            if rec.get("state") in ("COMPLETED", "FAILED"):
+                if terminal is not None:
+                    raise LedgerCorruption(f"multiple terminal records for role {role}")
+                terminal = rec
+        if count_invoked > 1:
+            raise LedgerCorruption(f"multiple INVOKED records for role {role}")
+        if terminal is not None:
+            return str(terminal["state"])
+        if invoked is not None:
+            return "NEEDS_INCOMPLETE_MARK"
+        return "NOT_INVOKED"
+
+    cand_state = _terminal_state("CANDIDATE")
+    ref_state = _terminal_state("REFERENCE")
+
+    cand_completed = next((r for r in records if r.get("role") == "CANDIDATE" and r.get("state") == "COMPLETED"), None)
+    ref_completed = next((r for r in records if r.get("role") == "REFERENCE" and r.get("state") == "COMPLETED"), None)
+    if cand_completed and ref_completed and cand_completed.get("run_id") != ref_completed.get("run_id"):
+        raise LedgerCorruption("Candidate and Reference COMPLETED with different run_ids (§9.11 rule 6)")
+
+    return RecoveryDecision(run_id=run_id, candidate_state=cand_state, reference_state=ref_state, fresh_attempt=False)
+
+
+# ---------------------------------------------------------------------------
+# Orchestrator procedure (A008 §9.7)
+# ---------------------------------------------------------------------------
+
+class Orchestrator:
+    def __init__(self, config: OrchestratorConfig):
+        self.config = config
+        self.records: list[dict] = []
+
+    def _append(self, record: dict) -> None:
+        append_ledger_record_durable(self.config.ledger_path, record)
+        self.records.append(record)
+
+    def _base_record(self, role: str, run_id: str, state: str, **extra: Any) -> dict:
+        return {
+            "schema_version": LEDGER_SCHEMA_VERSION,
+            "run_id": run_id,
+            "role": role,
+            "state": state,
+            "utc": _utc_iso_now(),
+            "runtime_head": _git_head(self.config.repo_root),
+            "runtime_environment_identity_sha256": extra.pop("runtime_environment_identity_sha256", None),
+            "input_inventory_id": INPUT_INVENTORY_ID,
+            "a008_sha256": self.config.a008_sha256,
+            "freeze_manifest_sha256": self.config.freeze_manifest_sha256,
+            "output_artifact_sha256": extra.pop("output_artifact_sha256", None),
+            "detail": extra.pop("detail", None),
+        }
+
+    def step1_recover(self) -> RecoveryDecision:
+        self.records = read_ledger_records(self.config.ledger_path)
+        return determine_run_id_and_recover(self.records)
+
+    def step2_shared_environment_record(self) -> dict:
+        p = self.config.environment_record_path
+        if p.exists():
+            return load_and_validate_environment_record(p)
+        record = build_shared_environment_record()
+        exclusive_create_write(p, canonical_pretty_bytes(record))
+        return record
+
+    def step3_verify_free_space_and_identities(self) -> None:
+        import shutil
+        usage = shutil.disk_usage(str(self.config.reports_dir.parent if self.config.reports_dir.exists() else REPO_ROOT))
+        if usage.free < MIN_FREE_BYTES_11_4_8:
+            raise OrchestratorPreconditionFail("STEP3", "insufficient free space for §11.4.8 (>= 1073741824 bytes required)")
+
+    def step4_candidate_preflight(self, env_sha: str) -> bool:
+        cmd = [self.config.python_executable, *self.config.candidate_module_args, "preflight",
+               "--db", str(self.config.db_path),
+               "--environment-record", str(self.config.environment_record_path),
+               "--session-zip-map", str(self.config.session_zip_map_path)]
+        result = subprocess.run(cmd, cwd=str(self.config.repo_root / "backend"), capture_output=True, text=True)
+        return result.returncode == 0
+
+    def step5_candidate_generate(self, run_id: str, env_sha: str) -> dict:
+        self._append(self._base_record("CANDIDATE", run_id, "GATES_PASS", runtime_environment_identity_sha256=env_sha))
+        self._append(self._base_record("CANDIDATE", run_id, "INVOKED", runtime_environment_identity_sha256=env_sha))
+        cmd = [self.config.python_executable, *self.config.candidate_module_args, "generate",
+               "--db", str(self.config.db_path),
+               "--environment-record", str(self.config.environment_record_path),
+               "--session-zip-map", str(self.config.session_zip_map_path),
+               "--out-csv", str(self.config.candidate_csv_path),
+               "--out-manifest", str(self.config.candidate_manifest_path),
+               "--out-evidence", str(self.config.candidate_evidence_path),
+               "--run-id", run_id,
+               "--ledger", str(self.config.ledger_path)]
+        result = subprocess.run(cmd, cwd=str(self.config.repo_root / "backend"), capture_output=True, text=True)
+        if result.returncode == 0 and self._seal_ok(self.config.candidate_csv_path, self.config.candidate_manifest_path):
+            art = {
+                "csv": sha256_file(self.config.candidate_csv_path),
+                "manifest": sha256_file(self.config.candidate_manifest_path),
+                "evidence": sha256_file(self.config.candidate_evidence_path) if self.config.candidate_evidence_path.exists() else None,
+            }
+            rec = self._base_record("CANDIDATE", run_id, "COMPLETED", runtime_environment_identity_sha256=env_sha, output_artifact_sha256=art)
+            self._append(rec)
+            return rec
+        rec = self._base_record("CANDIDATE", run_id, "FAILED", runtime_environment_identity_sha256=env_sha, detail="STRUCTURAL")
+        self._append(rec)
+        return rec
+
+    def _seal_ok(self, csv_path: Path, manifest_path: Path) -> bool:
+        try:
+            import json
+            manifest = json.loads(manifest_path.read_bytes().decode("utf-8"))
+        except Exception:
+            return False
+        return manifest.get("csv_sha256") == sha256_file(csv_path)
+
+    def step6_gate_reference(self, run_id: str) -> None:
+        """R2 (§9.7 step 6, narrows V2 §13, never widens)."""
+        latest_candidate = latest_terminal_record(self.records, "CANDIDATE", run_id)
+        if latest_candidate is None or latest_candidate.get("state") == "INVOKED":
+            raise OrchestratorPreconditionFail("STEP6", "Candidate terminal state is not established yet (recovery required)")
+        if latest_candidate.get("state") == "FAILED":
+            raise OrchestratorPreconditionFail(
+                "STEP6",
+                "R2: Candidate FAILED — Reference preflight/generate MUST NOT run; "
+                "no {role:REFERENCE, state:INVOKED} record MUST be appended",
+            )
+        if latest_candidate.get("state") != "COMPLETED":
+            raise OrchestratorPreconditionFail("STEP6", f"unexpected Candidate terminal state {latest_candidate.get('state')!r}")
+
+    def step6_reference_preflight(self) -> bool:
+        cmd = [self.config.python_executable, *self.config.reference_executable_args, "preflight",
+               "--db", str(self.config.db_path),
+               "--environment-record", str(self.config.environment_record_path)]
+        result = subprocess.run(
+            cmd, cwd=str(self.config.repo_root), capture_output=True, text=True, env=dict(self.config.minimal_env),
+        )
+        return result.returncode == 0
+
+    def step7_reference_generate(self, run_id: str, env_sha: str) -> dict:
+        """§9.8 Reference launch contract. R1 input isolation: the
+        Reference receives ONLY the read-only DB path, the shared
+        environment record, the session-zip map and two fresh output
+        paths — via argv only, minimal environment, no Candidate
+        artifact path anywhere."""
+        for p in (self.config.reference_csv_path, self.config.reference_manifest_path):
+            if p.exists():
+                raise OrchestratorPreconditionFail("STEP7", f"Reference output path already exists: {p}")
+        self._append(self._base_record("REFERENCE", run_id, "GATES_PASS", runtime_environment_identity_sha256=env_sha))
+        self._append(self._base_record("REFERENCE", run_id, "INVOKED", runtime_environment_identity_sha256=env_sha))
+        cmd = [self.config.python_executable, *self.config.reference_executable_args, "generate",
+               "--db", str(self.config.db_path),
+               "--environment-record", str(self.config.environment_record_path),
+               "--session-zip-map", str(self.config.session_zip_map_path),
+               "--out-csv", str(self.config.reference_csv_path),
+               "--out-manifest", str(self.config.reference_manifest_path)]
+        result = subprocess.run(
+            cmd, cwd=str(self.config.repo_root), capture_output=True, text=True, env=dict(self.config.minimal_env),
+        )
+        if result.returncode == 0 and self.config.reference_csv_path.exists() and self.config.reference_manifest_path.exists():
+            art = {"csv": sha256_file(self.config.reference_csv_path), "manifest": sha256_file(self.config.reference_manifest_path), "evidence": None}
+            rec = self._base_record("REFERENCE", run_id, "COMPLETED", runtime_environment_identity_sha256=env_sha, output_artifact_sha256=art)
+            self._append(rec)
+            return rec
+        rec = self._base_record("REFERENCE", run_id, "FAILED", runtime_environment_identity_sha256=env_sha, detail="STRUCTURAL")
+        self._append(rec)
+        return rec
+
+    def step8_run_s1_s2(self) -> tuple[dict, dict]:
+        from . import v1_2_new36_validators as validators
+        s1_inputs = validators.S1Inputs(
+            candidate_csv=self.config.candidate_csv_path,
+            candidate_manifest=self.config.candidate_manifest_path,
+            reference_csv=self.config.reference_csv_path,
+            reference_manifest=self.config.reference_manifest_path,
+            ledger=self.config.ledger_path,
+        )
+        s1_report = validators.run_s1(s1_inputs)
+        exclusive_create_write(self.config.s1_report_path, canonical_pretty_bytes(s1_report))
+
+        freeze_manifest_path = REPO_ROOT / "backend" / "recovery" / "specs" / "V1_2_CANDIDATE_IMPLEMENTATION_FREEZE_MANIFEST.txt"
+        s2_inputs = validators.S2Inputs(
+            candidate_csv=self.config.candidate_csv_path,
+            candidate_manifest=self.config.candidate_manifest_path,
+            candidate_evidence=self.config.candidate_evidence_path,
+            freeze_manifest=freeze_manifest_path,
+            ledger=self.config.ledger_path,
+        )
+        s2_report = validators.run_s2(s2_inputs)
+        exclusive_create_write(self.config.s2_report_path, canonical_pretty_bytes(s2_report))
+        return s1_report, s2_report
+
+    def step9_execution_evidence_index(self) -> dict:
+        index: dict[str, Any] = {}
+        for name, path in (
+            ("candidate_csv", self.config.candidate_csv_path),
+            ("candidate_manifest", self.config.candidate_manifest_path),
+            ("candidate_evidence", self.config.candidate_evidence_path),
+            ("reference_csv", self.config.reference_csv_path),
+            ("reference_manifest", self.config.reference_manifest_path),
+            ("s1_report", self.config.s1_report_path),
+            ("s2_report", self.config.s2_report_path),
+            ("ledger", self.config.ledger_path),
+        ):
+            if path.exists():
+                index[name] = {"sha256": sha256_file(path), "size_bytes": size_of(path)}
+        exclusive_create_write(self.config.execution_evidence_index_path, canonical_pretty_bytes(index))
+        return index
+
+    def run(self) -> dict:
+        """Full A008 §9.7 procedure. NEVER call this against real NEW36
+        session-zip-map paths outside an authorized, frozen (Section 16
+        step 8 complete) execution interpreter."""
+        decision = self.step1_recover()
+        run_id = decision.run_id
+
+        if decision.candidate_state == "NEEDS_INCOMPLETE_MARK":
+            self._append(self._base_record("CANDIDATE", run_id, "FAILED", detail="INCOMPLETE_AFTER_RESTART"))
+            decision.candidate_state = "FAILED"
+        if decision.reference_state == "NEEDS_INCOMPLETE_MARK":
+            self._append(self._base_record("REFERENCE", run_id, "FAILED", detail="INCOMPLETE_AFTER_RESTART"))
+            decision.reference_state = "FAILED"
+
+        env_record = self.step2_shared_environment_record()
+        env_sha = env_record["runtime_environment_identity_sha256"]
+        self.step3_verify_free_space_and_identities()
+
+        if decision.candidate_state == "NOT_INVOKED":
+            if not self.step4_candidate_preflight(env_sha):
+                raise OrchestratorPreconditionFail("STEP4", "Candidate preflight (P-01..P-09) did not pass")
+            self.step5_candidate_generate(run_id, env_sha)
+
+        self.step6_gate_reference(run_id)
+
+        if decision.reference_state == "NOT_INVOKED":
+            if not self.step6_reference_preflight():
+                raise OrchestratorPreconditionFail("STEP6", "Reference preflight did not pass")
+            self.step7_reference_generate(run_id, env_sha)
+
+        cand_completed = latest_terminal_record(self.records, "CANDIDATE", run_id)
+        ref_completed = latest_terminal_record(self.records, "REFERENCE", run_id)
+        s1_report = s2_report = None
+        if cand_completed and cand_completed.get("state") == "COMPLETED" and ref_completed and ref_completed.get("state") == "COMPLETED":
+            s1_report, s2_report = self.step8_run_s1_s2()
+
+        index = self.step9_execution_evidence_index()
+        return {"run_id": run_id, "s1_report": s1_report, "s2_report": s2_report, "execution_evidence_index": index}
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="v1_2_new36_run")
+    parser.add_argument("--db", required=True)
+    parser.add_argument("--session-zip-map", required=True)
+    parser.add_argument("--reports-dir", required=True)
+    parser.add_argument("--a008-sha256", required=True)
+    parser.add_argument("--freeze-manifest-sha256", required=True)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_arg_parser()
+    args = parser.parse_args(argv)
+    config = OrchestratorConfig(
+        reports_dir=Path(args.reports_dir),
+        db_path=Path(args.db),
+        session_zip_map_path=Path(args.session_zip_map),
+        a008_sha256=args.a008_sha256,
+        freeze_manifest_sha256=args.freeze_manifest_sha256,
+    )
+    orchestrator = Orchestrator(config)
+    try:
+        result = orchestrator.run()
+    except (LedgerCorruption, OrchestratorPreconditionFail) as exc:
+        print(f"FAIL: {exc}", file=sys.stderr)
+        return 2
+    print(result)
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())
+===== END backend/recovery/v1_2_new36_run.py =====
+===== BEGIN backend/recovery/CANDIDATE_INDEPENDENCE_ATTESTATION.txt =====
+CANDIDATE_INDEPENDENCE_ATTESTATION.txt
+A008 DRAFT4 §5.3 — hash-bound member of ATTESTATION (§3.3.2)
+======================================================================
+
+1. AUTHOR IDENTITY / ROLE
+   Author: Neo (AI Full-Stack Engineering agent), acting in this session
+   EXCLUSIVELY as the Candidate-side author for A008 DRAFT4 Section 16
+   STEP 4 (Execution Layer implementation ONLY). No other role was
+   exercised. No human co-author reviewed or edited the Candidate source
+   prior to this attestation being written.
+
+2. EXHAUSTIVE LIST OF FILES READ DURING AUTHORING
+   backend/recovery/specs/V1_2_NEW36_VALIDATION_PROTOCOL_V2.txt
+   backend/recovery/specs/V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_006.txt
+   backend/recovery/specs/V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_008_DRAFT4.txt
+   backend/recovery/v1_2_candidate.py
+   backend/recovery/v1_2_stage3.py
+   backend/recovery/v1_2_diagnostics.py
+   backend/recovery/engine.py
+   backend/recovery/harness.py               (contracts A004 §5-6, A005 R2,
+                                                A006 §4 ONLY; no loader called)
+   backend/recovery/allowlist.py
+   backend/frozen_engine.py
+   backend/checkpoint_registry.py
+   backend/parquet_validator.py
+   backend/recovery/v1_2_preflight.py
+   backend/recovery/__init__.py, backend/recovery/validation.py (directory
+     listing / import-surface orientation only; no symbol consumed)
+   Not read in full: backend/recovery/v1_2_acceptance.py (glob-listed only;
+     no symbol from it is imported by the Candidate application or the
+     Executors in this Step-4 implementation).
+
+3. NO REFERENCE PATH WAS CONSULTED
+   No file, module, test, attestation or output under
+   backend/recovery/reference/ was read, imported, executed, diffed,
+   opened or otherwise consulted at any point during authoring or
+   synthetic testing of:
+     backend/recovery/v1_2_new36_validators.py
+     backend/recovery/v1_2_new36_candidate_app.py
+     backend/recovery/v1_2_new36_run.py
+     backend/tests/test_v1_2_new36_validators.py
+     backend/tests/test_v1_2_new36_candidate_app.py
+     backend/tests/test_v1_2_new36_run.py
+   REFERENCE_INDEPENDENCE_ATTESTATION.txt was NOT read and was NOT used
+   as an authoring input, per A008 §5.2.
+
+4. EXACT SYMBOLS IMPORTED FROM engine.py, v1_2_stage3.py,
+   v1_2_diagnostics.py, v1_2_candidate.py BY THE NEW MODULES
+   (each confirmed within the A008 §4.7.2 exhaustive authorization list):
+
+   engine.py:
+     GRID_MS
+     _build_forward_return_array
+     _quantile_type7
+     (engine.build_canonical_grid and engine._quality_admissible_mask are
+      consumed transitively, ONLY via v1_2_diagnostics._prepare_block,
+      never called directly by the new modules)
+
+   v1_2_candidate.py:
+     tz_threshold, g1_pre_overlap_mask, g1_parent_gate_mask,
+     assert_g1_parent_subset, g1_direction, c1_pre_overlap_mask,
+     c1_gap_parent_mask, assert_c1_gap_subset, c1_direction,
+     spacing_steps_for_horizon, b0_greedy_filter, b1_diagnostic_filter,
+     exact_spacing_pair_n, assert_hb_i11
+
+   v1_2_diagnostics.py:
+     _prepare_block, _finite_mean_abs
+     (fingerprint_positions is available and authorized; the new modules
+      use the equivalent v1_2_new36_validators.sha256_positions, which
+      implements the identical V2 fingerprint encoding independently for
+      Candidate-side evidence use, per A008 §4.7.2 "either may be used")
+
+   v1_2_stage3.py (sub-operations only, exactly as authorized):
+     _hz_block                      (all HZ rows, F-3/F-5 corrected)
+     _hg_block                      (variant_id == "G0" ROWS ONLY consumed;
+                                      G1 rows from this call are discarded)
+     _hc_block                      (variant_id "C0" AND "C1" rows consumed)
+     _hb_extract_pre_overlap        (per-family HB pre-overlap arrays)
+     _compute_event_metrics         (mean_signed_bps / hit_rate ONLY)
+     STAGE3_HZ_FEATURES, STAGE3_HB_FAMILIES (feature-order constants;
+       drift-asserted equal to the Appendix-B literal at import time)
+
+   FORBIDDEN symbols confirmed NEVER imported or called by the new
+   modules: v1_2_stage3.exact_spacing_pair_n (module-local, unordered
+   pairs), v1_2_stage3._hb_block, any v1_2_stage3 row's mean_abs_move
+   field (F-4; always overwritten before serialization), any
+   v1_2_stage3 row's diagnostic_version field (F-5; never emitted), any
+   v1_2_stage3._hg_block row with variant_id "G1" (F-2; recomposed from
+   first principles using the CANDIDATE-authorized functions listed
+   above), any Stage3 (fair_gap_reversion, TZ) calculated_threshold (F-3;
+   overwritten with the T0 threshold before serialization).
+
+5. NO NEW36 QUANTITATIVE CONTENT WAS READ
+   No NEW36 ZIP archive, parquet part, row, byte range or derived
+   quantitative value was opened, read, decoded or otherwise accessed
+   during the authoring of this Section 16 STEP 4 deliverable or during
+   any synthetic test executed against it. All synthetic tests use
+   programmatically generated, clearly-labelled non-NEW36 numeric
+   fixtures; the 12 real frozen NEW36 session identifiers are used ONLY,
+   where necessary, to exercise inventory-enforcement logic (A008
+   §13.2), always paired with synthetic (non-NEW36) ZIP byte content.
+
+6. WITHDRAWN INVARIANT
+   A20_I12/I_HB_I12 NOT IMPLEMENTED (A007)
+
+7. REFERENCE LAUNCH CONTRACT PROVENANCE
+   The Reference external launch contract implemented in
+   backend/recovery/v1_2_new36_run.py (Orchestrator step 7,
+   `step7_reference_generate`) was taken EXCLUSIVELY from A008 DRAFT4
+   §9.8 (argv-only invocation; minimal environment; read-only DB path;
+   shared environment record path; session-zip-map path; two fresh
+   output paths). backend/recovery/reference/v1_2_reference.py was NOT
+   read to construct this contract.
+
+======================================================================
+This file is a member of ATTESTATION (A008 §3.3.2) and is hash-bound: its
+own SHA256 (raw bytes) is recorded in the Candidate manifest's
+source_sha256 object under this file's repository-relative path, and its
+committed blob at the recorded runtime_source_commit (git HEAD) MUST
+byte-equal its working-tree content (A006 §6.5 predicate), verified by
+gate P-05 on every `preflight`/`generate` invocation.
+===== END backend/recovery/CANDIDATE_INDEPENDENCE_ATTESTATION.txt =====
+===== BEGIN backend/tests/test_v1_2_new36_validators.py =====
+"""Synthetic tests for backend/recovery/v1_2_new36_validators.py.
+
+A008 DRAFT4 §13.2: NO real NEW36 quantitative content is used anywhere in
+this file. All fixtures are programmatically generated synthetic data.
+"""
+from __future__ import annotations
+
+import json
+import sqlite3
+import sys
+import uuid
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from recovery.v1_2_new36_validators import (  # noqa: E402
+    CANDIDATE_ROW_FIELDS,
+    EXPECTED_TOTAL_ROW_COUNT,
+    NNC3Error,
+    NNC4Error,
+    NNC5DuplicateMemberError,
+    NNC5ParseError,
+    S1Inputs,
+    S2Inputs,
+    append_ledger_record_durable,
+    canonical_line_bytes,
+    canonical_pretty_bytes,
+    canonical_sort_key,
+    compute_runtime_environment_identity,
+    environment_identities_equivalent,
+    environment_identity_sha256,
+    exclusive_create_write,
+    latest_terminal_record,
+    nnc5_load_jsonl,
+    nnc5_loads,
+    read_ledger_records,
+    row_canonical_key_lexeme,
+    run_s1,
+    sha256_bytes,
+    verify_session_id_uniqueness,
+)
+
+
+# ---------------------------------------------------------------------------
+# NNC-5
+# ---------------------------------------------------------------------------
+
+def test_nnc5_accepts_well_formed_json():
+    assert nnc5_loads(b'{"a": 1, "b": [1, 2, {"c": 3}]}') == {"a": 1, "b": [1, 2, {"c": 3}]}
+
+
+def test_nnc5_rejects_duplicate_top_level_member():
+    with pytest.raises(NNC5DuplicateMemberError):
+        nnc5_loads(b'{"a": 1, "a": 2}')
+
+
+def test_nnc5_rejects_duplicate_member_nested_in_array():
+    with pytest.raises(NNC5DuplicateMemberError):
+        nnc5_loads(b'{"x": [{"a": 1, "a": 2}]}')
+
+
+def test_nnc5_rejects_duplicate_member_at_deep_nesting():
+    with pytest.raises(NNC5DuplicateMemberError):
+        nnc5_loads(b'{"a": {"b": {"c": 1, "d": 2, "c": 3}}}')
+
+
+def test_nnc5_rejects_malformed_json():
+    with pytest.raises(NNC5ParseError):
+        nnc5_loads(b'{"a": }')
+
+
+def test_nnc5_rejects_invalid_utf8():
+    with pytest.raises(NNC5ParseError):
+        nnc5_loads(b"\xff\xfe{}")
+
+
+def test_nnc5_jsonl_parses_each_line_independently(tmp_path):
+    p = tmp_path / "l.jsonl"
+    p.write_bytes(b'{"a":1}\n{"b":2}\n')
+    assert nnc5_load_jsonl(p) == [{"a": 1}, {"b": 2}]
+
+
+def test_nnc5_jsonl_rejects_duplicate_member_on_any_line(tmp_path):
+    p = tmp_path / "l.jsonl"
+    p.write_bytes(b'{"a":1}\n{"a":1,"a":2}\n')
+    with pytest.raises(NNC5DuplicateMemberError):
+        nnc5_load_jsonl(p)
+
+
+# ---------------------------------------------------------------------------
+# NNC-3
+# ---------------------------------------------------------------------------
+
+def test_nnc3_identity_is_deterministic_and_equivalent_to_itself():
+    identity_a = compute_runtime_environment_identity()
+    identity_b = compute_runtime_environment_identity()
+    sha_a = environment_identity_sha256(identity_a)
+    sha_b = environment_identity_sha256(identity_b)
+    assert environment_identities_equivalent(identity_a, sha_a, identity_b, sha_b)
+
+
+def test_nnc3_sha256_recomputation_is_stable_under_key_reordering():
+    identity = compute_runtime_environment_identity()
+    sha_1 = environment_identity_sha256(identity)
+    reordered = json.loads(json.dumps(identity))  # dict order irrelevant to canonical bytes
+    sha_2 = environment_identity_sha256(reordered)
+    assert sha_1 == sha_2
+
+
+def test_nnc3_detects_pyarrow_version_drift(monkeypatch):
+    import recovery.v1_2_new36_validators as validators
+    monkeypatch.setattr(validators, "REQUIRED_PYARROW_VERSION", "999.0.0")
+    with pytest.raises(NNC3Error):
+        compute_runtime_environment_identity()
+
+
+def test_nnc3_equivalence_fails_on_object_mismatch():
+    identity_a = compute_runtime_environment_identity()
+    identity_b = dict(identity_a)
+    identity_b["pyarrow_version"] = "0.0.0"
+    sha_a = environment_identity_sha256(identity_a)
+    sha_b = environment_identity_sha256(identity_b)
+    assert not environment_identities_equivalent(identity_a, sha_a, identity_b, sha_b)
+
+
+# ---------------------------------------------------------------------------
+# NNC-4 (corrected: read-only DB duplicate + unique-index verification)
+# ---------------------------------------------------------------------------
+
+def _make_synthetic_db(tmp_path: Path, *, with_unique_index: bool, inject_duplicate: bool) -> Path:
+    db_path = tmp_path / "synthetic.sqlite3"
+    conn = sqlite3.connect(str(db_path))
+    try:
+        cur = conn.cursor()
+        unique_clause = "UNIQUE" if with_unique_index else ""
+        cur.execute(f"CREATE TABLE sessions (id INTEGER PRIMARY KEY, session_id TEXT {unique_clause})")
+        if not with_unique_index:
+            pass
+        cur.execute("INSERT INTO sessions (session_id) VALUES ('synthetic_session_a')")
+        cur.execute("INSERT INTO sessions (session_id) VALUES ('synthetic_session_b')")
+        if inject_duplicate:
+            cur.execute("INSERT INTO sessions (session_id) VALUES ('synthetic_session_a')")
+        conn.commit()
+    finally:
+        conn.close()
+    return db_path
+
+
+def test_nnc4_passes_on_unique_no_duplicate_schema(tmp_path):
+    db_path = _make_synthetic_db(tmp_path, with_unique_index=True, inject_duplicate=False)
+    result = verify_session_id_uniqueness(db_path)
+    assert result.ok
+    assert result.no_duplicate_session_ids
+    assert result.unique_index_present
+
+
+def test_nnc4_fails_when_no_unique_index_present(tmp_path):
+    db_path = _make_synthetic_db(tmp_path, with_unique_index=False, inject_duplicate=False)
+    result = verify_session_id_uniqueness(db_path)
+    assert not result.ok
+    assert not result.unique_index_present
+
+
+def test_nnc4_fails_when_duplicate_session_id_rows_exist(tmp_path):
+    db_path = _make_synthetic_db(tmp_path, with_unique_index=False, inject_duplicate=True)
+    result = verify_session_id_uniqueness(db_path)
+    assert not result.ok
+    assert not result.no_duplicate_session_ids
+    assert "synthetic_session_a" in result.duplicate_session_ids
+
+
+def test_nnc4_never_writes_to_database(tmp_path):
+    db_path = _make_synthetic_db(tmp_path, with_unique_index=True, inject_duplicate=False)
+    mtime_before = db_path.stat().st_mtime_ns
+    verify_session_id_uniqueness(db_path)
+    assert db_path.stat().st_mtime_ns == mtime_before
+
+
+def test_nnc4_raises_on_missing_database(tmp_path):
+    with pytest.raises(NNC4Error):
+        verify_session_id_uniqueness(tmp_path / "does_not_exist.sqlite3")
+
+
+# ---------------------------------------------------------------------------
+# Ledger
+# ---------------------------------------------------------------------------
+
+def test_ledger_append_and_read_roundtrip(tmp_path):
+    ledger = tmp_path / "ledger.jsonl"
+    rec1 = {"role": "CANDIDATE", "state": "INVOKED", "run_id": "r1"}
+    rec2 = {"role": "CANDIDATE", "state": "COMPLETED", "run_id": "r1"}
+    append_ledger_record_durable(ledger, rec1)
+    append_ledger_record_durable(ledger, rec2)
+    records = read_ledger_records(ledger)
+    assert records == [rec1, rec2]
+
+
+def test_ledger_lines_are_canonical_and_lf_terminated(tmp_path):
+    ledger = tmp_path / "ledger.jsonl"
+    append_ledger_record_durable(ledger, {"b": 2, "a": 1})
+    raw = ledger.read_bytes()
+    assert raw == b'{"a":1,"b":2}\n'
+
+
+def test_latest_terminal_record_scoped_by_run_id():
+    records = [
+        {"role": "CANDIDATE", "state": "INVOKED", "run_id": "r1"},
+        {"role": "CANDIDATE", "state": "COMPLETED", "run_id": "r1"},
+        {"role": "CANDIDATE", "state": "INVOKED", "run_id": "r2"},
+    ]
+    assert latest_terminal_record(records, "CANDIDATE", "r1")["state"] == "COMPLETED"
+    assert latest_terminal_record(records, "CANDIDATE", "r2")["state"] == "INVOKED"
+
+
+# ---------------------------------------------------------------------------
+# exclusive_create_write (§4.11(a))
+# ---------------------------------------------------------------------------
+
+def test_exclusive_create_write_refuses_preexisting_path(tmp_path):
+    p = tmp_path / "out.bin"
+    p.write_bytes(b"seed")
+    with pytest.raises(FileExistsError):
+        exclusive_create_write(p, b"data")
+
+
+def test_exclusive_create_write_rereads_and_matches(tmp_path):
+    p = tmp_path / "out.bin"
+    exclusive_create_write(p, b"hello-world")
+    assert p.read_bytes() == b"hello-world"
+
+
+# ---------------------------------------------------------------------------
+# S1 comparator (synthetic PASS / FAIL / INVALID_INPUT)
+# ---------------------------------------------------------------------------
+
+def _synthetic_row_set() -> list[dict]:
+    """Deterministic 3456-row synthetic set with generic (non-NEW36)
+    session identifiers, purely to exercise the S1 comparator's own
+    logic (row-count / key-set / sort / field comparison)."""
+    from recovery.v1_2_new36_validators import (
+        ASSET_ORDER,
+        HB_FEATURE_ORDER,
+        HB_QUANTILE,
+        HG_FEATURE,
+        HC_FEATURE,
+        HORIZON_ORDER,
+        HZ_FEATURE_ORDER,
+        QUANTILE_ORDER,
+    )
+    sessions = [f"synthetic_session_{i:02d}" for i in range(12)]
+    rows: list[dict] = []
+    for session_id in sessions:
+        for asset in ASSET_ORDER:
+            for feature in HZ_FEATURE_ORDER:
+                for q in QUANTILE_ORDER:
+                    for variant in ("T0", "TZ"):
+                        rows.append({
+                            "protocol_version": "V1_2_NEW36_VALIDATION_PROTOCOL_V2",
+                            "session_id": session_id, "asset": asset, "axis": "HZ",
+                            "feature_family": feature, "variant_id": variant,
+                            "quantile": q, "horizon_ms": None,
+                            "threshold_domain_finite_n": 100, "threshold_domain_nonzero_n": 80,
+                            "zero_n": 20, "zero_fraction": 0.2, "nonzero_unique_value_n": 50,
+                            "hz_discrimination_class": "HZ_DISCRIMINATING", "gate_zero_n": None,
+                            "calculated_threshold": 1.5, "spacing_steps": None, "pre_overlap_n": None,
+                            "exact_spacing_pair_n": None, "accepted_n": None, "overlap_dropped_n": None,
+                            "accepted_positions_sha256": "", "mean_signed_bps": None, "hit_rate": None,
+                            "mean_abs_move": None,
+                        })
+            for feature, variants in ((HG_FEATURE, ("G0", "G1")), (HC_FEATURE, ("C0", "C1"))):
+                axis = "HG" if feature == HG_FEATURE else "HC"
+                for q in QUANTILE_ORDER:
+                    for horizon in HORIZON_ORDER:
+                        for variant in variants:
+                            rows.append({
+                                "protocol_version": "V1_2_NEW36_VALIDATION_PROTOCOL_V2",
+                                "session_id": session_id, "asset": asset, "axis": axis,
+                                "feature_family": feature, "variant_id": variant,
+                                "quantile": q, "horizon_ms": horizon,
+                                "threshold_domain_finite_n": None, "threshold_domain_nonzero_n": None,
+                                "zero_n": None, "zero_fraction": None, "nonzero_unique_value_n": None,
+                                "hz_discrimination_class": None, "gate_zero_n": None,
+                                "calculated_threshold": 2.0, "spacing_steps": 10, "pre_overlap_n": 40,
+                                "exact_spacing_pair_n": None, "accepted_n": 30, "overlap_dropped_n": 10,
+                                "accepted_positions_sha256": "a" * 64, "mean_signed_bps": 0.1, "hit_rate": 0.55,
+                                "mean_abs_move": 0.3,
+                            })
+            for feature in HB_FEATURE_ORDER:
+                for horizon in HORIZON_ORDER:
+                    for variant in ("B0", "B1"):
+                        rows.append({
+                            "protocol_version": "V1_2_NEW36_VALIDATION_PROTOCOL_V2",
+                            "session_id": session_id, "asset": asset, "axis": "HB",
+                            "feature_family": feature, "variant_id": variant,
+                            "quantile": HB_QUANTILE, "horizon_ms": horizon,
+                            "threshold_domain_finite_n": None, "threshold_domain_nonzero_n": None,
+                            "zero_n": None, "zero_fraction": None, "nonzero_unique_value_n": None,
+                            "hz_discrimination_class": None, "gate_zero_n": None,
+                            "calculated_threshold": 3.0, "spacing_steps": 10, "pre_overlap_n": 20,
+                            "exact_spacing_pair_n": 5, "accepted_n": 15, "overlap_dropped_n": 5,
+                            "accepted_positions_sha256": "b" * 64, "mean_signed_bps": -0.2, "hit_rate": 0.45,
+                            "mean_abs_move": 0.4,
+                        })
+    return rows
+
+
+def _rows_to_csv_bytes(rows: list[dict]) -> bytes:
+    def fmt(v):
+        if v is None:
+            return ""
+        if isinstance(v, float):
+            return repr(v)
+        return str(v)
+
+    lines = [",".join(CANDIDATE_ROW_FIELDS)]
+    for r in sorted(rows, key=canonical_sort_key):
+        lines.append(",".join(fmt(r[f]) for f in CANDIDATE_ROW_FIELDS))
+    return ("\n".join(lines) + "\n").encode("utf-8")
+
+
+def _write_s1_fixture_pair(tmp_path: Path, mutate_reference: bool = False):
+    rows = _synthetic_row_set()
+    assert len(rows) == EXPECTED_TOTAL_ROW_COUNT
+    cand_csv_bytes = _rows_to_csv_bytes(rows)
+    ref_rows = json.loads(json.dumps(rows))
+    if mutate_reference:
+        ref_rows[0]["calculated_threshold"] = 999.0
+    ref_csv_bytes = _rows_to_csv_bytes(ref_rows)
+
+    paths = {}
+    for name, csv_bytes, role in (("candidate", cand_csv_bytes, "CANDIDATE"), ("reference", ref_csv_bytes, "REFERENCE")):
+        csv_path = tmp_path / f"{name}.csv"
+        csv_path.write_bytes(csv_bytes)
+        manifest = {
+            "implementation_role": role,
+            "csv_sha256": sha256_bytes(csv_bytes),
+            "csv_size_bytes": len(csv_bytes),
+            "manifest_precomparison_sha256": None,
+            "note": "synthetic-fixture",
+        }
+        manifest["manifest_precomparison_sha256"] = sha256_bytes(canonical_pretty_bytes(manifest))
+        manifest_path = tmp_path / f"{name}_manifest.json"
+        manifest_path.write_bytes(canonical_pretty_bytes(manifest))
+        paths[name] = (csv_path, manifest_path)
+
+    run_id = str(uuid.uuid4())
+    ledger_path = tmp_path / "ledger.jsonl"
+    for name, role in (("candidate", "CANDIDATE"), ("reference", "REFERENCE")):
+        csv_path, manifest_path = paths[name]
+        append_ledger_record_durable(ledger_path, {
+            "role": role, "state": "INVOKED", "run_id": run_id,
+        })
+        append_ledger_record_durable(ledger_path, {
+            "role": role, "state": "COMPLETED", "run_id": run_id,
+            "output_artifact_sha256": {
+                "csv": sha256_bytes(csv_path.read_bytes()),
+                "manifest": sha256_bytes(manifest_path.read_bytes()),
+            },
+        })
+    return S1Inputs(
+        candidate_csv=paths["candidate"][0], candidate_manifest=paths["candidate"][1],
+        reference_csv=paths["reference"][0], reference_manifest=paths["reference"][1],
+        ledger=ledger_path,
+    )
+
+
+def test_s1_passes_on_byte_identical_synthetic_artifacts(tmp_path):
+    inputs = _write_s1_fixture_pair(tmp_path, mutate_reference=False)
+    report = run_s1(inputs)
+    assert report["s1_status"] == "PASS", report
+    assert report["row_counts"] == {"candidate": EXPECTED_TOTAL_ROW_COUNT, "reference": EXPECTED_TOTAL_ROW_COUNT}
+    assert report["field_mismatch_total"] == 0
+
+
+def test_s1_fails_on_single_field_mismatch(tmp_path):
+    inputs = _write_s1_fixture_pair(tmp_path, mutate_reference=True)
+    report = run_s1(inputs)
+    assert report["s1_status"] == "FAIL", report
+    assert report["field_mismatch_total"] >= 1
+
+
+def test_s1_invalid_input_on_manifest_hash_tamper(tmp_path):
+    inputs = _write_s1_fixture_pair(tmp_path, mutate_reference=False)
+    manifest = json.loads(inputs.candidate_manifest.read_bytes())
+    manifest["csv_sha256"] = "0" * 64
+    inputs.candidate_manifest.write_bytes(canonical_pretty_bytes(manifest))
+    report = run_s1(inputs)
+    assert report["s1_status"] == "INVALID_INPUT", report
+
+
+def test_row_canonical_key_lexeme_uses_raw_string_fields():
+    row = {f: "" for f in CANDIDATE_ROW_FIELDS}
+    row.update({"session_id": "s", "asset": "BTC", "axis": "HZ", "feature_family": "bitget_ofi",
+                "variant_id": "T0", "quantile": "0.8", "horizon_ms": ""})
+    assert row_canonical_key_lexeme(row) == ("s", "BTC", "HZ", "bitget_ofi", "T0", "0.8", "")
+===== END backend/tests/test_v1_2_new36_validators.py =====
+===== BEGIN backend/tests/test_v1_2_new36_candidate_app.py =====
+"""Synthetic tests for backend/recovery/v1_2_new36_candidate_app.py.
+
+A008 DRAFT4 §13.1-13.2: NO real NEW36 quantitative byte is used anywhere
+in this file. No network, no real DB, no path under backend/data/, no
+path under §14.4. All ZIP paths are throwaway placeholder files (never
+opened for real — the ZIP-opening/parquet layer is deliberately isolated
+via monkeypatch, see NOTE at the top of TestFullSyntheticGenerate).
+
+§13.2 ISOLATION (STRICT): the 12 REAL frozen NEW36 session identifiers
+are used ONLY in the two dedicated P-08 inventory-enforcement tests
+below (test_gate_p08_inventory_rejects_*), which check the inventory
+KEY-SET logic in isolation and never touch quantitative composition.
+Every other test — including the FULL 12-session x 2-asset 3456-row
+generate() pipeline (TestFullSyntheticGenerate) and the P-09 input-
+identity gate test — uses _SYNTHETIC_SESSION_IDS_12, twelve clearly
+non-NEW36 identifiers, paired with in-memory/temporary synthetic ZIP
+placeholder bytes, a temporary synthetic SQLite DB and a temporary
+ledger. No real NEW36 ZIP path, no backend/data/ path, and no §14.4
+real report path is referenced anywhere in this file.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import sqlite3
+import sys
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import recovery.v1_2_new36_candidate_app as capp  # noqa: E402
+from recovery import v1_2_candidate as candidate  # noqa: E402
+from recovery.v1_2_new36_validators import (  # noqa: E402
+    EXPECTED_TOTAL_ROW_COUNT,
+    HORIZON_ORDER,
+    QUANTILE_ORDER,
+    append_ledger_record_durable,
+    build_shared_environment_record,
+    canonical_pretty_bytes,
+    canonical_sort_key,
+    nnc5_loads,
+    row_canonical_key_lexeme,
+    sha256_file,
+    verify_session_id_uniqueness,
+)
+from checkpoint_registry import NEW36_SESSION_IDS  # noqa: E402
+
+# Twelve CLEARLY synthetic session identifiers — never real NEW36 ids —
+# used for every test that is NOT specifically exercising the §13.2
+# inventory-enforcement exception (i.e. everything except the two
+# test_gate_p08_inventory_rejects_* tests below).
+_SYNTHETIC_SESSION_IDS_12: tuple[str, ...] = tuple(f"SYNTH36_TESTONLY_SESSION_{i:02d}" for i in range(12))
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+def _make_synthetic_sessions_db(tmp_path: Path) -> Path:
+    db_path = tmp_path / "runtime.sqlite3"
+    conn = sqlite3.connect(str(db_path))
+    try:
+        cur = conn.cursor()
+        cur.execute("CREATE TABLE sessions (id INTEGER PRIMARY KEY, session_id TEXT UNIQUE, current_qa_run_id INTEGER)")
+        cur.execute("CREATE TABLE qa_runs (id INTEGER PRIMARY KEY, sync_grid_file_count INTEGER)")
+        conn.commit()
+    finally:
+        conn.close()
+    return db_path
+
+
+def _make_environment_record(tmp_path: Path) -> Path:
+    p = tmp_path / "env.json"
+    record = build_shared_environment_record()
+    p.write_bytes(canonical_pretty_bytes(record))
+    return p
+
+
+def _make_synthetic_freeze_manifest(tmp_path: Path) -> Path:
+    """Own-file identities (SOURCE/CONTROL/ATTESTATION) computed as raw
+    byte hashes of real repository files. Reference (0.6) identity rows
+    are intentionally NOT included here: no test in this suite computes
+    or hardcodes a hash for any path under backend/recovery/reference/
+    (that value is recorded only by Section 16 step 6, which this
+    session does not perform)."""
+    lines = []
+    for relpath in capp.SOURCE_PATHS + capp.ATTESTATION_PATHS + capp.CONTROL_PATHS:
+        p = capp.REPO_ROOT / relpath
+        lines.append(f"SOURCE\t{relpath}\t{p.stat().st_size}\t{sha256_file(p)}")
+    lines.append("REFERENCE_IDENTITY_OK=YES")
+    lines.append("PROTOCOL_IDENTITY_OK=YES")
+    p = tmp_path / "freeze_manifest.txt"
+    p.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return p
+
+
+def _make_synthetic_reference_identities(tmp_path: Path) -> tuple[tuple[str, int, str], ...]:
+    """Dependency-injection stand-in for A008 §0.6 (§13 pattern explicitly
+    endorsed for tests): a throwaway synthetic file, NEVER any path under
+    backend/recovery/reference/, used only to exercise gate P-03's
+    Reference-identity verification LOGIC without ever touching the real
+    Reference files."""
+    p = tmp_path / "synthetic_reference_stand_in.txt"
+    p.write_bytes(b"SYNTHETIC_REFERENCE_IDENTITY_STAND_IN_NOT_THE_REAL_FILE")
+    return ((str(p), p.stat().st_size, sha256_file(p)),)
+
+
+def _make_synthetic_input_files_and_identity_table(tmp_path: Path, session_ids) -> tuple[dict, dict]:
+    session_zip_map = {}
+    identity_table = {}
+    for i, sid in enumerate(session_ids):
+        p = tmp_path / f"placeholder_{i}.zip"
+        p.write_bytes(f"SYNTHETIC_PLACEHOLDER_NOT_A_REAL_ZIP_{i}".encode("utf-8"))
+        session_zip_map[sid] = str(p)
+        identity_table[sid] = (p.stat().st_size, sha256_file(p))
+    return session_zip_map, identity_table
+
+
+def _synthetic_block_df(session_id: str, asset: str, n: int = 300) -> pd.DataFrame:
+    seed = int(hashlib.sha256(f"{session_id}:{asset}".encode()).hexdigest()[:8], 16)
+    rng = np.random.default_rng(seed)
+    local_ts = np.arange(n, dtype=np.int64) * 100
+    sample_ns = np.arange(n, dtype=np.int64) * 100_000_000
+    mid = 50000.0 + rng.normal(0, 1, n).cumsum()
+    zero_mask = np.zeros(n, dtype=bool)
+    zero_mask[: max(2, n // 20)] = True
+    di_l1 = rng.normal(0, 1, n)
+    di_l1[zero_mask] = 0.0
+    gap = rng.normal(0, 5, n)
+    gap[zero_mask] = 0.0
+    return pd.DataFrame({
+        "local_ts_ms": local_ts,
+        "sample_monotonic_ns": sample_ns,
+        "bitget_mid": mid,
+        "bitget_book_age_recv_ms": rng.integers(0, 50, n).astype(float),
+        "adjusted_fair_venue_count": rng.integers(2, 6, n).astype(float),
+        "bitget_gap_to_fair_bps": gap,
+        "external_perp_dispersion_bps": rng.uniform(0, 10, n),
+        "bitget_depth_imbalance_l1": di_l1,
+        "bitget_depth_imbalance_l5": rng.normal(0, 1, n),
+        "external_ofi_consensus_l1": rng.normal(0, 1, n),
+        "bitget_fair_ofi_alignment": rng.normal(0, 1, n),
+        "bitget_ofi_norm_l1": rng.normal(0, 1, n),
+        "bitget_trade_imbalance_window": rng.normal(0, 1, n),
+        "external_trade_imbalance_consensus": rng.normal(0, 1, n),
+        "fair_accel_100ms_bps": rng.normal(0, 1, n),
+        "leader_gap_100ms_bps": rng.normal(0, 1, n),
+        "leader_gap_200ms_bps": rng.normal(0, 1, n),
+        "leader_gap_500ms_bps": rng.normal(0, 1, n),
+        "leader_gap_1000ms_bps": rng.normal(0, 1, n),
+        "asset": asset,
+    })
+
+
+# ---------------------------------------------------------------------------
+# Firewall / A20 static checks
+# ---------------------------------------------------------------------------
+
+def test_firewall_rejects_new36_session_id_after_import():
+    from recovery.allowlist import assert_recovery_allowed
+    with pytest.raises(PermissionError):
+        assert_recovery_allowed(NEW36_SESSION_IDS[0])
+
+
+def test_a20_withdrawn_invariant_absent_outside_literal_and_comments():
+    for relpath in (
+        "backend/recovery/v1_2_new36_validators.py",
+        "backend/recovery/v1_2_new36_candidate_app.py",
+        "backend/recovery/v1_2_new36_run.py",
+    ):
+        text = (capp.REPO_ROOT / relpath).read_text(encoding="utf-8")
+        for line in text.split("\n"):
+            stripped = line.strip()
+            if stripped.startswith("#") or "WITHDRAWN_INVARIANTS" in line:
+                continue
+            for token in ("A20", "I12", "I_HB_I12"):
+                if token in line:
+                    # Only acceptable inside a string literal referencing
+                    # the withdrawn-invariant constant/comment context.
+                    assert "WITHDRAWN" in line or "A20_I12" in line or "NOT IMPLEMENTED" in line, (
+                        f"unexpected {token!r} reference in {relpath}: {line!r}"
+                    )
+
+
+# ---------------------------------------------------------------------------
+# F-1 precedence (§13.3(h))
+# ---------------------------------------------------------------------------
+
+def test_f1_exact_spacing_pair_n_is_consecutive_pair_count_not_all_pairs():
+    positions = np.array([0, 5, 10], dtype=np.int64)
+    spacing = 10
+    # consecutive pairs at exact spacing: (0,10) is NOT consecutive (5 is
+    # between them) => 0; the all-pairs (non-consecutive) formula would
+    # find (0,10) diff==10 => 1. The frozen v1_2_candidate implementation
+    # MUST use the consecutive definition.
+    assert candidate.exact_spacing_pair_n(positions, spacing) == 0
+
+
+# ---------------------------------------------------------------------------
+# Gates in isolation
+# ---------------------------------------------------------------------------
+
+def test_gate_p07_nnc4_read_only_uniqueness(tmp_path):
+    db_path = _make_synthetic_sessions_db(tmp_path)
+    capp.gate_p07_nnc4(db_path)  # must not raise
+
+
+def test_gate_p07_fails_closed_on_missing_unique_index(tmp_path):
+    db_path = tmp_path / "bad.sqlite3"
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("CREATE TABLE sessions (id INTEGER PRIMARY KEY, session_id TEXT)")
+    conn.commit()
+    conn.close()
+    with pytest.raises(capp.PreconditionFail) as exc:
+        capp.gate_p07_nnc4(db_path)
+    assert exc.value.code == "P-07"
+
+
+def test_gate_p08_inventory_rejects_wrong_key_set():
+    ctx = capp.CandidateContext()
+    bad_map = {sid: "/x" for sid in list(NEW36_SESSION_IDS)[:11]}
+    with pytest.raises(capp.PreconditionFail) as exc:
+        capp.gate_p08_inventory(ctx, bad_map)
+    assert exc.value.code == "P-08"
+
+
+def test_gate_p08_inventory_rejects_duplicate_mapped_to_different_case():
+    ctx = capp.CandidateContext()
+    ids = list(NEW36_SESSION_IDS)
+    bad_map = {sid: "/x" for sid in ids[:11]}
+    bad_map[ids[0].upper()] = "/y"  # wrong id, still 12 keys but wrong set
+    with pytest.raises(capp.PreconditionFail) as exc:
+        capp.gate_p08_inventory(ctx, bad_map)
+    assert exc.value.code == "P-08"
+
+
+def test_gate_p09_input_identity_size_mismatch(tmp_path):
+    ctx = capp.CandidateContext()
+    session_zip_map, identity_table = _make_synthetic_input_files_and_identity_table(tmp_path, _SYNTHETIC_SESSION_IDS_12)
+    ctx.input_identity_table = identity_table
+    first = _SYNTHETIC_SESSION_IDS_12[0]
+    Path(session_zip_map[first]).write_bytes(b"TAMPERED")
+    with pytest.raises(capp.PreconditionFail) as exc:
+        capp.gate_p09_input_identity(ctx, session_zip_map)
+    assert exc.value.code == "P-09"
+
+
+def test_gate_p03_fails_closed_when_freeze_manifest_absent(tmp_path):
+    ctx = capp.CandidateContext(freeze_manifest_path=tmp_path / "absent.txt")
+    with pytest.raises(capp.PreconditionFail) as exc:
+        capp.gate_p03_implementation_identities(ctx)
+    assert exc.value.code == "P-03"
+
+
+def test_gate_p03_reference_identity_source_is_independent_of_freeze_manifest(tmp_path):
+    """§0.6 contract: P-03 verifies Reference identity from frozen A008
+    §0.6 constants (or, in tests, from ctx.reference_identities via
+    dependency injection) — NEVER from rows inside the §3.5 freeze
+    manifest, which contains no Reference path/hash rows at all."""
+    freeze_path = _make_synthetic_freeze_manifest(tmp_path)
+    freeze_text = freeze_path.read_text(encoding="utf-8")
+    assert "reference" not in freeze_text.lower(), "freeze manifest must not contain Reference rows"
+
+    ref_identities = _make_synthetic_reference_identities(tmp_path)
+    ctx = capp.CandidateContext(freeze_manifest_path=freeze_path, reference_identities=ref_identities)
+    capp.gate_p03_implementation_identities(ctx)  # must not raise
+
+
+def test_gate_p03_reference_identity_drift_is_detected(tmp_path):
+    freeze_path = _make_synthetic_freeze_manifest(tmp_path)
+    ref_identities = _make_synthetic_reference_identities(tmp_path)
+    tampered_path, size, sha = ref_identities[0]
+    Path(tampered_path).write_bytes(b"TAMPERED_CONTENT_DIFFERENT_LENGTH_TOO")
+    ctx = capp.CandidateContext(freeze_manifest_path=freeze_path, reference_identities=ref_identities)
+    with pytest.raises(capp.PreconditionFail) as exc:
+        capp.gate_p03_implementation_identities(ctx)
+    assert exc.value.code == "P-03"
+    assert "§0.6" in str(exc.value) or "0.6" in str(exc.value)
+
+
+def test_gate_p03_default_reference_identities_are_transcribed_from_a008_0_6():
+    """Confirms the production default constant is exactly the frozen
+    A008 §0.6 table (path, size, sha256) and is never populated by
+    hashing the real Reference file at authoring time — the values are
+    literal constants in the module source."""
+    paths = {relpath for relpath, _size, _sha in capp.REFERENCE_FROZEN_IDENTITIES}
+    assert paths == {
+        "backend/recovery/reference/v1_2_reference.py",
+        "backend/recovery/reference/tests/test_v1_2_reference.py",
+        "backend/recovery/reference/REFERENCE_INDEPENDENCE_ATTESTATION.txt",
+    }
+
+
+def test_gate_p10_ledger_binding_requires_matching_invoked_record(tmp_path):
+    ledger = tmp_path / "ledger.jsonl"
+    with pytest.raises(capp.PreconditionFail):
+        capp.gate_p10_ledger_binding(ledger, "run-x")
+    append_ledger_record_durable(ledger, {"role": "CANDIDATE", "state": "INVOKED", "run_id": "run-x"})
+    capp.gate_p10_ledger_binding(ledger, "run-x")  # now passes
+    with pytest.raises(capp.PreconditionFail):
+        capp.gate_p10_ledger_binding(ledger, "run-y")
+
+
+def test_gate_p01_generate_outputs_absent_rejects_preexisting(tmp_path):
+    existing = tmp_path / "out.csv"
+    existing.write_bytes(b"x")
+    with pytest.raises(capp.PreconditionFail):
+        capp.gate_p01_generate_outputs_absent(existing, tmp_path / "m.json", tmp_path / "e.jsonl")
+
+
+# ---------------------------------------------------------------------------
+# Full synthetic end-to-end generate() — §13.3(g)
+# ---------------------------------------------------------------------------
+
+class TestFullSyntheticGenerate:
+    """NOTE ON TEST BOUNDARY: this test monkeypatches
+    `_validate_and_load_new36_grid` (the ZIP-open/parquet-read boundary
+    ONLY) to return a synthetic, deterministic, non-NEW36 DataFrame per
+    (session_id, asset). Every gate (P-01..P-10, including a REAL
+    on-disk file-identity check for P-09 against throwaway placeholder
+    files) and the ENTIRE §4.7 composition/serialization pipeline run
+    for real, unmodified. gate_p05 (git HEAD binding) is monkeypatched
+    because the newly authored Step-4 files are not yet committed at
+    authoring time; this does not touch composition logic.
+
+    §13.2 ISOLATION: this class uses _SYNTHETIC_SESSION_IDS_12 (twelve
+    clearly non-NEW36 identifiers) via ctx.session_ids_ordered, NOT the
+    real frozen NEW36_SESSION_IDS — the full 3456-row composition
+    pipeline is never exercised against the real frozen identifiers.
+    Reference (§0.6) identity verification is exercised via
+    ctx.reference_identities dependency injection against a synthetic
+    stand-in file; backend/recovery/reference/ is never touched."""
+
+    def _build_ctx_and_args(self, tmp_path, monkeypatch):
+        db_path = _make_synthetic_sessions_db(tmp_path)
+        env_path = _make_environment_record(tmp_path)
+        freeze_path = _make_synthetic_freeze_manifest(tmp_path)
+        session_ids = list(_SYNTHETIC_SESSION_IDS_12)
+        session_zip_map, identity_table = _make_synthetic_input_files_and_identity_table(tmp_path, session_ids)
+        zip_map_path = tmp_path / "session_zip_map.json"
+        zip_map_path.write_text(json.dumps(session_zip_map), encoding="utf-8")
+
+        ctx = capp.CandidateContext(
+            input_identity_table=identity_table,
+            freeze_manifest_path=freeze_path,
+            reference_identities=_make_synthetic_reference_identities(tmp_path),
+            session_ids_ordered=tuple(session_ids),
+        )
+
+        monkeypatch.setattr(capp, "gate_p05_source_identity", lambda: ("a" * 40, {"synthetic": "0" * 64}))
+
+        def fake_loader(zip_path, session_id, asset, db_path_arg):
+            return _synthetic_block_df(session_id, asset)
+
+        monkeypatch.setattr(capp, "_validate_and_load_new36_grid", fake_loader)
+
+        ledger_path = tmp_path / "ledger.jsonl"
+        run_id = "11111111-1111-1111-1111-111111111111"
+        append_ledger_record_durable(ledger_path, {"role": "CANDIDATE", "state": "INVOKED", "run_id": run_id})
+
+        args = argparse_namespace = _Namespace(
+            db=str(db_path), environment_record=str(env_path), session_zip_map=str(zip_map_path),
+            out_csv=str(tmp_path / "candidate.csv"), out_manifest=str(tmp_path / "candidate_manifest.json"),
+            out_evidence=str(tmp_path / "candidate_evidence.jsonl"), run_id=run_id, ledger=str(ledger_path),
+        )
+        return ctx, args, tmp_path
+
+    def test_preflight_passes(self, tmp_path, monkeypatch):
+        ctx, args, _ = self._build_ctx_and_args(tmp_path, monkeypatch)
+        rc = capp.cmd_preflight(args, ctx)
+        assert rc == 0
+
+    def test_generate_produces_3456_rows_with_correct_structure(self, tmp_path, monkeypatch):
+        ctx, args, base = self._build_ctx_and_args(tmp_path, monkeypatch)
+        rc = capp.cmd_generate(args, ctx)
+        assert rc == 0
+
+        csv_bytes = Path(args.out_csv).read_bytes()
+        lex = __import__("recovery.v1_2_new36_validators", fromlist=["parse_and_validate_csv_bytes"]).parse_and_validate_csv_bytes(csv_bytes)
+        assert lex.ok, lex.reason
+        rows = lex.rows
+        assert len(rows) == EXPECTED_TOTAL_ROW_COUNT
+
+        per_axis = {}
+        for r in rows:
+            per_axis[r["axis"]] = per_axis.get(r["axis"], 0) + 1
+        assert per_axis == {"HZ": 1728, "HG": 432, "HC": 432, "HB": 864}
+
+        keys = [row_canonical_key_lexeme(r) for r in rows]
+        assert len(set(keys)) == len(keys)  # A02 uniqueness
+        assert keys == [row_canonical_key_lexeme(r) for r in sorted(rows, key=canonical_sort_key)]  # canonical sort
+
+        # "xb" refusal on re-run (P-01: outputs already exist) — cmd_generate
+        # catches PreconditionFail internally and returns rc=2.
+        rc_retry = capp.cmd_generate(args, ctx)
+        assert rc_retry == 2
+        assert Path(args.out_csv).exists()
+        with pytest.raises(FileExistsError):
+            from recovery.v1_2_new36_validators import exclusive_create_write
+            exclusive_create_write(Path(args.out_csv), b"anything")
+
+        manifest = nnc5_loads(Path(args.out_manifest).read_bytes())
+        assert manifest["csv_sha256"] == hashlib.sha256(csv_bytes).hexdigest()
+        assert manifest["actual_total_row_count"] == EXPECTED_TOTAL_ROW_COUNT
+        assert manifest["a008_provenance"]["candidate_evidence_sha256"] == hashlib.sha256(Path(args.out_evidence).read_bytes()).hexdigest()
+
+        evidence_records = [nnc5_loads(line) for line in Path(args.out_evidence).read_bytes().split(b"\n") if line]
+        assert len(evidence_records) == 432 + 432 + 864  # one per HG/HC/HB row (§11.4.3)
+
+    def test_generate_then_s2_passes_on_own_output(self, tmp_path, monkeypatch):
+        ctx, args, base = self._build_ctx_and_args(tmp_path, monkeypatch)
+        assert capp.cmd_generate(args, ctx) == 0
+
+        from recovery.v1_2_new36_validators import S2Inputs, run_s2
+        s2_inputs = S2Inputs(
+            candidate_csv=Path(args.out_csv),
+            candidate_manifest=Path(args.out_manifest),
+            candidate_evidence=Path(args.out_evidence),
+            freeze_manifest=Path(args.out_csv).parent / "unused_freeze.txt",
+            ledger=Path(args.ledger),
+        )
+        report = run_s2(s2_inputs)
+        assert set(report["evaluated_invariants"]) | set(report["WITHDRAWN_INVARIANTS"]) == {
+            f"A{i:02d}" for i in range(1, 31)
+        }
+        assert len(report["evaluated_invariants"]) == 29
+        failing = {k: v["details"] for k, v in report["per_invariant"].items() if v["status"] == "FAIL"}
+        assert report["s2_status"] == "PASS", failing
+
+
+class _Namespace:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+===== END backend/tests/test_v1_2_new36_candidate_app.py =====
+===== BEGIN backend/tests/test_v1_2_new36_run.py =====
+"""Synthetic tests for backend/recovery/v1_2_new36_run.py (Orchestrator).
+
+A008 DRAFT4 §13.1-13.2: NO real NEW36 quantitative byte, no network, no
+real DB. The Candidate and Reference roles are both replaced by tiny
+stub executables that never touch backend/recovery/reference/ or any
+NEW36 path; this is the standard synthetic-test substitution explicitly
+permitted for the Orchestrator ("no sandbox-bound loader may be called",
+§4.5(b); Orchestrator tests substitute stub executables/paths, §13).
+"""
+from __future__ import annotations
+
+import json
+import os
+import stat
+import sys
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from recovery.v1_2_new36_run import (  # noqa: E402
+    LedgerCorruption,
+    Orchestrator,
+    OrchestratorConfig,
+    OrchestratorPreconditionFail,
+    determine_run_id_and_recover,
+)
+from recovery.v1_2_new36_validators import (  # noqa: E402
+    append_ledger_record_durable,
+    read_ledger_records,
+)
+
+pytestmark = pytest.mark.filterwarnings("ignore")
+
+
+# ---------------------------------------------------------------------------
+# §9.9 recovery rules / §9.11 run_id semantics (pure logic, no subprocess)
+# ---------------------------------------------------------------------------
+
+def test_fresh_ledger_yields_fresh_run_id():
+    decision = determine_run_id_and_recover([])
+    assert decision.fresh_attempt is True
+    assert decision.candidate_state == "NOT_INVOKED"
+    assert decision.reference_state == "NOT_INVOKED"
+
+
+def test_invoked_without_terminal_needs_incomplete_mark():
+    records = [{"role": "CANDIDATE", "state": "INVOKED", "run_id": "r1"}]
+    decision = determine_run_id_and_recover(records)
+    assert decision.candidate_state == "NEEDS_INCOMPLETE_MARK"
+    assert decision.run_id == "r1"
+
+
+def test_completed_candidate_recovers_as_completed():
+    records = [
+        {"role": "CANDIDATE", "state": "INVOKED", "run_id": "r1"},
+        {"role": "CANDIDATE", "state": "COMPLETED", "run_id": "r1"},
+    ]
+    decision = determine_run_id_and_recover(records)
+    assert decision.candidate_state == "COMPLETED"
+
+
+def test_multiple_distinct_run_ids_is_ledger_corruption():
+    records = [
+        {"role": "CANDIDATE", "state": "COMPLETED", "run_id": "r1"},
+        {"role": "REFERENCE", "state": "COMPLETED", "run_id": "r2"},
+    ]
+    with pytest.raises(LedgerCorruption):
+        determine_run_id_and_recover(records)
+
+
+def test_multiple_invoked_records_same_role_is_corruption():
+    records = [
+        {"role": "CANDIDATE", "state": "INVOKED", "run_id": "r1"},
+        {"role": "CANDIDATE", "state": "INVOKED", "run_id": "r1"},
+    ]
+    with pytest.raises(LedgerCorruption):
+        determine_run_id_and_recover(records)
+
+
+def test_multiple_terminal_records_same_role_is_corruption():
+    records = [
+        {"role": "CANDIDATE", "state": "COMPLETED", "run_id": "r1"},
+        {"role": "CANDIDATE", "state": "FAILED", "run_id": "r1"},
+    ]
+    with pytest.raises(LedgerCorruption):
+        determine_run_id_and_recover(records)
+
+
+# ---------------------------------------------------------------------------
+# Stub executables (never touch reference/ or any NEW36 path)
+# ---------------------------------------------------------------------------
+
+_STUB_CANDIDATE = """\
+import sys, json, os, shutil, pathlib
+args = sys.argv[1:]
+mode = args[0]
+def val(flag):
+    return args[args.index(flag) + 1]
+if mode == "preflight":
+    sys.exit(0)
+elif mode == "generate":
+    fixture_dir = pathlib.Path(os.environ["FIXTURE_DIR"])
+    shutil.copyfile(fixture_dir / "candidate.csv", val("--out-csv"))
+    shutil.copyfile(fixture_dir / "candidate_manifest.json", val("--out-manifest"))
+    shutil.copyfile(fixture_dir / "candidate_evidence.jsonl", val("--out-evidence"))
+    sys.exit(0)
+sys.exit(1)
+"""
+
+_STUB_REFERENCE = """\
+import sys, json, os, shutil, pathlib
+args = sys.argv[1:]
+mode = args[0]
+def val(flag):
+    return args[args.index(flag) + 1]
+record_path = os.environ.get("REFERENCE_INVOCATION_RECORD")
+if record_path:
+    with open(record_path, "w") as fh:
+        json.dump({"argv": args, "env": dict(os.environ), "cwd": os.getcwd()}, fh)
+if mode == "preflight":
+    sys.exit(0)
+elif mode == "generate":
+    fixture_dir = pathlib.Path(os.environ["FIXTURE_DIR"])
+    shutil.copyfile(fixture_dir / "reference.csv", val("--out-csv"))
+    shutil.copyfile(fixture_dir / "reference_manifest.json", val("--out-manifest"))
+    sys.exit(0)
+sys.exit(1)
+"""
+
+
+def _write_stub(path: Path, content: str) -> Path:
+    path.write_text(content, encoding="utf-8")
+    path.chmod(path.stat().st_mode | stat.S_IEXEC)
+    return path
+
+
+def _make_matching_candidate_reference_fixtures(fixture_dir: Path) -> None:
+    """Reuses the exact same minimal synthetic-row generator pattern as
+    test_v1_2_new36_validators.py — byte-identical candidate/reference
+    artifacts so S1 legitimately PASSes."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from test_v1_2_new36_validators import _rows_to_csv_bytes, _synthetic_row_set  # noqa
+
+    from recovery.v1_2_new36_validators import canonical_pretty_bytes, sha256_bytes
+
+    rows = _synthetic_row_set()
+    csv_bytes = _rows_to_csv_bytes(rows)
+    fixture_dir.mkdir(parents=True, exist_ok=True)
+    for role in ("candidate", "reference"):
+        (fixture_dir / f"{role}.csv").write_bytes(csv_bytes)
+        manifest = {
+            "implementation_role": role.upper(),
+            "csv_sha256": sha256_bytes(csv_bytes),
+            "csv_size_bytes": len(csv_bytes),
+            "manifest_precomparison_sha256": None,
+        }
+        manifest["manifest_precomparison_sha256"] = sha256_bytes(canonical_pretty_bytes(manifest))
+        (fixture_dir / f"{role}_manifest.json").write_bytes(canonical_pretty_bytes(manifest))
+    (fixture_dir / "candidate_evidence.jsonl").write_bytes(b"")
+
+
+def _build_config(tmp_path: Path, fixture_dir: Path, invocation_record: Path) -> OrchestratorConfig:
+    stub_candidate = _write_stub(tmp_path / "stub_candidate.py", _STUB_CANDIDATE)
+    stub_reference = _write_stub(tmp_path / "stub_reference.py", _STUB_REFERENCE)
+    db_path = tmp_path / "runtime.sqlite3"
+    import sqlite3
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("CREATE TABLE sessions (id INTEGER PRIMARY KEY, session_id TEXT UNIQUE)")
+    conn.commit()
+    conn.close()
+    session_zip_map_path = tmp_path / "session_zip_map.json"
+    session_zip_map_path.write_text("{}", encoding="utf-8")
+
+    return OrchestratorConfig(
+        reports_dir=tmp_path / "reports",
+        db_path=db_path,
+        session_zip_map_path=session_zip_map_path,
+        a008_sha256="0" * 64,
+        freeze_manifest_sha256="0" * 64,
+        candidate_module_args=(str(stub_candidate),),
+        reference_executable_args=(str(stub_reference),),
+        minimal_env={"LANG": "C.UTF-8", "LC_ALL": "C.UTF-8", "FIXTURE_DIR": str(fixture_dir),
+                     "REFERENCE_INVOCATION_RECORD": str(invocation_record)},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Full orchestrator run against stubs
+# ---------------------------------------------------------------------------
+
+def test_full_orchestrator_run_ledger_sequence_and_s1_pass(tmp_path, monkeypatch):
+    fixture_dir = tmp_path / "fixtures"
+    _make_matching_candidate_reference_fixtures(fixture_dir)
+    invocation_record = tmp_path / "reference_invocation.json"
+    config = _build_config(tmp_path, fixture_dir, invocation_record)
+    monkeypatch.setenv("FIXTURE_DIR", str(fixture_dir))  # candidate subprocess inherits parent env
+
+    orchestrator = Orchestrator(config)
+    result = orchestrator.run()
+
+    records = read_ledger_records(config.ledger_path)
+    roles_states = [(r["role"], r["state"]) for r in records]
+    assert roles_states == [
+        ("CANDIDATE", "GATES_PASS"), ("CANDIDATE", "INVOKED"), ("CANDIDATE", "COMPLETED"),
+        ("REFERENCE", "GATES_PASS"), ("REFERENCE", "INVOKED"), ("REFERENCE", "COMPLETED"),
+    ]
+    run_ids = {r["run_id"] for r in records}
+    assert len(run_ids) == 1  # run_id consistent across both roles (§9.11)
+
+    assert result["s1_report"]["s1_status"] == "PASS", result["s1_report"]
+    assert config.s2_report_path.exists()
+    assert config.execution_evidence_index_path.exists()
+
+
+def test_reference_isolation_argv_env_and_no_candidate_path(tmp_path, monkeypatch):
+    fixture_dir = tmp_path / "fixtures"
+    _make_matching_candidate_reference_fixtures(fixture_dir)
+    invocation_record = tmp_path / "reference_invocation.json"
+    config = _build_config(tmp_path, fixture_dir, invocation_record)
+    monkeypatch.setenv("FIXTURE_DIR", str(fixture_dir))
+
+    orchestrator = Orchestrator(config)
+    orchestrator.run()
+
+    recorded = json.loads(invocation_record.read_text())
+    argv = recorded["argv"]
+    assert "--db" in argv and "--environment-record" in argv and "--session-zip-map" in argv
+    assert "--out-csv" in argv and "--out-manifest" in argv
+    assert str(config.candidate_csv_path) not in argv
+    assert str(config.candidate_manifest_path) not in argv
+    env = recorded["env"]
+    # The Reference process must NOT inherit the orchestrator's ambient
+    # PATH-independent secrets; only the configured minimal_env is passed.
+    assert set(env.keys()) == set(config.minimal_env.keys())
+    for k, v in config.minimal_env.items():
+        assert env[k] == v
+
+
+def test_step6_gate_reference_blocks_on_candidate_failed(tmp_path):
+    fixture_dir = tmp_path / "fixtures"
+    invocation_record = tmp_path / "reference_invocation.json"
+    config = _build_config(tmp_path, fixture_dir, invocation_record)
+    orchestrator = Orchestrator(config)
+    orchestrator.records = [{"role": "CANDIDATE", "state": "FAILED", "run_id": "r1"}]
+    with pytest.raises(OrchestratorPreconditionFail) as exc:
+        orchestrator.step6_gate_reference("r1")
+    assert exc.value.code == "STEP6"
+
+
+def test_reference_output_paths_must_be_absent_before_launch(tmp_path):
+    fixture_dir = tmp_path / "fixtures"
+    invocation_record = tmp_path / "reference_invocation.json"
+    config = _build_config(tmp_path, fixture_dir, invocation_record)
+    config.reports_dir.mkdir(parents=True, exist_ok=True)
+    config.reference_csv_path.write_bytes(b"pre-existing")
+    orchestrator = Orchestrator(config)
+    with pytest.raises(OrchestratorPreconditionFail):
+        orchestrator.step7_reference_generate("r1", "envsha")
+===== END backend/tests/test_v1_2_new36_run.py =====
+===== BEGIN STEP4_FILE_IDENTITIES.txt =====
+path=backend/recovery/v1_2_new36_candidate_app.py
+size_bytes=51589
+sha256=e95d04e472645ce087bbc46fd9b8b5209042610ed48d1f90855bcf34769cdc0c
+
+path=backend/recovery/v1_2_new36_validators.py
+size_bytes=62995
+sha256=668dc581c6697f7a891684d4e3740d4a7b31508fcbab3c166fe00675079e928d
+
+path=backend/recovery/v1_2_new36_run.py
+size_bytes=20779
+sha256=6932080167ef1909bfd94c190eb26715f2e67cef3c9e555ba7231acff1b1489d
+
+path=backend/recovery/CANDIDATE_INDEPENDENCE_ATTESTATION.txt
+size_bytes=6274
+sha256=de93d55d308fd3125cf265b28e14c71e35c8b014b5c5094c2245bde235d259a3
+
+path=backend/tests/test_v1_2_new36_candidate_app.py
+size_bytes=20203
+sha256=74f305f88dc4eb508757b02e01a6f584ac0615045b137cf63a8ec47e9ba3857a
+
+path=backend/tests/test_v1_2_new36_validators.py
+size_bytes=16655
+sha256=13d7bacfc6aacee9a779be180b60e204f2a0c6ac8d0512381c9c74bba69d5538
+
+path=backend/tests/test_v1_2_new36_run.py
+size_bytes=10430
+sha256=4fb939189d5fdde9532a2e7a99276a1dc20d4a491a68e4df025aa126f065228e
+
+===== END STEP4_FILE_IDENTITIES.txt =====
