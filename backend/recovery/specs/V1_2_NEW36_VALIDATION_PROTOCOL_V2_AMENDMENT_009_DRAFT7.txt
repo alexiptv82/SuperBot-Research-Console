@@ -1,0 +1,1087 @@
+SUPERBOT V1.2 — NEW36 VALIDATION PROTOCOL V2 — AMENDMENT 009
+
+DOCUMENT:
+V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_009_DRAFT7.txt
+
+STATUS: DRAFT7 — NOT FROZEN
+
+CLASS: EXECUTION-CLOSURE / EVIDENCE-OBSERVABILITY AMENDMENT
+
+PURPOSE:
+Resolve only the implementation blocker discovered during A008 Section 16
+Step 4 clean-room remediation: A008 §4.1 forbids the Candidate application
+from defining its own quantitative formulas, while A008 §11.4 requires
+supplemental-evidence operands that the exhaustive A008 §4.7.2 surface does
+not expose directly for all required evidence records.
+
+A009 preserves all canonical Candidate semantics and all Reference semantics.
+It does not authorize NEW36 quantitative access, Step 5, the implementation
+freeze manifest, Candidate execution, Reference execution or any one-shot
+invocation.
+
+A009_NEW_NORMATIVE_CHOICE_01=
+MINIMAL_EVIDENCE_OBSERVABILITY_CLOSURE_USING_EXISTING_HELPERS_FIRST
+
+
+======================================================================
+0. DOCUMENT CONTROL, SCOPE, PRECEDENCE, AUTHORING BASIS
+======================================================================
+
+0.1 This DRAFT7 is not frozen.
+
+Its transport size/SHA, if supplied externally for audit, are not protocol
+freeze identities. No A009 frozen size, SHA256 or freeze commit exists until
+a separate exact-byte freeze after independent textual audit PASS.
+
+0.2 A008 remains byte-for-byte unchanged.
+
+A009 supplements A008 and supersedes A008 only where this document explicitly
+says so. All other clauses of V2, A001-A008 and the Candidate specification
+remain in force with their existing precedence.
+
+0.3 The scope of A009 is limited to:
+  (a) closing the A008 §4.1 / §11.4 evidence-observability conflict;
+  (b) correcting the C0 threshold_domain_n parenthetical in A008 §11.4.4;
+  (c) widening existing authorized helpers only for supplemental evidence;
+  (d) integrating frozen A009 identity into clean-room authoring, P-02/P-03,
+      the implementation freeze manifest, and Candidate provenance;
+  (e) extending the A008 §15.3 fail-closed stop rule to required §11.4
+      evidence operands.
+
+0.4 No canonical scientific semantics are changed.
+
+A009_NEW_THRESHOLD_RULES=NO
+A009_NEW_DOMAIN_SEMANTICS=NO
+A009_NEW_EVENT_SELECTION_RULES=NO
+A009_NEW_OVERLAP_RULES=NO
+A009_NEW_DIRECTION_RULES=NO
+A009_NEW_METRIC_RULES=NO
+A009_NEW_FINGERPRINT_RULES=NO
+A009_CANONICAL_SCHEMA_CHANGED=NO
+A009_CANDIDATE_SELECTION_CHANGED=NO
+A009_REFERENCE_CHANGED=NO
+A009_S1_SEMANTICS_CHANGED=NO
+A009_S2_INVARIANT_SET_CHANGED=NO
+A009_NEW36_INVENTORY_CHANGED=NO
+A009_TOLERANCE_CHANGED=NO
+A009_ONE_SHOT_BOUNDARY_CHANGED=NO
+
+0.5 Candidate selection remains:
+  HZ=TZ
+  HG=G1
+  HC=C1
+  HB=B0
+
+Diagnostic controls remain:
+  T0
+  G0
+  C0
+  B1
+
+0.6 A009 freeze is only a protocol-specification freeze. It does not change
+any execution-authorization flag. Before and after A009 exact-byte freeze,
+until the later A008 sequence itself authorizes execution:
+
+  NEW36_QUANTITATIVE_ACCESS=FORBIDDEN
+  CANDIDATE_EXECUTION_COUNT=0
+  REFERENCE_EXECUTION_COUNT=0
+  ONE_SHOT_CONSUMED=NO
+
+0.7 A009 authoring/remediation evidence basis is limited to:
+  - the A008 clean-room bundle containing V2, A001-A008, Candidate spec,
+    authorized existing implementation modules and permitted tests; and
+  - the independent textual audit findings of A009 DRAFT2, A009 DRAFT3,
+    A009 DRAFT4 and A009 DRAFT6, used only as non-quantitative remediation
+    findings.
+
+No Reference source, Reference test source, Reference output, NEW36
+quantitative content, OLD36 quantitative content or golden artifact is an
+A009 scientific authoring input.
+
+
+======================================================================
+1. BLOCKER STATEMENT
+======================================================================
+
+1.1 A008 §11.4.4 requires, for each HG/HC/HB evidence record:
+  threshold_domain_n
+  pre_overlap_positions
+  accepted_positions
+  accepted_signed_return_signs
+plus parent_positions where applicable.
+
+1.2 Under the exhaustive A008 §4.7.2 surface, G0/C0 canonical row generators
+expose canonical row values but do not return their pre-overlap/accepted
+position arrays.
+
+The existing:
+  v1_2_stage3._hb_extract_pre_overlap
+already returns:
+  positions, directions, returns, threshold
+for the frozen baseline family semantics:
+  depthL1_extOFI
+  gap_depth_extOFI
+and accepts the row quantile q.
+
+A008 §4.7.2 authorizes that helper for HB-family pre-overlap sets. A009 widens
+only its permitted evidence-only use for G0/C0. The helper itself is not
+modified.
+
+1.3 G1 and C1 evidence arrays are constructible through already-authorized
+Candidate helpers, but A009 states their evidence paths explicitly to remove
+implementation discretion.
+
+1.4 The one threshold-domain count not already sourceable from HZ canonical
+counts is the frozen G0 derived-domain count. A009 codifies that count using
+the equivalent RAW finite-component domain, not forbidden z-column reads in
+the Candidate application.
+
+1.5 This is an observability closure, not a new scientific primitive.
+
+
+======================================================================
+2. EXPLICIT CORRECTION TO A008 §11.4.4 C0 PARENTHETICAL
+======================================================================
+
+2.1 For C0, A008 §11.4.4 text:
+  "C0: its derived domain"
+is superseded by the following exact definition:
+
+  C0 threshold_domain_n =
+  count(
+      quality_admissible
+      AND isfinite(bitget_gap_to_fair_bps)
+  )
+
+This is the A001 A4 gap_threshold_domain from which C0 calculated_threshold
+is computed.
+
+2.2 C0 threshold_domain_n is NOT the confirmation-filtered event domain and
+does NOT include finite(D_ext), alignment, D_ext!=0, gap!=0, forward-return
+finiteness, or any event predicate.
+
+2.3 No other A008 §11.4.4 member definition is changed by Section 2.
+
+
+======================================================================
+3. MINIMAL EVIDENCE-ONLY AUTHORIZATION
+======================================================================
+
+3.1 General rule and float comparison rule.
+
+The Candidate application remains a composition/orchestration layer for all
+canonical CSV fields.
+
+A009 authorizes only the evidence-only operations in Sections 3.2-3.9 and the generation-time consistency computations of Section 5, including evidence_hit_rate of §5.5.
+
+No evidence-only value may be the authoritative source of any canonical
+25-field CSV value.
+
+EVIDENCE_CAN_FEED_CANONICAL_FIELDS=NO
+CANONICAL_FIELDS_CAN_BIND_EVIDENCE=YES
+
+Every A009-introduced comparison of nullable float values, including helper
+threshold versus canonical calculated_threshold and evidence-derived hit-rate
+versus canonical hit_rate, uses the A008 §10.5 float rule:
+  - both NULL => equal;
+  - exactly one NULL => mismatch;
+  - otherwise both values MUST be finite and abs(a-b) <= 1e-12;
+  - NaN or infinity => mismatch/STRUCTURAL failure in the generation-time
+    binding context.
+No adaptive/relative tolerance and no rounding are permitted.
+
+3.2 Common forward-return operand.
+
+For every A009 evidence construction requiring forward returns:
+
+  k = horizon_ms // GRID_MS
+  fwd = engine._build_forward_return_array(ctx.mid, k)
+
+using the already-authorized frozen implementation. No alternate forward-
+return construction is permitted.
+
+3.3 Existing-helper widening for G0 evidence positions.
+
+For a canonical HG/G0 row, the Candidate application MAY call:
+
+  v1_2_stage3._hb_extract_pre_overlap(
+      "depthL1_extOFI",
+      ctx,
+      horizon_ms,
+      q,
+      fwd
+  )
+
+solely to obtain evidence operands:
+  pre_overlap_positions
+  directions
+  forward returns
+  helper threshold
+
+The helper-returned threshold is evidence-side only and MUST equal the
+canonical G0 calculated_threshold under the A008 §10.5 float rule of 3.1.
+A mismatch is STRUCTURAL failure.
+
+This widening does not authorize _hb_extract_pre_overlap as a canonical G0
+row generator.
+
+3.4 Existing-helper widening for C0 evidence positions.
+
+For a canonical HC/C0 row, the Candidate application MAY call:
+
+  v1_2_stage3._hb_extract_pre_overlap(
+      "gap_depth_extOFI",
+      ctx,
+      horizon_ms,
+      q,
+      fwd
+  )
+
+solely to obtain evidence operands:
+  pre_overlap_positions
+  directions
+  forward returns
+  helper threshold
+
+The helper-returned threshold is evidence-side only and MUST equal the
+canonical C0 calculated_threshold under the A008 §10.5 float rule of 3.1.
+A mismatch is STRUCTURAL failure.
+
+This widening does not authorize _hb_extract_pre_overlap as a canonical C0
+row generator.
+
+3.5 Accepted positions for G0/C0.
+
+For evidence operands from 3.3/3.4, accepted G0/C0 positions MUST be obtained
+only by applying the already-authorized:
+
+  v1_2_candidate.b0_greedy_filter
+
+to the helper-returned pre_overlap_positions with the canonical row's
+spacing_steps.
+
+No private G0/C0 overlap formula is authorized.
+
+3.6 Sole direct evidence-only G0 domain-count codification.
+
+The Candidate application MUST NOT read, reference or encode the forbidden
+z confirmation-column names for this count. A09 and A12 remain unchanged.
+
+A009 authorizes exactly one direct quantitative count extraction not already
+available from canonical HZ counts:
+
+  G0_DERIVED_DOMAIN_N =
+  count(
+      ctx.quality
+      AND isfinite(ctx.columns["bitget_depth_imbalance_l1"])
+      AND isfinite(ctx.columns["external_ofi_consensus_l1"])
+  )
+
+This is an EXPLICIT_CODIFICATION_OF_EXISTING_FROZEN_SEMANTICS.
+
+Proof basis: the frozen engine._rank_signed_uniform assigns a finite
+per-component normalized value exactly to quality-admissible rows whose RAW
+component is finite, and NaN otherwise. Therefore the intersection of the two
+RAW finite-component domains above is exactly the frozen G0 derived domain
+used internally by Stage3.
+
+The Candidate application implementation of this count MUST use only the RAW
+column names above and MUST contain no read/reference to the forbidden z
+confirmation columns. Static A09/A12 predicates remain fully active and are
+not narrowed or weakened.
+
+G0_DERIVED_DOMAIN_N is evidence-only. It MAY be used only:
+  (a) as threshold_domain_n under Sections 3.7 and 4;
+  (b) by A008 §11.4 / S2 consistency evaluation; and
+  (c) by the generation-time fail-closed consistency checks in Section 5,
+      including §5.4.
+
+It MUST NOT compute, select or replace a canonical threshold/event/metric.
+No other direct threshold-domain count formula is authorized by A009.
+
+3.7 threshold_domain_n sourcing table.
+
+Evidence threshold_domain_n MUST be sourced exactly as follows:
+
+HG / G0 / depthL1_extOFI:
+  G0_DERIVED_DOMAIN_N from 3.6.
+
+HG / G1 / depthL1_extOFI:
+  HZ depth_imbalance_l1 TZ row
+  threshold_domain_nonzero_n
+  for the same session_id, asset and quantile.
+
+HC / C0 / gap_depth_extOFI:
+  HZ fair_gap_reversion T0 row
+  threshold_domain_finite_n
+  for the same session_id, asset and quantile.
+
+HC / C1 / gap_depth_extOFI:
+  HZ fair_gap_reversion T0 row
+  threshold_domain_finite_n
+  for the same session_id, asset and quantile.
+
+HB / bitget_ofi:
+  HZ bitget_ofi T0 row
+  threshold_domain_finite_n
+  at quantile 0.90.
+
+HB / depth_imbalance_l1:
+  HZ depth_imbalance_l1 T0 row
+  threshold_domain_finite_n
+  at quantile 0.90.
+
+HB / depthL1_extOFI:
+  G0_DERIVED_DOMAIN_N from 3.6.
+  The count is independent of horizon and q; the q=0.90 HB cell binds to the
+  same frozen derived domain.
+
+HB / gap_depthL1:
+  HZ fair_gap_reversion T0 row
+  threshold_domain_finite_n
+  at quantile 0.90.
+
+HB / gap_localOFI:
+  HZ fair_gap_reversion T0 row
+  threshold_domain_finite_n
+  at quantile 0.90.
+
+HB / gap_depth_extOFI:
+  HZ fair_gap_reversion T0 row
+  threshold_domain_finite_n
+  at quantile 0.90.
+
+No confirmation predicate may be added to any threshold_domain_n.
+
+3.8 Explicit G1/C1 evidence path.
+
+For G1 evidence, the Candidate application MUST use only the already-
+authorized frozen Candidate operations:
+  g1_pre_overlap_mask
+  g1_parent_gate_mask
+  g1_direction
+  b0_greedy_filter
+with the canonical G1 calculated_threshold, canonical spacing_steps and the
+common fwd from 3.2. parent_positions are exactly the positions selected by
+g1_parent_gate_mask.
+
+For C1 evidence, the Candidate application MUST use only:
+  c1_pre_overlap_mask
+  c1_gap_parent_mask
+  c1_direction
+  b0_greedy_filter
+with the canonical C1 calculated_threshold, canonical spacing_steps and the
+common fwd from 3.2. parent_positions are exactly the positions selected by
+c1_gap_parent_mask.
+
+No z-score confirmation is authorized for G1 or C1. A09 and A12 remain
+unchanged.
+
+3.9 accepted_signed_return_signs.
+
+For every HG/HC/HB evidence row, including G0/G1/C0/C1/B0/B1, A009
+explicitly authorizes the A008 §11.4.4 evidence transformation:
+
+  accepted_signed_return_signs[i] =
+      int(sign(direction_i * forward_return_bps_i))
+
+with:
+  negative -> -1
+  exact zero -> 0
+  positive -> +1
+
+This is an evidence serialization operand only, not a new metric.
+
+The direction, return and accepted-selector operands MUST come from the
+already-authorized path for that variant or from the evidence-only
+existing-helper widening in 3.3/3.4.
+
+len(accepted_signed_return_signs)
+MUST equal
+len(accepted_positions).
+
+
+======================================================================
+4. HB RULE
+======================================================================
+
+4.1 HB pre_overlap_positions, directions, returns and calculated_threshold
+continue to originate from the already-authorized:
+
+  v1_2_stage3._hb_extract_pre_overlap
+
+using the common fwd from 3.2. No duplicate HB pre-overlap formula is
+authorized.
+
+4.2 HB accepted positions continue to use the frozen B0/B1 authorized
+filters exactly as applicable.
+
+4.3 A009 authorizes no HB private domain formula. HB threshold_domain_n must
+be sourced only through the table in 3.7.
+
+
+======================================================================
+5. MANDATORY EVIDENCE/CANONICAL CROSS-BINDING
+======================================================================
+
+5.1 Every evidence row MUST bind to exactly one canonical CSV row with the
+same canonical key.
+
+5.2 Before evidence serialization, for every non-B1 record require:
+
+  len(pre_overlap_positions) == canonical pre_overlap_n
+
+For B1:
+  pre_overlap_positions MUST be null;
+  canonical B1 pre_overlap_n MUST equal len(pre_overlap_positions) of the
+  paired B0 record having the same
+  (session_id, asset, feature_family, quantile, horizon_ms).
+
+For every variant require:
+
+  len(accepted_positions) == canonical accepted_n
+
+and:
+
+  fingerprint_positions(accepted_positions)
+    ["accepted_positions_sha256"]
+  == canonical accepted_positions_sha256
+
+using the frozen fingerprint encoding.
+
+5.3 For G0 and C0 additionally require:
+  helper-returned threshold == canonical calculated_threshold
+under the A008 §10.5 float rule defined in 3.1.
+
+5.4 threshold_domain_n / NULL consistency.
+
+For every non-B1 record:
+  if canonical calculated_threshold is NULL:
+    threshold_domain_n < 2
+    pre_overlap_positions == []
+    accepted_positions == []
+  if canonical calculated_threshold is non-NULL:
+    threshold_domain_n >= 2.
+
+For B1:
+  pre_overlap_positions remains null regardless of threshold state.
+  If canonical B1 calculated_threshold is NULL:
+    threshold_domain_n < 2;
+    the paired B0 pre_overlap_positions MUST equal [];
+    canonical B1 pre_overlap_n MUST equal 0;
+    accepted_positions MUST equal [].
+  If canonical B1 calculated_threshold is non-NULL:
+    threshold_domain_n >= 2.
+
+5.5 accepted_signed_return_signs consistency.
+
+If canonical accepted_n == 0:
+  accepted_signed_return_signs == [].
+
+If canonical accepted_n > 0:
+  evidence_hit_rate = count(sign == +1) / canonical accepted_n
+and evidence_hit_rate MUST equal canonical hit_rate under the A008 §10.5
+float rule defined in 3.1.
+
+5.6 Any mismatch in Sections 5.2-5.5 is STRUCTURAL failure.
+
+No mismatching evidence artifact may be written.
+
+
+======================================================================
+6. A008 §11.4 OTHERWISE UNCHANGED
+======================================================================
+
+6.1 Evidence count remains exactly 1728.
+
+6.2 Exact A008 §11.4.4 member set, JSON types, canonical order and JSONL
+serialization remain unchanged, except the C0 threshold_domain_n parenthetical
+is corrected by Section 2.
+
+6.3 No HZ evidence records are added.
+
+6.4 A20 remains withdrawn:
+  WITHDRAWN_INVARIANTS=["A20"]
+
+6.5 Exactly the 29 active S2 invariants A01-A19,A21-A30 remain active. No S2
+invariant is removed, weakened, converted to NOT_APPLICABLE or silently
+skipped. In particular A09 and A12 remain unchanged and continue to prohibit
+forbidden z confirmation-column reads in the Candidate application.
+
+6.6 Candidate evidence remains Candidate-only and remains ignored by S1
+except for ordinary sealed-artifact/ledger preconditions already required by
+A008.
+
+
+======================================================================
+7. EXTENSION OF A008 §15.3 FAIL-CLOSED STOP RULE
+======================================================================
+
+7.1 A008 §15.3 is extended as follows:
+
+If implementing any required A008 §11.4 evidence member reveals that the
+member cannot be produced through:
+  (a) the A008-authorized surface; or
+  (b) the exact A009 evidence-only authorizations,
+implementation STOPS:
+
+  A008_IMPLEMENTATION_STATUS=BLOCKED_PRIMITIVE_CHANGE_REQUIRED
+
+No placeholder, approximation, convenience interpretation or private
+quantitative primitive may be substituted.
+
+7.2 The original A008 §15.3 rule for §4.7.3 canonical rows remains unchanged.
+
+
+======================================================================
+8. CLEAN-ROOM AUTHORING INPUT AND ATTESTATION
+======================================================================
+
+8.1 After exact-byte A009 freeze, A008 §5.2 is superseded only to add the
+externally recorded frozen A008 identity quadruple and the frozen A009 text
+and its exact external identity to the exhaustive permitted authoring inputs.
+
+The permitted set becomes:
+  the original A008 §5.2 permitted set
+  PLUS the externally recorded frozen A008 identity quadruple
+  PLUS frozen A009 text/identity.
+
+The externally recorded frozen A008 identity quadruple consists of exactly:
+  A008_FROZEN_PATH
+  A008_FROZEN_SIZE_BYTES
+  A008_FROZEN_SHA256
+  A008_FREEZE_COMMIT
+with values obtained only from the record of the completed exact-byte A008
+freeze procedure. Permitting the quadruple as an authoring input does not
+itself establish that identity. No A008 identity value may be guessed,
+reconstructed, computed or inferred from any copy of the A008 DRAFT4 text,
+learned from the later implementation freeze manifest, learned from
+Candidate or Reference output, or derived from NEW36, OLD36 or golden
+content. If the real frozen A008 quadruple is unavailable when Step-4
+authoring is to resume, no substitute value may be invented or used.
+
+No other source becomes permitted.
+
+8.2 The same clean-room Step-4 authoring session may resume only after
+receiving the following, and nothing else, in addition to its prior
+authorized bundle:
+  (a) the externally recorded frozen A008 identity quadruple of 8.1; and
+  (b) the frozen A009 text/identity.
+
+8.3 A008 §5.3 attestation requirements remain and are extended with:
+
+  A009_READ=YES
+  A009_EVIDENCE_ONLY_AUTHORIZATION_USED=YES|NO
+  A009_EVIDENCE_TO_CANONICAL_DATAFLOW=NONE
+  A009_PROTECTED_SCIENTIFIC_MODULES_MODIFIED=NO
+  A009_A09_A12_UNCHANGED=YES
+
+If the 3.3/3.4 widening is used, the attestation MUST state that
+v1_2_stage3._hb_extract_pre_overlap is used under A009 evidence-only
+authorization for G0/C0 evidence and not as a canonical row generator.
+
+If 3.6 is implemented, the attestation MUST state that G0_DERIVED_DOMAIN_N
+uses only the RAW finite-component columns specified in 3.6 and that no
+forbidden z confirmation-column read/reference was introduced into the app.
+
+8.4 Exact imports must still be disclosed truthfully. A009 does not relax
+the prohibition on Reference source access.
+
+
+======================================================================
+9. A009 EXTERNAL FREEZE IDENTITY
+======================================================================
+
+9.1 Before Step-4 remediation resumes, A009 must pass independent textual
+audit and then be frozen as exact bytes.
+
+9.2 The frozen file retains its DRAFT7 filename/header under the same external
+identity principle used by A008 §2.4:
+
+  backend/recovery/specs/
+  V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_009_DRAFT7.txt
+
+The externally recorded frozen identity consists of exactly:
+  A009_FROZEN_PATH
+  A009_FROZEN_SIZE_BYTES
+  A009_FROZEN_SHA256
+  A009_FREEZE_COMMIT
+
+9.3 Exact verification of a protocol freeze identity means all of:
+  (a) FREEZE_COMMIT is lowercase 40-hex and resolves to a Git commit object;
+  (b) `git show <FREEZE_COMMIT>:<FROZEN_PATH>` succeeds;
+  (c) those committed raw bytes have exactly FROZEN_SIZE_BYTES and
+      FROZEN_SHA256;
+  (d) current working-tree raw bytes at FROZEN_PATH have the same size/hash.
+
+No identity value may be accepted solely because it appears in the later
+implementation freeze manifest.
+
+9.4 No A009 frozen identity value may be guessed from this draft, a transport
+copy or an audit transcript.
+
+9.5 A009 exact-byte freeze does not authorize Step 5, Candidate execution,
+Reference execution or NEW36.
+
+
+======================================================================
+10. P-02 / P-03 AND IMPLEMENTATION FREEZE MANIFEST
+======================================================================
+
+10.1 After A009 freeze, A008 §4.12 P-02 is superseded as follows.
+
+P-02 continues to verify every protocol identity already required by A008 and
+additionally verifies BOTH frozen A008 and frozen A009 external identities by
+the exact committed-byte/working-tree rule of §9.3.
+
+The expected frozen A008/A009 external identities used by P-02 MUST be fixed
+from the externally recorded freeze procedure and bound into the hash-bound
+Step-4 implementation after A009 freeze. They MUST NOT be learned from the
+implementation freeze manifest whose contents P-03 later verifies.
+
+10.2 A008 §3.5 exact freeze-manifest format is superseded by this exact
+format:
+
+  FORMAT_VERSION=A009_FREEZE_MANIFEST_V1
+  A008_FROZEN_PATH=backend/recovery/specs/V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_008_DRAFT4.txt
+  A008_FROZEN_SIZE_BYTES=<decimal>
+  A008_FROZEN_SHA256=<lowercase 64-hex>
+  A008_FREEZE_COMMIT=<lowercase 40-hex>
+  A009_FROZEN_PATH=backend/recovery/specs/V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_009_DRAFT7.txt
+  A009_FROZEN_SIZE_BYTES=<decimal>
+  A009_FROZEN_SHA256=<lowercase 64-hex>
+  A009_FREEZE_COMMIT=<lowercase 40-hex>
+  CAPTURE_COMMIT=<lowercase 40-hex>
+
+then the same SOURCE / TEST / ATTESTATION / CONTROL records in the same
+ordering required by A008 §3.5, then exactly:
+
+  IMPLEMENTATION_SOURCE_AGGREGATE_SHA256=<64 hex>
+  IMPLEMENTATION_TEST_AGGREGATE_SHA256=<64 hex>
+  IMPLEMENTATION_CONTROL_AGGREGATE_SHA256=<64 hex>
+  REFERENCE_IDENTITY_OK=YES
+  PROTOCOL_IDENTITY_OK=YES
+
+No other line is permitted.
+
+10.3 Under FORMAT_VERSION=A009_FREEZE_MANIFEST_V1:
+
+  PROTOCOL_IDENTITY_OK=YES
+
+means that all protocol identities required by A008 P-02 plus the frozen A008
+and A009 external identities have been verified exactly under 9.3.
+
+10.4 P-03 must verify:
+  every requirement already imposed by A008 §3.5/§3.6;
+  exact FORMAT_VERSION=A009_FREEZE_MANIFEST_V1;
+  all A008 and A009 identity fields equal the P-02 expected identities;
+  each A008/A009 identity again satisfies the exact §9.3 byte/commit rule;
+  PROTOCOL_IDENTITY_OK=YES under 10.3.
+
+Any mismatch is PRECONDITION_FAIL before quantitative input is opened.
+
+10.5 The implementation freeze manifest is still not created before A008
+Section 16 step 6. A009 freeze itself happens earlier and is a separate
+protocol-specification freeze.
+
+
+======================================================================
+11. CANDIDATE MANIFEST PROVENANCE
+======================================================================
+
+11.1 A008 §12.4 is superseded only for the exact member set of the existing
+Candidate-only informational object "a008_provenance".
+
+It MUST contain EXACTLY:
+
+  "runtime_environment_identity_sha256"
+  "implementation_source_aggregate_sha256"
+  "implementation_test_aggregate_sha256"
+  "implementation_control_aggregate_sha256"
+  "freeze_manifest_sha256"
+  "a008_sha256"
+  "a009_sha256"
+  "amendment_identities"
+  "candidate_evidence_size_bytes"
+  "candidate_evidence_sha256"
+  "run_id"
+
+with the same types/semantics required by A008 for every pre-existing member,
+plus:
+
+  "a009_sha256": 64-hex exact frozen A009 SHA256.
+
+11.2 "amendment_identities" remains exactly the A001-A007 object defined by
+A008 §12.4. A008 and A009 identities remain separate members.
+
+11.3 The object remains Candidate-only informational provenance and is not
+added to the Reference manifest.
+
+11.4 S1 semantics are unchanged. The A009 provenance addition remains outside
+cross-role semantic comparison under the existing informational-extension
+rule.
+
+
+======================================================================
+12. IMPLEMENTATION FILE SCOPE
+======================================================================
+
+12.1 The A008 §15.1 Step-4 implementation file set remains exactly the same
+seven files:
+
+  backend/recovery/v1_2_new36_candidate_app.py
+  backend/recovery/v1_2_new36_validators.py
+  backend/recovery/v1_2_new36_run.py
+  backend/recovery/CANDIDATE_INDEPENDENCE_ATTESTATION.txt
+  backend/tests/test_v1_2_new36_candidate_app.py
+  backend/tests/test_v1_2_new36_validators.py
+  backend/tests/test_v1_2_new36_run.py
+
+12.2 Creation/freeze of the A009 protocol specification itself is a protocol
+amendment step preceding resumed Step-4 implementation and is not an eighth
+Step-4 implementation file.
+
+12.3 The implementation freeze manifest remains the later A008 step-6
+identity-capture artifact, with its format superseded by Section 10.
+
+12.4 No existing protected scientific/quantitative module is authorized for
+modification. Reference bytes remain unchanged.
+
+
+======================================================================
+13. STATIC AUDIT REQUIREMENTS
+======================================================================
+
+13.1 Independent implementation audit MUST establish:
+
+  A009_EVIDENCE_TO_CANONICAL_DATAFLOW=NONE
+
+13.2 It MUST identify every use of the A009 evidence-only authorization and
+verify that its value-level data-flow sinks are limited to:
+  (a) candidate_new36_evidence.jsonl; or
+  (b) fail-closed evidence/canonical consistency assertions.
+
+Only the sealed evidence artifact's byte size and raw SHA256 may additionally
+flow to the Candidate manifest informational block and Candidate COMPLETED
+ledger record exactly as A008 §11.4.6 already requires. No position, sign,
+direction, return, domain-count or other evidence value may flow there.
+
+13.3 It MUST verify:
+  - no private G0 pre-overlap formula exists;
+  - no private C0 pre-overlap formula exists;
+  - no private HB pre-overlap formula exists;
+  - the only direct A009 threshold-domain count expression is the RAW-column
+    G0_DERIVED_DOMAIN_N of §3.6;
+  - the Candidate app contains no forbidden z confirmation-column read or
+    reference introduced by A009;
+  - A09 and A12 static predicates remain unchanged and PASS;
+  - every other threshold_domain_n is sourced exactly through §3.7;
+  - G1/C1 evidence uses exactly the authorized helpers of §3.8;
+  - common fwd construction is exactly §3.2.
+
+13.4 No A009 evidence helper may be imported by protected scientific modules
+or by any Reference module.
+
+13.5 Reference bytes remain unchanged.
+
+
+======================================================================
+14. SYNTHETIC TEST REQUIREMENTS
+======================================================================
+
+14.1 Before implementation freeze, A009-specific synthetic tests MUST
+establish at minimum:
+
+  G0 evidence uses _hb_extract_pre_overlap("depthL1_extOFI",...) and not a
+  duplicated private pre-overlap formula;
+
+  C0 evidence uses _hb_extract_pre_overlap("gap_depth_extOFI",...) and not a
+  duplicated private pre-overlap formula;
+
+  common fwd equals engine._build_forward_return_array(
+      ctx.mid, horizon_ms // GRID_MS
+  );
+
+  G0 helper-returned threshold equals canonical G0 calculated_threshold under
+  the §3.1/A008 §10.5 rule;
+
+  C0 helper-returned threshold equals canonical C0 calculated_threshold under
+  the §3.1/A008 §10.5 rule;
+
+  G0_DERIVED_DOMAIN_N, computed only from the RAW finite-component columns in
+  §3.6, equals the frozen Stage3 G0 derived-domain count on synthetic blocks;
+
+  Candidate app AST/source continues to satisfy A09/A12 and contains no
+  forbidden z confirmation-column read/reference introduced by A009;
+
+  C0 threshold_domain_n equals HZ fair_gap_reversion T0
+  threshold_domain_finite_n and not the confirmation-filtered event domain;
+
+  G1 threshold_domain_n equals HZ depth_imbalance_l1 TZ
+  threshold_domain_nonzero_n;
+
+  C1 threshold_domain_n equals HZ fair_gap_reversion T0
+  threshold_domain_finite_n;
+
+  all six HB threshold_domain_n sources match Section 3.7;
+
+  G0/C0 accepted positions use b0_greedy_filter and reproduce the canonical
+  accepted_positions_sha256;
+
+  G1/C1 evidence paths use exactly §3.8 authorized masks/parent masks/
+  directions and reproduce canonical counts/fingerprints;
+
+  accepted_signed_return_signs are correct for G0/G1/C0/C1/B0/B1 and
+  reproduce canonical hit_rate under the A008 §10.5 rule when accepted_n>0;
+
+  B1 pre_overlap_positions is null for all B1 records, including NULL-
+  threshold cases; a NULL-threshold B1 binds to an empty paired-B0
+  pre_overlap_positions array, pre_overlap_n=0 and accepted_positions=[];
+
+  evidence-only values cannot alter canonical CSV fields;
+
+  evidence count remains exactly 1728 and A008 §11.4 schema/order/sealing
+  remain exact;
+
+  A20 remains withdrawn and all 29 active S2 invariants remain active;
+
+  no A009-specific Candidate test imports/executes Reference implementation;
+
+  no real NEW36, OLD36 or golden quantitative content is used.
+
+14.2 Provenance/freeze synthetic tests MUST additionally establish:
+  - FORMAT_VERSION=A009_FREEZE_MANIFEST_V1 exact line ordering/member set;
+  - altered A009 path/size/SHA/commit => P-02/P-03 PRECONDITION_FAIL;
+  - altered A008 path/size/SHA/commit => P-02/P-03 PRECONDITION_FAIL;
+  - working-tree versus frozen-commit byte mismatch => PRECONDITION_FAIL;
+  - a009_sha256 is present exactly once in a008_provenance with the frozen
+    A009 value;
+  - missing/extra a008_provenance members => failure;
+  - required A009 attestation lines are present and truthfully checked.
+
+14.3 A009-specific tests do not replace any A008 Section 13 requirement.
+The A008 Section 16 step-5 requirement that existing Candidate-side and
+Reference suites still PASS remains unchanged and is handled under A008.
+
+
+======================================================================
+15. RESUMPTION / FREEZE SEQUENCE
+======================================================================
+
+15.1 A008 remains frozen and byte-identical.
+
+15.2 Sequence for this blocker:
+
+  1. Independent textual audit of A009 DRAFT7.
+  2. If PASS, exact-byte freeze of A009 DRAFT7 and external recording of the
+     four values in Section 9.
+  3. Supply only the externally recorded frozen A008 identity quadruple of
+     §8.1 and the frozen A009 text/identity to the SAME clean-room Step-4
+     authoring session.
+  4. Resume remediation of the seven Step-4 files.
+
+After item 4, the original A008 Section 16 sequence resumes at step 5 and is
+unchanged:
+
+  5. A008 Step 5 — synthetic tests only, including A009 §14 obligations;
+     existing Candidate-side and Reference suites still PASS; Reference bytes
+     unchanged.
+  6. A008 Step 6 — identity capture, import-completeness check and creation of
+     the implementation freeze manifest using A009_FREEZE_MANIFEST_V1.
+  7. A008 Step 7 — independent implementation audit, additionally enforcing
+     A009 §13 and verifying A009 §14 coverage/results.
+  8. A008 Step 8 — final implementation freeze.
+  9. A008 Step 9 — renewed narrow pre-NEW36 readiness/preflights; no
+     quantitative open and no INVOKED record.
+ 10. A008 Step 10 — ONLY THEN the controlled NEW36 one-shot.
+
+15.3 A009 freeze alone does NOT authorize:
+  A008 Section 16 Step 5;
+  creation of the implementation freeze manifest;
+  Candidate invocation;
+  Reference invocation;
+  NEW36 quantitative access.
+
+15.4 No A009 step consumes the one-shot. The A008 consumption boundary and
+ledger semantics remain unchanged.
+
+
+======================================================================
+16. BLOCKER DISPOSITION
+======================================================================
+
+Upon exact-byte freeze of a text conforming to A009 and only after that
+freeze:
+
+  BLOCKED_G0_EVIDENCE_POSITIONS=RESOLVED_BY_EXISTING_HELPER_WIDENING
+  BLOCKED_C0_EVIDENCE_POSITIONS=RESOLVED_BY_EXISTING_HELPER_WIDENING
+  BLOCKED_G0_THRESHOLD_DOMAIN_N=RESOLVED_BY_RAW_DOMAIN_CODIFICATION
+  BLOCKED_C0_THRESHOLD_DOMAIN_N=RESOLVED_BY_HZ_T0_COUNT
+  BLOCKED_HB_THRESHOLD_DOMAIN_N=RESOLVED_BY_FROZEN_COUNT_SOURCES
+  BLOCKED_C1_EVIDENCE_PATH_AMBIGUITY=RESOLVED_BY_AUTHORIZED_HELPERS
+
+This establishes only:
+
+  A008_IMPLEMENTATION_STATUS=
+  UNBLOCKED_FOR_STEP4_CLEANROOM_REMEDIATION
+
+It does not establish implementation readiness.
+
+
+======================================================================
+17. CHOICE ACCOUNTING, REMEDIATION TRACE, SELF-AUDIT FLAGS
+======================================================================
+
+17.1 A009 normative choices are execution/orchestration/provenance only:
+
+  01 Minimal supplemental-evidence observability closure using existing
+     helpers and explicit frozen-path binding (§§3-5).
+  02 C0 §11.4.4 parenthetical correction to its already-frozen A001 A4
+     threshold domain (§2).
+  03 §11.4 unavailable-operand fail-closed extension (§7).
+  04 Clean-room input/attestation extension for frozen A009 (§8).
+  05 A009 external identity, P-02/P-03 and implementation-freeze-manifest
+     integration (§§9-10).
+  06 Candidate informational provenance exact-set extension (§11).
+  07 A009 static-audit and synthetic-test obligations (§§13-14).
+
+  A009_NORMATIVE_CHOICE_COUNT=7
+  A009_SCIENTIFIC_CHOICE_COUNT=0
+  A009_QUANTITATIVE_CHOICE_COUNT=0
+
+The RAW-column G0 domain-count expression of §3.6 is an
+EXPLICIT_CODIFICATION_OF_EXISTING_FROZEN_SEMANTICS, supported by the frozen
+_rank_signed_uniform finiteness contract; it does not select a new domain and
+is not counted as a scientific or quantitative choice.
+
+17.2 Remediation trace from the independent DRAFT2 textual audit:
+
+  B-1 -> §§3.6, 6.5, 8.3, 13.3, 14.1
+         (no forbidden z-column app read; RAW equivalent domain; A09/A12
+          unchanged).
+  B-2 -> §§5.2, 5.4, 14.1
+         (B1 pre_overlap_positions remains null, including NULL threshold).
+  R-1 -> §§3.2, 4.1, 14.1
+         (fwd pinned to engine._build_forward_return_array).
+  R-2 -> §§3.1, 3.3, 3.4, 5.3, 14.1
+         (threshold comparison pinned to A008 §10.5 rule).
+  R-3 -> §§3.1, 5.5, 14.1
+         (hit-rate comparison pinned to A008 §10.5 rule).
+  R-4 -> §§1.3, 3.8, 13.3, 14.1
+         (explicit C1 and G1 evidence paths).
+  R-5 -> §3.6(c)
+         (§5.4 generation-time use explicitly authorized).
+  R-6 -> §§15.2-15.4
+         (A008 steps 5-10 restored exactly; A009 static/test obligations
+          attached to steps 5 and 7).
+  A-1 -> §17.1 choice accounting.
+  A-2 -> §§0.7, 17.2 authoring/remediation disclosure.
+  A-3 -> §§9.3, 10.1-10.4 exact A008/A009 commit/blob/working-tree checks.
+  A-4 -> §§14.1, 14.2 provenance/freeze/attestation/B1/A09/A12 tests.
+  A-5 -> §§0.6, 9.5, 15.3 explicit no-authorization-at-freeze wording.
+  A-6 -> DRAFT3 references throughout and §18 termination.
+  A-7 -> §13.2 evidence hash/size flow exception only.
+  A-8 -> §§5.2, 5.4 explicit B1 paired-B0 generation-time binding.
+
+Remediation trace from the independent DRAFT3 textual audit:
+
+  MAJOR-1 -> §3.1
+         (authorization scope extended to the Section 5 generation-time
+          consistency computations, including §5.5 evidence_hit_rate;
+          §5.5 formula unchanged).
+  MINOR-1 -> §17.1
+         (choice 07 added for §§13-14 obligations;
+          A009_NORMATIVE_CHOICE_COUNT=7; scientific and quantitative
+          choice counts unchanged at 0).
+  MINOR-2 -> §10.2
+         (A008_FROZEN_PATH restored to the A008 §3.5 literal).
+  MINOR-3 -> §17.2
+         (A-4 cross-reference corrected to §§14.1, 14.2).
+  DRAFT3 -> DRAFT4 mechanical self-reference update: STATUS line,
+         DOCUMENT line, §0.1, §9.2, §10.2 A009_FROZEN_PATH, §15.2 items
+         1-2, END line. The A008 frozen path is unchanged.
+
+Remediation trace from the independent DRAFT4 textual audit:
+
+  A009D4-F1 -> preamble / §17.1
+         (accounting identifier aligned so A009_NEW_NORMATIVE_CHOICE_01 and
+          §17.1 choice 01 both identify the evidence-observability
+          closure; C0 correction becomes choice 02; preamble identifier
+          unchanged; normative count remains 7).
+  A009D4-F2 -> §0.7 / §17.2
+         (authoring/remediation disclosure completed to include DRAFT2,
+          DRAFT3 and DRAFT4 independent textual audit findings, used only
+          as non-quantitative remediation findings; DRAFT4 inclusion
+          completed by DRAFT5_PREAUDIT_DISCLOSURE_FIX; no scientific or
+          quantitative authoring input added).
+  DRAFT4 -> DRAFT5 mechanical self-reference update: STATUS line,
+         DOCUMENT line, §0.1, §9.2 retained-filename statement and
+         filename line, §10.2 A009_FROZEN_PATH, §15.2 items 1-2, END
+         line. The A008 frozen path is unchanged.
+
+Pre-audit remediation trace (no independent DRAFT5 audit occurred):
+
+  DRAFT5_PREAUDIT_DISCLOSURE_FIX -> §0.7 / §17.2
+         (detected by the DRAFT5 builder from A009's own §0.7 and §17.2
+          text, with no additional authoring input: §0.7 omitted the
+          DRAFT4 independent textual audit findings used for DRAFT5; §0.7
+          now includes DRAFT2, DRAFT3 and DRAFT4 findings. Provenance/
+          disclosure correction only; no scientific choice, quantitative
+          choice, runtime behavior or NEW36 authorization changed. Not an
+          independent DRAFT5 audit finding).
+  DRAFT5 -> DRAFT6 mechanical self-reference update: STATUS line,
+         DOCUMENT line, §0.1, §9.2 retained-filename statement and
+         filename line, §10.2 A009_FROZEN_PATH, §15.2 items 1-2, END
+         line. The A008 frozen path is unchanged.
+
+Remediation trace from the independent DRAFT6 textual audit:
+
+  A009D6-F1 -> §§8.1, 8.2, 15.2
+         (externally recorded frozen A008 identity quadruple added to the
+          exhaustive clean-room Step-4 permitted/supplied authoring inputs
+          so the existing §10.1 P-02 identity-binding requirement can be
+          satisfied without violating the clean-room input boundary;
+          values only from the completed A008 exact-byte freeze record;
+          §10.1 unchanged; no P-02/P-03 circularity introduced; within
+          existing choices 04 and 05; no scientific or quantitative
+          choice changed).
+  A009D6-F1 disclosure -> §0.7
+         (independent DRAFT6 textual audit findings added as a
+          non-quantitative remediation input; DRAFT5 had no independent
+          audit and DRAFT5_PREAUDIT_DISCLOSURE_FIX remains an internal
+          pre-audit correction).
+  DRAFT6 -> DRAFT7 mechanical self-reference update: STATUS line,
+         DOCUMENT line, §0.1, §9.2 retained-filename statement and
+         filename line, §10.2 A009_FROZEN_PATH, §15.2 items 1-2, END
+         line. The A008 frozen path is unchanged.
+
+17.3 Self-audit flags:
+
+  QUANTITATIVE_ALGORITHM_CHANGED=NO
+  EVENT_SELECTION_CHANGED=NO
+  THRESHOLD_LOGIC_CHANGED=NO
+  METRIC_LOGIC_CHANGED=NO
+  CANONICAL_SCHEMA_CHANGED=NO
+  S1_SEMANTICS_CHANGED=NO
+  S2_ACTIVE_INVARIANT_SET_CHANGED=NO
+  A09_CHANGED=NO
+  A12_CHANGED=NO
+  REFERENCE_CHANGED=NO
+  NEW36_INVENTORY_CHANGED=NO
+  ONE_SHOT_BOUNDARY_CHANGED=NO
+
+
+======================================================================
+18. TERMINATION
+======================================================================
+
+NEW36_quantitative_access_authorized_by_this_document=NO
+candidate_execution_authorized_by_this_document=NO
+reference_execution_authorized_by_this_document=NO
+step5_authorized_by_this_document=NO
+one_shot_consumed_by_this_document=NO
+
+document_terminates_here=true
+append_after_freeze=FORBIDDEN
+
+END OF AMENDMENT 009 DRAFT7 — NOT FROZEN
