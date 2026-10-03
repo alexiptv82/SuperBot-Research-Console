@@ -1,0 +1,575 @@
+SUPERBOT V1.2 — NEW36 VALIDATION PROTOCOL V2 — AMENDMENT 011
+
+DOCUMENT:
+V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_011_DRAFT2.txt
+
+STATUS: DRAFT2 — NOT FROZEN
+
+CLASS: NARROW TERMINAL-RECOVERY / PROVENANCE-EVIDENCE AMENDMENT
+
+PURPOSE:
+A010 DRAFT11 was independently audited and exact-byte frozen, A008 recovery
+steps A010-R3 through A010-R5 completed, and the first A010-R6 compatibility
+audit returned non-PASS with STOP_COMPATIBILITY_AUDIT_NOT_PASS. A010
+§14.3(c) forbids clearing a TERMINAL_NORMATIVE_STOP by retry,
+reinterpretation or reclassification and requires a new independently
+audited and exact-byte-frozen amendment for continuation.
+
+A011 supplies only that new amendment. It preserves the historical terminal
+classification and the historical A010-R6 non-PASS unchanged, does not edit
+or replace the historical A010-R3/R4/R5 records, and does not reopen A008,
+A009 or A010 frozen bytes.
+
+DRAFT2 supersedes the historical DRAFT1 as the text under audit. DRAFT2
+remediates exactly the independent A011-R1 finding A011R1-F1 on DRAFT1:
+the future NEW clean-room author no longer receives the complete frozen A011
+text. Instead, DRAFT2 defines an exact bounded CLEAN-ROOM DIRECTIVE whose
+bytes are part of frozen A011, independently verified after freeze, and are
+the only A011 text supplied to the NEW author together with the external
+A011 freeze identity. Historical terminal/audit narratives and evidence
+records remain outside that author surface.
+
+The historical DRAFT1 is audit/provenance evidence only and is not
+normative. A011 changes no scientific and no quantitative rule.
+
+A011_NEW_SCIENTIFIC_CHOICES=0
+A011_NEW_QUANTITATIVE_CHOICES=0
+
+
+======================================================================
+0. DOCUMENT CONTROL, SCOPE, PRECEDENCE
+======================================================================
+
+0.1 This DRAFT2 is not frozen. No A011 frozen size, frozen SHA256 or freeze
+commit exists until A011-R2 after an independent A011-R1 PASS.
+
+0.2 AUTHORITATIVE_REPOSITORY=alexiptv82/SuperBot-Research-Console
+AUTHORITATIVE_BRANCH=emergent-recovery-snapshot-2026-09-29
+
+0.3 A011 is subordinate to the frozen scientific and quantitative corpus.
+It supersedes A010 only where this document expressly says so. In particular:
+
+  (a) A010 §14.3(c) remains true and is the authority for A011 itself.
+  (b) A010-CR-1 remains a TERMINAL_NORMATIVE_STOP and is never cleared,
+      reclassified, withdrawn, edited or treated as retryable.
+  (c) For continuation after A010-CR-1 only, A011 §5 replaces the failed
+      A010-R6 as the compatibility prerequisite for entry to A010-R7.
+      A010-R6 remains historically INCOMPLETE and non-PASS.
+  (d) A010 §§8-9 clean-room mechanics remain in force. The NEW author does
+      NOT receive the complete frozen A011 text. After A011 §5 PASS it
+      receives only the exact A011 CLEAN-ROOM DIRECTIVE defined by §8.1 and
+      the external A011 freeze identity required by that directive.
+  (e) A010 §§10-11 and the implementation freeze identity model are extended
+      only to bind the frozen A011 identity as stated in §7.
+  (f) No clause of A009 §§1-7 or §14.1 and no scientific or quantitative
+      clause of A008 is superseded.
+
+0.4 No earlier audit verdict is rewritten. The original R3, R4, R5 and first
+R6 external records remain preserved as historical evidence.
+
+
+======================================================================
+1. ESTABLISHED EXTERNAL FACTS
+======================================================================
+
+1.1 Frozen identities already established before A011:
+
+A008_FROZEN_PATH=backend/recovery/specs/V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_008_DRAFT4.txt
+A008_FROZEN_SIZE_BYTES=98002
+A008_FROZEN_SHA256=c78d6c25abcc11fe8164a83461c07dd98cf966fba6e35d5fa384910fd1672972
+A008_FREEZE_COMMIT=3426205f4c95eee9008c76633ad5e80987ad3145
+
+A009_FROZEN_PATH=backend/recovery/specs/V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_009_DRAFT7.txt
+A009_FROZEN_SIZE_BYTES=40630
+A009_FROZEN_SHA256=49c0c4ab783dea72f2d81031ea377dbb6816974bfeba9df564407fc141a26106
+A009_FREEZE_COMMIT=23d9e62c849b15d91aa2da0452a8ed4e566f4349
+
+A010_FROZEN_PATH=backend/recovery/specs/V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_010_DRAFT11.txt
+A010_FROZEN_SIZE_BYTES=244954
+A010_FROZEN_SHA256=8f5614564096048b7eea2573a5e49b2dba09631da1510fdb03ee35aadd75d338
+A010_FREEZE_COMMIT=87c2bf0a280fe0dd8dfc7a3e0cdd90876ecacbeb
+
+AUTHORITATIVE_BASIS_COMMIT=75f8f699bf49f4a2b74442e9bee0cbfe406eb45d
+
+1.2 First A010-R6 external report identity, as recorded by its classifying
+auditor:
+
+A010_R6_REPORT_SIZE_BYTES=26784
+A010_R6_REPORT_SHA256=c09038d28481b7cf34bad40f4b41ed513a8819f130f5fa0c3e259da39ba6dfa4
+A010_R6_AUDIT_COMMIT=1ed219b4b0812e27a0429ea36c169157e87248f8
+A010_R6_RESULT=INCOMPLETE
+A010_R6_COMPLETE=NO
+A010_R7_AUTHORIZED=NO
+A010_R6_STOP_REASON=STOP_COMPATIBILITY_AUDIT_NOT_PASS
+
+1.3 Formal A010 terminal classification:
+
+A010_CLASSIFICATION_RECORD_ID=A010-CR-1
+A010_CR_1_SIZE_BYTES=821
+A010_CR_1_SHA256=79d6bef005f7509f2b7978b3c56b7d0d643e405bf5d4d0f5051ba2482deaa410
+A010_CR_1_CLASS=TERMINAL_NORMATIVE_STOP
+A010_CR_1_FINDING_CODE=STOP_COMPATIBILITY_AUDIT_NOT_PASS
+A010_CR_1_DETECTION_POINT=A010-R6
+A010_CR_1_PHASE=PRE_SUPPLY
+
+A010_RECORD_INDEX_FORMAT=A010_RECORD_INDEX_V1
+A010_RECORD_INDEX_SIZE_BYTES=185
+A010_RECORD_INDEX_SHA256=0e2911a8edcb9220d4804cda10f394886499f2fff8f90cacb714f47f44ed9bfc
+A010_RECORD_INDEX_ENTRY_COUNT=1
+
+1.4 Original-record attestations created by the same independent contexts
+that issued the historical R3 and R5 records. These attestations are evidence
+about what was already present; they are not replacement audit records and do
+not change any historical verdict:
+
+R3_ORIGINAL_RECORD_ATTESTATION_SIZE_BYTES=1396
+R3_ORIGINAL_RECORD_ATTESTATION_SHA256=ced160b91270cd195ac66acc17dd1929dd1495c02990cae607752a6cbb7bdf1f
+
+R5_ORIGINAL_RECORD_ATTESTATION_SIZE_BYTES=1837
+R5_ORIGINAL_RECORD_ATTESTATION_SHA256=26b08ab68cb8148e15993cd75735bbdf3997a6c39daec61d365f3c53093aecaa
+
+1.5 The R3 attestation states that the original R3 PASS record contained,
+among other fields:
+
+A010_R3_RESULT=PASS
+A010_R3_COMPLETE=YES
+A010_R4_AUTHORIZED=YES
+A010_DRAFT11_READ_SOURCE=REPOSITORY
+A010_DRAFT11_READ_COMMIT=bed38034ed7962327bdd52a8d7c3054f7a519cab
+A010_DRAFT11_SIZE_BYTES=244954
+A010_DRAFT11_SHA256=8f5614564096048b7eea2573a5e49b2dba09631da1510fdb03ee35aadd75d338
+A008_DRAFT4_READ_SOURCE=REPOSITORY
+A008_DRAFT4_READ_COMMIT=bed38034ed7962327bdd52a8d7c3054f7a519cab
+A008_DRAFT4_WORKING_TREE_SIZE_BYTES=98002
+A008_DRAFT4_WORKING_TREE_SHA256=c78d6c25abcc11fe8164a83461c07dd98cf966fba6e35d5fa384910fd1672972
+A008_DRAFT4_COMMITTED_SIZE_BYTES=98002
+A008_DRAFT4_COMMITTED_SHA256=c78d6c25abcc11fe8164a83461c07dd98cf966fba6e35d5fa384910fd1672972
+A008_DRAFT3_READ_SOURCE=REPOSITORY
+A008_DRAFT3_READ_COMMIT=bed38034ed7962327bdd52a8d7c3054f7a519cab
+A008_DRAFT3_SIZE_BYTES=97342
+A008_DRAFT3_SHA256=46c91a4979af9a7ad315d2a5289870c068d60c036e20d3dac0a14299d4c9ff71
+
+1.6 The R5 attestation states that the original delivered R5 report document
+contained, among other fields:
+
+A010_R5_RESULT=PASS
+A010_R5_COMPLETE=YES
+A010_R6_AUTHORIZED=YES
+A008_PROTOCOL_READ_SOURCE=REPOSITORY
+A008_PROTOCOL_READ_COMMIT=3426205f4c95eee9008c76633ad5e80987ad3145
+A008_PROTOCOL_READ_PATH=backend/recovery/specs/V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_008_DRAFT4.txt
+A008_PROTOCOL_RAW_SIZE_BYTES=98002
+A008_PROTOCOL_RAW_SHA256=c78d6c25abcc11fe8164a83461c07dd98cf966fba6e35d5fa384910fd1672972
+A010_PROTOCOL_READ_SOURCE=REPOSITORY
+A010_PROTOCOL_READ_COMMIT=87c2bf0a280fe0dd8dfc7a3e0cdd90876ecacbeb
+A010_PROTOCOL_READ_PATH=backend/recovery/specs/V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_010_DRAFT11.txt
+A010_PROTOCOL_RAW_SIZE_BYTES=244954
+A010_PROTOCOL_RAW_SHA256=8f5614564096048b7eea2573a5e49b2dba09631da1510fdb03ee35aadd75d338
+
+1.7 A011 does not itself declare that §§1.5-1.6 cure A010-R6. Their exact
+transport identities and historical-content claims must be independently
+verified under A011-R3 before they can support the new compatibility gate.
+
+1.8 Sections 1-3 are recovery-auditor evidence/provenance material. They are
+never supplied to, exposed to, or made readable by the NEW Step-4 author.
+Only the exact bounded CLEAN-ROOM DIRECTIVE of §8.1 may cross from A011 into
+that author surface.
+
+
+======================================================================
+2. TERMINAL STOP PRESERVATION
+======================================================================
+
+2.1 A010-CR-1 remains immutable.
+
+A010_CR_1_CLEARED=NO
+A010_CR_1_RECLASSIFIED=NO
+A010_CR_1_WITHDRAWN=NO
+A010_R6_VERDICT_CHANGED=NO
+
+2.2 A011 is the "new independently audited and exact-byte-frozen amendment"
+required by A010 §14.3(c). Continuation, if any, occurs under A011 and not by
+pretending that A010-CR-1 was retryable.
+
+2.3 No A011 step may delete, edit or replace A010-CR-1, the A010 record
+index, the first R6 report, or the original R3/R4/R5 records.
+
+
+======================================================================
+3. EVIDENCE RULE FOR HISTORICAL RECORD CONTENTS
+======================================================================
+
+3.1 An ORIGINAL-RECORD ATTESTATION is admissible under A011 only to establish
+the literal contents of a previously issued external record when all of the
+following hold:
+
+  (a) it is issued by the same independent context that issued that original
+      record;
+  (b) it expressly says it is an attestation, not a replacement record and
+      not a new audit;
+  (c) it identifies only fields asserted to have appeared in the original
+      record and does not invent a missing historical field;
+  (d) its own exact raw size and SHA256 are recorded;
+  (e) every repository-verifiable value it quotes is independently checked
+      again at A011-R3;
+  (f) if it says an original field was absent, A011 treats that field as
+      absent; no later calculation may backfill it.
+
+3.2 An attestation cannot change an original PASS/FAIL result, read source,
+read commit, byte identity, audit time, actor identity or authorization.
+
+3.3 If A011-R3 cannot establish that the original R3/R4/R5 records were
+complete at the time originally issued, A011 stops. A new audit performed
+today does not substitute for a historically missing source record.
+
+
+======================================================================
+4. A011 MANDATORY RECOVERY SEQUENCE
+======================================================================
+
+4.1 Mandatory order:
+
+  A011-R1  independent textual audit of exact A011 DRAFT2 bytes
+  A011-R2  exact-byte freeze of the A011-R1-audited bytes
+  A011-R3  independent historical-record completeness / attestation audit
+  A011-R4  fresh post-terminal compatibility audit
+  then, only after A011-R4 PASS, resume at A010-R7 under §8
+
+No later step begins before the preceding step PASSes.
+
+4.2 Independence uses A010 §5.2 unchanged. The A011 author is ineligible to
+perform A011-R1, A011-R3, A011-R4 or act as the NEW Step-4 author.
+
+4.3 A011-R1 PASS requires zero unresolved defects, verifies every statement
+in §§0-12, verifies that every new A011 rule is provenance/execution only,
+and records exact raw size/SHA256 plus a conforming source record.
+
+4.4 A011-R2 freezes exactly the A011-R1-audited bytes at:
+
+backend/recovery/specs/
+V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_011_DRAFT2.txt
+
+The internal STATUS string remains "DRAFT2 — NOT FROZEN"; external identity
+controls. A011-R2 records:
+A011_FROZEN_PATH
+A011_FROZEN_SIZE_BYTES
+A011_FROZEN_SHA256
+A011_FREEZE_COMMIT
+PRE_FREEZE_BRANCH_HEAD
+
+A011_FREEZE_COMMIT must have one parent, be an ordinary forward commit, add
+only A011_FROZEN_PATH under backend/, and rewrite no published history.
+
+4.5 A011-R3 independently verifies:
+
+  (a) exact raw identity of A010-CR-1 and A010_RECORD_INDEX_V1;
+  (b) exact raw identities of both original-record attestations in §1.4;
+  (c) attestation issuers are the same contexts as the original R3 and R5
+      auditors;
+  (d) the attested R3 and R5 source-record fields satisfy A010 §5.2(c) for
+      every protocol text those historical audits judged;
+  (e) the R4 freeze record remains complete and coherent;
+  (f) every repository-verifiable value quoted by the attestations matches
+      the authoritative repository;
+  (g) no field absent from an original record has been retroactively
+      manufactured;
+  (h) A010-CR-1 and the failed R6 report remain unchanged;
+  (i) the exact CLEAN-ROOM DIRECTIVE bytes are extracted from the frozen
+      A011 bytes only between the literal markers of §8.1, excluding the
+      marker lines themselves, and their raw size and SHA256 are recorded as
+      A011_CLEAN_ROOM_DIRECTIVE_SIZE_BYTES and
+      A011_CLEAN_ROOM_DIRECTIVE_SHA256;
+  (j) the extracted directive contains no historical audit narrative,
+      classification-record content, R3/R4/R5/R6 record content, repository
+      history, historical Step-4 content, NEW36/OLD36/golden quantitative
+      content, Candidate/Reference output, or other source forbidden by
+      A010 §8.4 and A011 §8.
+
+A011-R3 PASS means only that the historical record-completeness evidence and
+the bounded clean-room directive are sufficient for the new A011 gate. It
+does not change A010-R6.
+
+4.6 A011-R4 is performed from its beginning in a brand-new independent
+context. It re-performs every predicate of A010 DRAFT11 §5.8(a)-(i), using
+the original R3/R4/R5 records and the A011-R3-verified attestations only for
+the limited purpose defined in §3. It additionally verifies:
+
+  (a) A011 frozen identity under the A010 §6.4 exact-verification pattern;
+  (b) A010-CR-1 and record index exact identity;
+  (c) A010-R6 remains non-PASS and unaltered;
+  (d) A011 §7 identity/provenance extensions are coherent and acyclic;
+  (e) the §8.1 CLEAN-ROOM DIRECTIVE identity equals the A011-R3-recorded
+      size/SHA256 and the directive satisfies every exclusion in §8.2-§8.4;
+  (f) the complete frozen A011 text is not an allowed NEW-author input;
+  (g) no protected Step-4 path was added or modified after A010 freeze up
+      to the A011-R4 audit commit.
+
+Failure of any lineage relation or freeze-content constraint =>
+STOP_A011_LINEAGE_VIOLATION.
+Failure confined to current working-tree bytes =>
+RETRY_A011_WORKING_TREE_MISMATCH.
+Any other non-PASS =>
+STOP_A011_COMPATIBILITY_GATE_NOT_PASS.
+
+4.7 A011-R4 PASS is a new gate result. It does not retroactively produce
+A010_R6_RESULT=PASS.
+
+
+======================================================================
+5. CONTINUATION AUTHORIZATION
+======================================================================
+
+5.1 A010-R7 MUST NOT begin unless all are true:
+
+A011_R1_RESULT=PASS
+A011_R2_FREEZE_VERIFIED=YES
+A011_R3_RESULT=PASS
+A011_R4_RESULT=PASS
+
+5.2 When §5.1 holds:
+
+A011_CONTINUATION_GATE=PASS
+A010_R7_AUTHORIZED_BY_A011=YES
+
+The historical field A010_R7_AUTHORIZED=NO in the first R6 report remains
+unchanged and true for that historical R6 attempt.
+
+5.3 The NEW clean-room Step-4 author receives no historical Step-4 content,
+no first-R6 report, no terminal-classification narrative, no R3/R4/R5 audit
+narrative and no evidence/provenance sections of A011. It receives only:
+  (a) the protocol/input set already allowed by A010 §8.4;
+  (b) the exact CLEAN-ROOM DIRECTIVE bytes independently verified under
+      §§4.5 and 4.6; and
+  (c) the external frozen A011 quadruple required by that directive.
+The complete frozen A011 document is explicitly NOT supplied to or readable
+by the NEW author.
+
+
+======================================================================
+6. A011 EXTERNAL FREEZE IDENTITY AND LINEAGE
+======================================================================
+
+6.1 A011 is frozen only by A011-R2 after A011-R1 PASS.
+
+6.2 Exact verification of A011 applies the A010 §6.4 pattern identically:
+lowercase 40-hex commit; canonical path readable at that commit; committed
+raw bytes equal external size/SHA256; current working-tree bytes equal the
+same identity.
+
+6.3 Required lineage before A010-R7:
+
+A009_FREEZE_COMMIT <= AUTHORITATIVE_BASIS_COMMIT
+AUTHORITATIVE_BASIS_COMMIT < A010_FREEZE_COMMIT
+A010_FREEZE_COMMIT < A008_FREEZE_COMMIT
+A008_FREEZE_COMMIT <= A010_R6_AUDIT_COMMIT
+A010_R6_AUDIT_COMMIT < A011_FREEZE_COMMIT
+
+Every A010 and A011 recorded authoritative commit identifier must remain an
+ancestor of the current authoritative branch head. No force-push, rebase,
+amend, squash or equivalent history rewrite is permitted.
+
+6.4 The A011 freeze commit is not a Step-4 implementation checkpoint and
+does not authorize NEW36 access.
+
+
+======================================================================
+7. A011 IDENTITY / PROVENANCE BINDING
+======================================================================
+
+7.1 Because A011 becomes part of the active recovery corpus, every future
+A010 identity/provenance binding performed after A011-R4 PASS is extended to
+include the frozen A011 identity.
+
+7.2 The implementation-bound expected identities used by the A010 P-02/P-03
+extensions must include:
+a008_sha256
+a009_sha256
+a010_sha256
+a011_sha256
+
+Each comes from constants bound before runtime execution, never from a
+manifest being verified and never from runtime-read protocol contents.
+
+7.3 The implementation freeze manifest produced in the resumed sequence must
+record the complete A008, A009, A010 and A011 external quadruples. Adding
+A011 does not make the manifest a member of its own aggregate and introduces
+no identity cycle.
+
+7.4 A010 §11.1 is superseded only so Candidate informational provenance also
+contains exactly one:
+"a011_sha256": 64-hex exact frozen A011 SHA256.
+All pre-existing member types and semantics are unchanged.
+
+7.5 A011 changes no canonical scientific schema, event-selection rule,
+threshold, metric, tolerance, Candidate selection, Reference logic, S1 rule,
+S2 invariant, B1/B2 rule, G0/G1/C0/C1/HB evidence meaning or one-shot rule.
+
+
+======================================================================
+8. CLEAN-ROOM INPUT EXTENSION
+======================================================================
+
+8.1 DRAFT2 defines one exact bounded A011 text artifact for the future NEW
+Step-4 author. The marker lines are delimiters and are NOT part of the
+artifact. The artifact consists of every raw UTF-8 byte strictly between the
+two marker lines, preserving order and line endings exactly.
+
+BEGIN_A011_CLEAN_ROOM_DIRECTIVE_V1
+FORMAT_VERSION=A011_CLEAN_ROOM_DIRECTIVE_V1
+ROLE=PROVENANCE_EXECUTION_EXTENSION_ONLY
+A011_EXTERNAL_FROZEN_QUADRUPLE_REQUIRED=YES
+EXPECTED_PROTOCOL_SHA256_MEMBERS=a008_sha256,a009_sha256,a010_sha256,a011_sha256
+IMPLEMENTATION_FREEZE_MANIFEST_MUST_RECORD_A011_EXTERNAL_QUADRUPLE=YES
+CANDIDATE_INFORMATIONAL_PROVENANCE_MEMBER=a011_sha256
+CANDIDATE_INFORMATIONAL_PROVENANCE_MEMBER_CARDINALITY=EXACTLY_ONE
+RUNTIME_EXPECTED_IDENTITIES_SOURCE=BOUND_CONSTANTS_BEFORE_EXECUTION
+RUNTIME_PROTOCOL_CONTENT_AS_EXPECTED_IDENTITY_SOURCE=FORBIDDEN
+MANIFEST_BEING_VERIFIED_AS_EXPECTED_IDENTITY_SOURCE=FORBIDDEN
+A011_NEW_SCIENTIFIC_CHOICES=0
+A011_NEW_QUANTITATIVE_CHOICES=0
+CANDIDATE_SELECTION_CHANGED=NO
+REFERENCE_CHANGED=NO
+S1_SEMANTICS_CHANGED=NO
+S2_INVARIANT_SET_CHANGED=NO
+A20_WITHDRAWAL_CHANGED=NO
+B1_B2_RESOLUTION_CHANGED=NO
+G0_G1_C0_C1_HB_EVIDENCE_SEMANTICS_CHANGED=NO
+NEW36_SEALING_CHANGED=NO
+ONE_SHOT_BOUNDARY_CHANGED=NO
+END_A011_CLEAN_ROOM_DIRECTIVE_V1
+
+8.2 The complete frozen A011 document is NOT a permitted NEW-author input.
+Sections 0-7 and 9-12 of A011 are recovery-auditor/operator material only and
+must not be supplied to or readable by the NEW author. The only A011 text
+permitted on the author surface is the §8.1 directive artifact, plus the
+external A011 frozen quadruple as non-narrative identity data.
+
+8.3 The following remain specifically excluded from the NEW author surface:
+the original-record attestations; the A010 classification record and record
+index; the first R6 report; R3/R4/R5 audit records or narratives; historical
+Step-4 content; repository history; Candidate/Reference outputs; NEW36;
+OLD36 quantitative content; and golden quantitative content.
+
+8.4 Extraction/identity rule. After A011-R2, A011-R3 extracts the directive
+from the committed frozen A011 bytes by locating exactly one
+BEGIN_A011_CLEAN_ROOM_DIRECTIVE_V1 marker line and exactly one later
+END_A011_CLEAN_ROOM_DIRECTIVE_V1 marker line. The artifact begins with the
+first byte after the LF terminating BEGIN marker and ends with the LF
+terminating the last content line immediately before END marker. No marker
+byte is included. A011-R3 records its exact raw size and SHA256. A011-R4
+independently repeats the extraction and must obtain the identical identity.
+
+8.5 Supply rule. Only after A011-R4 PASS may the verified directive bytes and
+the external A011 frozen quadruple be added to the A010 §8.4 permitted input
+set. No runtime redaction, paraphrase, summary, reconstruction or on-the-fly
+projection of the complete A011 document is permitted.
+
+8.6 The NEW author implements only the operational identity/provenance
+extensions stated by the directive. The directive carries no historical
+reason for A011, no audit result, no terminal-classification content and no
+historical source-record content.
+
+======================================================================
+9. EXECUTION BOUNDARIES
+======================================================================
+
+9.1 A011-R1 through A011-R4:
+  - open no NEW36 ZIP;
+  - access no NEW36, OLD36 or golden quantitative content;
+  - invoke neither Candidate nor Reference;
+  - append no ledger record;
+  - consume no one-shot;
+  - create no Step-4 implementation;
+  - alter no frozen A008/A009/A010 bytes.
+
+9.2 FrozenAnalysisEngine remains NOT_CONFIGURED and accepts_input=false until
+the pre-existing frozen protocol conditions for any later activation are met.
+
+9.3 A011 authoring/audit/freeze work is provenance-only.
+
+
+======================================================================
+10. NORMATIVE CHOICE ACCOUNTING
+======================================================================
+
+10.1 A011 introduces exactly six normative choices, all provenance/execution:
+
+  01 Preserve A010-CR-1 as terminal while using a new amendment as the only
+     continuation mechanism -> §§0.3, 2, 5.
+  02 Admit same-context ORIGINAL-RECORD ATTESTATION only as bounded evidence
+     of fields already present, never as retroactive repair -> §3.
+  03 Define mandatory A011-R1 through A011-R4 sequence -> §4.
+  04 Define A011-R4 as the new post-terminal compatibility gate without
+     changing the historical A010-R6 verdict -> §§4.6-4.7, 5.
+  05 Extend protocol identity/provenance binding to frozen A011 -> §§6-7.
+  06 Extend the future NEW clean-room permitted protocol input set only by
+     the independently verified bounded A011 CLEAN-ROOM DIRECTIVE and the
+     external A011 frozen identity; the complete A011 text and all
+     terminal/audit narratives remain outside the author surface -> §8.
+
+A011_NEW_NORMATIVE_CHOICE_COUNT=6
+A011_NEW_SCIENTIFIC_CHOICE_COUNT=0
+A011_NEW_QUANTITATIVE_CHOICE_COUNT=0
+
+10.2 Established facts, hashes, prior verdicts and preservation flags are
+evidence/restatement and are not additional choices.
+
+
+======================================================================
+11. PRESERVATION FLAGS AND FINAL DRAFT STATUS
+======================================================================
+
+A008_BYTES_CHANGED=NO
+A009_BYTES_CHANGED=NO
+A010_BYTES_CHANGED=NO
+A010_CR_1_CHANGED=NO
+A010_R6_VERDICT_CHANGED=NO
+CANDIDATE_SCIENTIFIC_SEMANTICS_CHANGED=NO
+REFERENCE_CHANGED=NO
+NEW36_SEALING_CHANGED=NO
+ONE_SHOT_BOUNDARY_CHANGED=NO
+S1_SEMANTICS_CHANGED=NO
+S2_INVARIANT_SET_CHANGED=NO
+A20_WITHDRAWAL_CHANGED=NO
+B1_B2_RESOLUTION_CHANGED=NO
+G0_G1_C0_C1_HB_EVIDENCE_SEMANTICS_CHANGED=NO
+
+A011_DRAFT2_AUTHORIZES_A010_R7=NO
+A011_DRAFT2_AUTHORIZES_NEW36_ACCESS=NO
+A011_COMPLETE_TEXT_SUPPLIED_TO_NEW_AUTHOR=NO
+A011_CLEAN_ROOM_DIRECTIVE_REQUIRED=YES
+A011_CLEAN_ROOM_DIRECTIVE_IDENTITY_VERIFIED_BEFORE_SUPPLY=YES_REQUIRED
+
+NEXT_REQUIRED_STEP=A011_R1_FRESH_INDEPENDENT_TEXTUAL_AUDIT
+
+======================================================================
+12. REMEDIATION TRACE — HISTORICAL DRAFT1 TO CURRENT DRAFT2
+======================================================================
+
+12.1 Historical DRAFT1 transport identity:
+
+DRAFT1_TRANSPORT_SIZE_BYTES=19385
+DRAFT1_TRANSPORT_SHA256=083daf4744f03ed8151110e650cad8c90777442e0b6744d6202713ef0223b58d
+DRAFT1_R1_RESULT=FAIL
+DRAFT1_R1_BLOCKER_COUNT=0
+DRAFT1_R1_MAJOR_COUNT=1
+DRAFT1_R1_MINOR_COUNT=0
+
+12.2 A011R1-F1 remediation only. Historical DRAFT1 required the NEW author to
+receive the complete frozen A011 text while simultaneously prohibiting
+terminal/audit narratives that were embedded in that same text. DRAFT2
+remediates only that contradiction by:
+  (a) keeping evidence/provenance narratives in the full frozen A011
+      document for auditors/operators;
+  (b) defining the exact bounded §8.1 CLEAN-ROOM DIRECTIVE as the only A011
+      text artifact deliverable to the NEW author;
+  (c) requiring independent post-freeze extraction, raw identity recording
+      and re-verification before supply;
+  (d) explicitly prohibiting delivery/readability of the complete A011
+      document on the NEW-author surface.
+
+12.3 No historical verdict is changed. No scientific or quantitative rule is
+changed. The six-choice accounting remains six: DRAFT2 refines the
+implementation of choice 06 and introduces no seventh normative choice.
+
+END V1_2_NEW36_VALIDATION_PROTOCOL_V2_AMENDMENT_011_DRAFT2
