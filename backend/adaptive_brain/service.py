@@ -10,6 +10,7 @@ from .adapters.bitget_public import BitgetPublicConfig, BitgetPublicTickerStream
 from .brain import AdaptiveBrain
 from .market_state import MarketState
 from .news import RSSFeed, RSSNewsPoller
+from .news_intelligence import NewsIntelligenceEngine
 from .paper import PaperConfig, PaperPortfolioSimulator
 from .regime import RegimeDetector
 from .schema import MarketTick, Observation, SourceType
@@ -44,6 +45,10 @@ class BrainRuntimeService:
         self.market = MarketState()
         self.regime = RegimeDetector()
         self.paper = PaperPortfolioSimulator(brain.memory, PaperConfig())
+        self.news = NewsIntelligenceEngine(
+            brain.memory,
+            tracked_assets=self.config.market_symbols,
+        )
         self._stop = asyncio.Event()
         self._tasks: list[asyncio.Task] = []
         self._last_market_persist: dict[str, float] = {}
@@ -81,20 +86,41 @@ class BrainRuntimeService:
 
     @staticmethod
     def _rss_feeds_from_env() -> list[RSSFeed]:
+        # Verified official public feeds. These activate only when the global
+        # brain network switch is enabled.
+        feeds: list[RSSFeed] = [
+            RSSFeed(
+                source_id="sec-press-releases",
+                url="https://www.sec.gov/news/pressreleases.rss",
+                topic="regulation",
+                confidence=0.98,
+            ),
+            RSSFeed(
+                source_id="fed-all-press",
+                url="https://www.federalreserve.gov/feeds/press_all.xml",
+                topic="macro",
+                confidence=0.98,
+            ),
+            RSSFeed(
+                source_id="fed-monetary-policy",
+                url="https://www.federalreserve.gov/feeds/press_monetary.xml",
+                topic="fed-policy",
+                confidence=0.99,
+            ),
+        ]
+
         raw = os.environ.get("SUPERBOT_BRAIN_RSS_FEEDS_JSON", "").strip()
-        if not raw:
-            return []
-        data = json.loads(raw)
-        feeds: list[RSSFeed] = []
-        for item in data:
-            feeds.append(
-                RSSFeed(
-                    source_id=str(item["source_id"]),
-                    url=str(item["url"]),
-                    topic=str(item.get("topic", "market-news")),
-                    confidence=float(item.get("confidence", 0.5)),
+        if raw:
+            data = json.loads(raw)
+            for item in data:
+                feeds.append(
+                    RSSFeed(
+                        source_id=str(item["source_id"]),
+                        url=str(item["url"]),
+                        topic=str(item.get("topic", "market-news")),
+                        confidence=float(item.get("confidence", 0.5)),
+                    )
                 )
-            )
         return feeds
 
     async def start(self) -> None:
@@ -123,7 +149,15 @@ class BrainRuntimeService:
         if feeds:
             self._tasks.append(
                 asyncio.create_task(
-                    self._rss_loop(RSSNewsPoller(feeds)),
+                    self._rss_loop(
+                        RSSNewsPoller(
+                            feeds,
+                            user_agent=os.environ.get(
+                                "SUPERBOT_BRAIN_NEWS_USER_AGENT",
+                                "SuperBotResearch/0.3 (+https://github.com/alexiptv82/SuperBot-Research-Console)",
+                            ),
+                        )
+                    ),
                     name="superbot-rss-news",
                 )
             )
@@ -192,7 +226,8 @@ class BrainRuntimeService:
             try:
                 items = await poller.poll()
                 for item in items:
-                    if self.brain.ingest_evidence(item):
+                    result = await self.ingest_news_item(item)
+                    if result["inserted"]:
                         self._rss_inserted += 1
             except asyncio.CancelledError:
                 raise
@@ -206,6 +241,40 @@ class BrainRuntimeService:
             except asyncio.TimeoutError:
                 pass
 
+    async def ingest_news_item(self, item):
+        inserted = self.brain.ingest_evidence(item)
+        assessments = self.news.assess(item) if inserted else []
+        paper_actions = []
+
+        # Automatic action is PAPER-only. Critical negative events may close
+        # open paper positions for the affected tracked asset. No live order
+        # client exists in this runtime.
+        for assessment in assessments:
+            if assessment.asset == "GLOBAL":
+                continue
+            policy = self.news.policy_for(assessment.asset)
+            if policy.force_exit:
+                tick = self.market.get(assessment.asset)
+                if tick is not None:
+                    closed = self.paper.close_symbol_positions(
+                        assessment.asset,
+                        tick,
+                    )
+                    paper_actions.extend(
+                        {
+                            "asset": assessment.asset,
+                            "action": "FORCE_EXIT_PAPER",
+                            "position_id": p["position_id"],
+                        }
+                        for p in closed
+                    )
+
+        return {
+            "inserted": inserted,
+            "assessments": [a.to_dict() for a in assessments],
+            "paper_actions": paper_actions,
+        }
+
     def status(self) -> dict:
         return {
             "network_enabled": self.config.network_enabled,
@@ -215,5 +284,9 @@ class BrainRuntimeService:
             "market_inst_type": self.config.market_inst_type,
             "market": self.market.status(),
             "rss_inserted": self._rss_inserted,
+            "news_policies": {
+                symbol: self.news.policy_for(symbol).to_dict()
+                for symbol in self.config.market_symbols
+            },
             "last_error": self._last_error,
         }

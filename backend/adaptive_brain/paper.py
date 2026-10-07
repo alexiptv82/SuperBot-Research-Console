@@ -127,6 +127,19 @@ class PaperPortfolioSimulator:
             ).fetchone()
         return dict(r) if r else None
 
+    def close_symbol_positions(self, symbol: str, tick: MarketTick) -> list[dict]:
+        with self.memory._connect() as c:
+            rows = c.execute(
+                """SELECT position_id FROM paper_positions
+                   WHERE symbol=? AND status='OPEN'
+                   ORDER BY opened_at""",
+                (symbol.upper(),),
+            ).fetchall()
+        closed = []
+        for row in rows:
+            closed.append(self.close(str(row["position_id"]), tick))
+        return closed
+
     def portfolio(self) -> dict:
         with self.memory._connect() as c:
             rows = c.execute(

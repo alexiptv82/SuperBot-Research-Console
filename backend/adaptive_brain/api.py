@@ -125,24 +125,23 @@ def observe(
 
 
 @router.post("/evidence")
-def evidence(
+async def evidence(
     body: EvidenceBody,
     _: str = Depends(require_brain_auth),
 ) -> dict:
-    inserted = brain.ingest_evidence(
-        EvidenceItem(
-            source_id=body.source_id,
-            source_type=body.source_type,
-            topic=body.topic,
-            title=body.title,
-            body=body.body,
-            url=body.url,
-            published_at=body.published_at,
-            confidence=body.confidence,
-            metadata=body.metadata,
-        )
+    item = EvidenceItem(
+        source_id=body.source_id,
+        source_type=body.source_type,
+        topic=body.topic,
+        title=body.title,
+        body=body.body,
+        url=body.url,
+        published_at=body.published_at,
+        confidence=body.confidence,
+        metadata=body.metadata,
     )
-    return {"accepted": True, "inserted": inserted}
+    result = await runtime.ingest_news_item(item)
+    return {"accepted": True, **result}
 
 
 @router.post("/decide")
@@ -163,7 +162,12 @@ def decide(
         )
         for s in body.signals
     ]
-    context = runtime.regime.snapshot(body.symbol)
+    regime_context = runtime.regime.snapshot(body.symbol)
+    news_policy = runtime.news.policy_for(body.symbol).to_dict()
+    context = {
+        **regime_context,
+        "news_policy": news_policy,
+    }
     return brain.decide(
         body.symbol,
         signals,
@@ -216,6 +220,27 @@ def market(_: str = Depends(require_brain_auth)) -> dict:
 @router.get("/regime/{symbol}")
 def regime(symbol: str, _: str = Depends(require_brain_auth)) -> dict:
     return runtime.regime.snapshot(symbol)
+
+
+@router.get("/news/policy/{symbol}")
+def news_policy(symbol: str, _: str = Depends(require_brain_auth)) -> dict:
+    return runtime.news.policy_for(symbol).to_dict()
+
+
+@router.get("/news/status")
+def news_status(_: str = Depends(require_brain_auth)) -> dict:
+    return {
+        "tracked_assets": list(runtime.news.tracked_assets),
+        "policies": {
+            symbol: runtime.news.policy_for(symbol).to_dict()
+            for symbol in runtime.news.tracked_assets
+        },
+        "official_default_sources": [
+            "SEC press releases RSS",
+            "Federal Reserve all press releases RSS",
+            "Federal Reserve monetary policy RSS",
+        ],
+    }
 
 
 @router.get("/runtime")

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -126,6 +127,22 @@ class BrainMemory:
               filled_at TEXT NOT NULL,
               metadata_json TEXT NOT NULL,
               FOREIGN KEY(position_id) REFERENCES paper_positions(position_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS news_assessments(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              fingerprint TEXT NOT NULL,
+              asset TEXT NOT NULL,
+              sentiment_score REAL NOT NULL,
+              sentiment_label TEXT NOT NULL,
+              event_type TEXT NOT NULL,
+              severity TEXT NOT NULL,
+              volatility_score REAL NOT NULL,
+              horizon_minutes INTEGER NOT NULL,
+              confidence REAL NOT NULL,
+              created_at TEXT NOT NULL,
+              rationale_json TEXT NOT NULL,
+              UNIQUE(fingerprint, asset)
             );
             """)
 
@@ -277,6 +294,50 @@ class BrainMemory:
             n = int(d["signal_count"])
             d["accuracy"] = (float(d["correct_count"]) / n) if n else None
             d["enabled"] = bool(d["enabled"])
+            out.append(d)
+        return out
+
+    def add_news_assessment(self, assessment: dict[str, Any]) -> bool:
+        with self._connect() as c:
+            cur = c.execute(
+                """INSERT OR IGNORE INTO news_assessments(
+                   fingerprint,asset,sentiment_score,sentiment_label,event_type,
+                   severity,volatility_score,horizon_minutes,confidence,created_at,
+                   rationale_json
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    assessment["fingerprint"],
+                    assessment["asset"],
+                    float(assessment["sentiment_score"]),
+                    assessment["sentiment_label"],
+                    assessment["event_type"],
+                    assessment["severity"],
+                    float(assessment["volatility_score"]),
+                    int(assessment["horizon_minutes"]),
+                    float(assessment["confidence"]),
+                    assessment["created_at"],
+                    json.dumps(assessment.get("rationale") or [], sort_keys=True),
+                ),
+            )
+            return cur.rowcount == 1
+
+    def recent_news_assessments(
+        self,
+        asset: str,
+        lookback_minutes: int = 180,
+    ) -> list[dict[str, Any]]:
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=lookback_minutes)
+        with self._connect() as c:
+            rows = c.execute(
+                """SELECT * FROM news_assessments
+                   WHERE (asset=? OR asset='GLOBAL') AND created_at>=?
+                   ORDER BY created_at DESC""",
+                (asset.upper(), cutoff.isoformat()),
+            ).fetchall()
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            d = dict(row)
+            d["rationale"] = json.loads(d.pop("rationale_json") or "[]")
             out.append(d)
         return out
 

@@ -21,9 +21,15 @@ class RSSFeed:
 class RSSNewsPoller:
     """Generic read-only RSS/Atom fetcher for explicitly configured feeds."""
 
-    def __init__(self, feeds: list[RSSFeed], timeout_seconds: float = 15.0):
+    def __init__(
+        self,
+        feeds: list[RSSFeed],
+        timeout_seconds: float = 15.0,
+        user_agent: str = "SuperBotResearch/0.3 (+https://github.com/alexiptv82/SuperBot-Research-Console)",
+    ):
         self.feeds = feeds
         self.timeout_seconds = timeout_seconds
+        self.user_agent = user_agent
 
     @staticmethod
     def _text(node, names: tuple[str, ...]) -> str:
@@ -93,7 +99,11 @@ class RSSNewsPoller:
     async def poll(self) -> list[EvidenceItem]:
         timeout = aiohttp.ClientTimeout(total=self.timeout_seconds)
         out: list[EvidenceItem] = []
-        async with aiohttp.ClientSession(timeout=timeout) as session:
+        headers = {
+            "User-Agent": self.user_agent,
+            "Accept": "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+        }
+        async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
             for feed in self.feeds:
                 async with session.get(feed.url) as response:
                     response.raise_for_status()

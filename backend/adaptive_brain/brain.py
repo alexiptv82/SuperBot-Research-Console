@@ -98,16 +98,43 @@ class AdaptiveBrain:
             rationale.append("INSUFFICIENT_FRESH_EXPERTS")
         else:
             score, normalized_weights = self.ensemble.score(usable)
+
+            news_policy = (context or {}).get("news_policy") or {}
+            if score > 0:
+                score *= float(news_policy.get("long_weight_multiplier", 1.0))
+            elif score < 0:
+                score *= float(news_policy.get("short_weight_multiplier", 1.0))
+            score = max(-1.0, min(1.0, score))
             confidence = abs(score)
-            if abs(score) < self.config.decision_threshold:
+
+            if news_policy.get("pause_new_entries"):
+                action = Action.FLAT
+                confidence = 0.0
+                rationale.append("NEWS_PAUSE_NEW_ENTRIES")
+            elif abs(score) < self.config.decision_threshold:
                 action = Action.FLAT
                 rationale.append("ENSEMBLE_BELOW_DECISION_THRESHOLD")
             else:
                 action = Action.LONG if score > 0 else Action.SHORT
                 rationale.append("ENSEMBLE_DIRECTION_ACCEPTED")
 
+            if news_policy.get("force_exit"):
+                action = Action.FLAT
+                confidence = 0.0
+                rationale.append("NEWS_FORCE_EXIT_CONTEXT")
+
         if context and context.get("regime"):
             rationale.append(f"REGIME={context['regime']}")
+        if context and context.get("news_policy"):
+            np = context["news_policy"]
+            rationale.append(
+                "NEWS_SENTIMENT="
+                + str(round(float(np.get("sentiment_score", 0.0)), 4))
+            )
+            rationale.append(
+                "NEWS_VOLATILITY="
+                + str(round(float(np.get("volatility_score", 0.0)), 4))
+            )
 
         risk_decision = self.risk.assess(action, confidence, score, portfolio)
         if not risk_decision.allowed:
@@ -117,6 +144,17 @@ class AdaptiveBrain:
             rationale.extend(risk_decision.reasons)
         else:
             risk_budget = risk_decision.risk_budget_fraction
+            news_policy = (context or {}).get("news_policy") or {}
+            if risk_budget > 0:
+                size_multiplier = max(
+                    0.0,
+                    min(1.0, float(news_policy.get("size_multiplier", 1.0))),
+                )
+                risk_budget *= size_multiplier
+                if size_multiplier < 1.0:
+                    rationale.append(
+                        f"NEWS_SIZE_MULTIPLIER={round(size_multiplier, 4)}"
+                    )
             rationale.extend(risk_decision.reasons)
 
         snapshot = []
