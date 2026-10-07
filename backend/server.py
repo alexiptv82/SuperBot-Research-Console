@@ -71,6 +71,7 @@ from raw_storage import (
 from reports import to_csv, to_json, to_markdown
 from uploads import DEFAULT_CHUNK_SIZE, MAX_UPLOAD_BYTES, UploadError, UploadManager
 from zip_security import sha256_of_source
+from adaptive_brain.api import router as adaptive_brain_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -87,6 +88,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Adaptive brain is isolated from FrozenAnalysisEngine and is PAPER/RESEARCH-only.
+app.include_router(adaptive_brain_router)
 
 DATA_DIR = Path(os.environ.get("SUPERBOT_DATA_DIR", "/app/backend/data"))
 RAW_DIR = DATA_DIR / "raw_zips"

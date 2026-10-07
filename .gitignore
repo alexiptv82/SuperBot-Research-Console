@@ -139,3 +139,6 @@ SUPERBOT_NEW36_TRANSPORT_04_OF_15.zip
 SUPERBOT_NEW36_TRANSPORT_14_OF_15.zip
 SUPERBOT_NEW36_TRANSPORT_07_OF_15.zip
 SUPERBOT_NEW36_TRANSPORT_10_OF_15.zip
+
+# Adaptive Brain v0 runtime-generated persistent memory (PAPER/RESEARCH only; never part of source history)
+backend/data/adaptive_brain/
