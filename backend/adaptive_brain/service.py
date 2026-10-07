@@ -9,11 +9,15 @@ from dataclasses import dataclass
 from .adapters.bitget_public import BitgetPublicConfig, BitgetPublicTickerStream
 from .advisers import AdviserHub
 from .brain import AdaptiveBrain
+from .builtin_advisers import NewsPolicyAdviser, RegimeMomentumAdviser
 from .market_state import MarketState
 from .news import RSSFeed, RSSNewsPoller
 from .news_intelligence import NewsIntelligenceEngine
 from .paper import PaperConfig, PaperPortfolioSimulator
 from .paper_lifecycle import PaperLifecycleManager
+from .partner_signals import PartnerSignalStore
+from .orchestrator import ContinuousPaperOrchestrator, OrchestratorConfig
+from .remote_advisers import RemoteAdviserConfig, RemoteJSONAdviser
 from .regime import RegimeDetector
 from .schema import MarketTick, Observation, SourceType
 
@@ -52,9 +56,56 @@ class BrainRuntimeService:
             self.paper,
         )
         self.advisers = AdviserHub()
+        self.advisers.register(RegimeMomentumAdviser())
+        self.advisers.register(NewsPolicyAdviser())
+        self.remote_advisers: list[RemoteJSONAdviser] = []
+        self._remote_adviser_config_error: str | None = None
+        self._register_remote_advisers_from_env()
+        self.partners = PartnerSignalStore(brain.memory)
         self.news = NewsIntelligenceEngine(
             brain.memory,
             tracked_assets=self.config.market_symbols,
+        )
+        self.orchestrator = ContinuousPaperOrchestrator(
+            brain=brain,
+            market=self.market,
+            regime=self.regime,
+            news=self.news,
+            advisers=self.advisers,
+            partners=self.partners,
+            paper=self.paper,
+            lifecycle=self.paper_lifecycle,
+            config=OrchestratorConfig(
+                enabled=_env_bool("SUPERBOT_BRAIN_AUTO_PAPER", False),
+                min_cycle_seconds=max(
+                    1.0,
+                    float(os.environ.get(
+                        "SUPERBOT_BRAIN_ORCH_MIN_CYCLE_SECONDS",
+                        "15",
+                    )),
+                ),
+                min_signal_count=max(
+                    2,
+                    int(os.environ.get(
+                        "SUPERBOT_BRAIN_ORCH_MIN_SIGNALS",
+                        "2",
+                    )),
+                ),
+                default_equity=max(
+                    1.0,
+                    float(os.environ.get(
+                        "SUPERBOT_BRAIN_PAPER_EQUITY",
+                        "10000",
+                    )),
+                ),
+                default_stop_distance_bps=max(
+                    5.0,
+                    float(os.environ.get(
+                        "SUPERBOT_BRAIN_PAPER_STOP_BPS",
+                        "100",
+                    )),
+                ),
+            ),
         )
         self._stop = asyncio.Event()
         self._tasks: list[asyncio.Task] = []
@@ -62,6 +113,46 @@ class BrainRuntimeService:
         self._last_error: str | None = None
         self._rss_inserted = 0
         self._last_paper_lifecycle: dict | None = None
+
+    def _register_remote_advisers_from_env(self) -> None:
+        raw = os.environ.get(
+            "SUPERBOT_BRAIN_REMOTE_ADVISERS_JSON",
+            "",
+        ).strip()
+        if not raw:
+            return
+        try:
+            data = json.loads(raw)
+            if not isinstance(data, list):
+                raise ValueError("remote adviser config must be a JSON list")
+            for item in data:
+                config = RemoteAdviserConfig(
+                    adviser_id=str(item["adviser_id"]),
+                    version=str(item.get("version", "1.0")),
+                    url=str(item["url"]),
+                    enabled=bool(item.get("enabled", False)),
+                    api_key_env=(
+                        str(item["api_key_env"])
+                        if item.get("api_key_env")
+                        else None
+                    ),
+                    timeout_seconds=float(
+                        item.get("timeout_seconds", 15.0)
+                    ),
+                    min_interval_seconds=float(
+                        item.get("min_interval_seconds", 60.0)
+                    ),
+                    max_calls_per_hour=int(
+                        item.get("max_calls_per_hour", 60)
+                    ),
+                )
+                adviser = RemoteJSONAdviser(config)
+                self.remote_advisers.append(adviser)
+                self.advisers.register(adviser)
+        except Exception as exc:
+            self._remote_adviser_config_error = (
+                f"{type(exc).__name__}: {exc}"
+            )
 
     @staticmethod
     def _config_from_env() -> RuntimeConfig:
@@ -190,7 +281,8 @@ class BrainRuntimeService:
     async def _on_tick(self, tick: MarketTick) -> None:
         self.market.update(tick)
         self.regime.update(tick)
-        self._last_paper_lifecycle = self.paper_lifecycle.process_tick(tick)
+        orch_result = await self.orchestrator.on_tick(tick)
+        self._last_paper_lifecycle = orch_result.get("lifecycle")
         self.brain.memory.touch_source(
             "bitget-public-ticker",
             SourceType.MARKET.value,
@@ -278,10 +370,17 @@ class BrainRuntimeService:
                         for p in closed
                     )
 
+        learned_outcomes = (
+            self.orchestrator.learn_from_closed_actions(paper_actions)
+            if paper_actions
+            else []
+        )
+
         return {
             "inserted": inserted,
             "assessments": [a.to_dict() for a in assessments],
             "paper_actions": paper_actions,
+            "learned_outcomes": learned_outcomes,
         }
 
     def status(self) -> dict:
@@ -298,6 +397,11 @@ class BrainRuntimeService:
                 for symbol in self.config.market_symbols
             },
             "paper_lifecycle_last": self._last_paper_lifecycle,
-            "advisers_registered": self.advisers.list(),
+            "advisers": self.advisers.status(),
+            "remote_advisers": [
+                adviser.status() for adviser in self.remote_advisers
+            ],
+            "remote_adviser_config_error": self._remote_adviser_config_error,
+            "orchestrator": self.orchestrator.status(),
             "last_error": self._last_error,
         }

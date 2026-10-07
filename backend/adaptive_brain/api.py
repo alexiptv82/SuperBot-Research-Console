@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from auth import verify_session
 
 from .brain import AdaptiveBrain
+from .partner_signals import PartnerSignal
 from .schema import EvidenceItem, ExpertSignal, Observation, PortfolioState, SourceType
 from .service import BrainRuntimeService
 
@@ -98,6 +99,20 @@ class ModelPromotionBody(BaseModel):
     challenger_expert_id: str
     champion_expert_id: str | None = None
     execute: bool = False
+
+
+class PartnerSignalBody(BaseModel):
+    partner_id: str
+    symbol: str
+    direction: float = Field(ge=-1.0, le=1.0)
+    confidence: float = Field(ge=0.0, le=1.0)
+    expected_edge_bps: float = 0.0
+    ttl_seconds: int = Field(default=120, ge=1)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ManualCycleBody(BaseModel):
+    symbol: str
 
 
 @router.on_event("startup")
@@ -307,8 +322,66 @@ def model_promotion(
 
 @router.get("/advisers")
 def advisers(_: str = Depends(require_brain_auth)) -> dict:
-    rows = runtime.advisers.list()
-    return {"count": len(rows), "advisers": rows}
+    status = runtime.advisers.status()
+    return {
+        "count": len(status["registered"]),
+        "advisers": status["registered"],
+        "last_errors": status["last_errors"],
+        "per_adviser_timeout_seconds": status["per_adviser_timeout_seconds"],
+        "remote_advisers": [
+            adviser.status() for adviser in runtime.remote_advisers
+        ],
+        "remote_adviser_config_error": runtime._remote_adviser_config_error,
+    }
+
+
+@router.post("/partner-signal")
+def partner_signal(
+    body: PartnerSignalBody,
+    _: str = Depends(require_brain_auth),
+) -> dict:
+    signal = PartnerSignal(
+        partner_id=body.partner_id,
+        symbol=body.symbol,
+        direction=body.direction,
+        confidence=body.confidence,
+        expected_edge_bps=body.expected_edge_bps,
+        ttl_seconds=body.ttl_seconds,
+        metadata=body.metadata,
+    )
+    return {"accepted": True, "signal": runtime.partners.add(signal)}
+
+
+@router.get("/partner-signals/{symbol}")
+def partner_signals(
+    symbol: str,
+    _: str = Depends(require_brain_auth),
+) -> dict:
+    rows = runtime.partners.fresh_for_symbol(symbol)
+    return {
+        "symbol": symbol.upper(),
+        "count": len(rows),
+        "signals": [row.to_dict() for row in rows],
+    }
+
+
+@router.get("/orchestrator")
+def orchestrator_status(_: str = Depends(require_brain_auth)) -> dict:
+    return runtime.orchestrator.status()
+
+
+@router.post("/orchestrator/cycle")
+async def orchestrator_cycle(
+    body: ManualCycleBody,
+    _: str = Depends(require_brain_auth),
+) -> dict:
+    tick = runtime.market.get(body.symbol)
+    if tick is None:
+        raise HTTPException(
+            status_code=409,
+            detail="no current market tick for symbol",
+        )
+    return await runtime.orchestrator.on_tick(tick)
 
 
 @router.get("/market")

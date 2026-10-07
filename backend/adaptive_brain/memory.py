@@ -180,6 +180,22 @@ class BrainMemory:
               created_at TEXT NOT NULL,
               FOREIGN KEY(position_id) REFERENCES paper_positions(position_id)
             );
+
+            CREATE TABLE IF NOT EXISTS external_signals(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              expert_id TEXT NOT NULL,
+              source_type TEXT NOT NULL,
+              symbol TEXT NOT NULL,
+              direction REAL NOT NULL,
+              confidence REAL NOT NULL,
+              expected_edge_bps REAL NOT NULL,
+              observed_at TEXT NOT NULL,
+              ttl_seconds INTEGER NOT NULL,
+              metadata_json TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_external_signals_symbol_time
+              ON external_signals(symbol, observed_at);
             """)
 
     def add_observation(self, o: Observation) -> None:
@@ -466,6 +482,79 @@ class BrainMemory:
             out.append(d)
         return out
 
+    def add_external_signal(self, signal) -> None:
+        normalized = signal.normalized()
+        with self._connect() as c:
+            c.execute(
+                """INSERT INTO external_signals(
+                   expert_id,source_type,symbol,direction,confidence,
+                   expected_edge_bps,observed_at,ttl_seconds,metadata_json
+                ) VALUES(?,?,?,?,?,?,?,?,?)""",
+                (
+                    normalized.expert_id,
+                    normalized.source_type.value,
+                    normalized.symbol,
+                    float(normalized.direction),
+                    float(normalized.confidence),
+                    float(normalized.expected_edge_bps),
+                    normalized.observed_at,
+                    int(normalized.ttl_seconds),
+                    json.dumps(normalized.metadata, sort_keys=True),
+                ),
+            )
+
+    def fresh_external_signals(
+        self,
+        *,
+        symbol: str,
+        source_type: str | None = None,
+    ) -> list[dict[str, Any]]:
+        now = datetime.now(timezone.utc)
+        with self._connect() as c:
+            if source_type:
+                rows = c.execute(
+                    """SELECT * FROM external_signals
+                       WHERE symbol=? AND source_type=?
+                       ORDER BY id DESC LIMIT 500""",
+                    (symbol.upper(), source_type),
+                ).fetchall()
+            else:
+                rows = c.execute(
+                    """SELECT * FROM external_signals
+                       WHERE symbol=?
+                       ORDER BY id DESC LIMIT 500""",
+                    (symbol.upper(),),
+                ).fetchall()
+
+        out: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for row in rows:
+            d = dict(row)
+            expert_id = str(d["expert_id"])
+            if expert_id in seen:
+                continue
+            try:
+                ts = datetime.fromisoformat(str(d["observed_at"]).replace("Z", "+00:00"))
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+            except ValueError:
+                continue
+            age = (now - ts).total_seconds()
+            if age < 0 or age > int(d["ttl_seconds"]):
+                continue
+            d["metadata"] = json.loads(d.pop("metadata_json") or "{}")
+            out.append(d)
+            seen.add(expert_id)
+        return out
+
+    def has_outcome(self, decision_id: str) -> bool:
+        with self._connect() as c:
+            row = c.execute(
+                "SELECT 1 FROM outcomes WHERE decision_id=? LIMIT 1",
+                (decision_id,),
+            ).fetchone()
+        return row is not None
+
     def metrics(self) -> dict[str, Any]:
         with self._connect() as c:
             r = c.execute(
@@ -483,6 +572,9 @@ class BrainMemory:
             paper_mark_count = int(
                 c.execute("SELECT COUNT(*) n FROM paper_marks").fetchone()["n"]
             )
+            external_signal_count = int(
+                c.execute("SELECT COUNT(*) n FROM external_signals").fetchone()["n"]
+            )
         return {
             "outcome_count": int(r["n"] or 0),
             "avg_pnl_bps": r["avg_pnl_bps"],
@@ -494,4 +586,5 @@ class BrainMemory:
             "source_outcome_count": source_outcome_count,
             "registered_model_count": registered_model_count,
             "paper_mark_count": paper_mark_count,
+            "external_signal_count": external_signal_count,
         }

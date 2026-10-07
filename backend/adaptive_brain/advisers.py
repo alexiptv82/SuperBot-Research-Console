@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Protocol
+from typing import Any, Protocol
 
 from .schema import ExpertSignal, SourceType
 
@@ -24,14 +25,16 @@ class ModelAdviser(Protocol):
 
 
 class AdviserHub:
-    """In-process adviser registry.
+    """Fault-isolated adviser registry.
 
-    v0.4 intentionally ships no vendor-specific LLM client and no secrets.
-    External model adapters can be registered later behind this interface.
+    Advisers run concurrently. One slow/failing adviser must not block the
+    entire decision loop.
     """
 
-    def __init__(self):
+    def __init__(self, per_adviser_timeout_seconds: float = 20.0):
         self._advisers: dict[str, ModelAdviser] = {}
+        self.per_adviser_timeout_seconds = per_adviser_timeout_seconds
+        self._last_errors: dict[str, str] = {}
 
     def register(self, adviser: ModelAdviser) -> None:
         key = f"{adviser.adviser_id}@{adviser.version}"
@@ -40,14 +43,37 @@ class AdviserHub:
     def list(self) -> list[str]:
         return sorted(self._advisers)
 
+    def status(self) -> dict[str, Any]:
+        return {
+            "registered": self.list(),
+            "last_errors": dict(self._last_errors),
+            "per_adviser_timeout_seconds": self.per_adviser_timeout_seconds,
+        }
+
+    async def _one(
+        self,
+        key: str,
+        adviser: ModelAdviser,
+        context: AdviserContext,
+    ) -> ExpertSignal | None:
+        try:
+            signal = await asyncio.wait_for(
+                adviser.advise(context),
+                timeout=self.per_adviser_timeout_seconds,
+            )
+            self._last_errors.pop(key, None)
+            return signal.normalized() if signal is not None else None
+        except Exception as exc:
+            self._last_errors[key] = f"{type(exc).__name__}: {exc}"
+            return None
+
     async def collect(self, context: AdviserContext) -> list[ExpertSignal]:
-        out: list[ExpertSignal] = []
-        for key in sorted(self._advisers):
-            signal = await self._advisers[key].advise(context)
-            if signal is None:
-                continue
-            out.append(signal.normalized())
-        return out
+        keys = sorted(self._advisers)
+        rows = await asyncio.gather(*[
+            self._one(key, self._advisers[key], context)
+            for key in keys
+        ])
+        return [row for row in rows if row is not None]
 
 
 def opinion_to_signal(
