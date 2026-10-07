@@ -1,12 +1,27 @@
 from __future__ import annotations
-import json, os, uuid
+
+import json
+import os
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
+
 from .ensemble import AdaptiveExpertEnsemble, EnsembleConfig
 from .memory import BrainMemory
 from .research_bridge import ResearchBridge
 from .risk import RiskConfig, RiskGovernor
-from .schema import Action, BrainDecision, BrainMode, ExpertSignal, Observation, PortfolioState, SourceType, utcnow_iso
+from .schema import (
+    Action,
+    BrainDecision,
+    BrainMode,
+    EvidenceItem,
+    ExpertSignal,
+    Observation,
+    PortfolioState,
+    SourceType,
+    utcnow_iso,
+)
+
 
 @dataclass(frozen=True)
 class BrainConfig:
@@ -14,65 +29,178 @@ class BrainConfig:
     decision_threshold: float = 0.18
     min_experts: int = 2
 
-class AdaptiveBrain:
-    VERSION="0.1.0"
 
-    def __init__(self,memory:BrainMemory,research_bridge:ResearchBridge,config:BrainConfig|None=None,risk_config:RiskConfig|None=None,ensemble_config:EnsembleConfig|None=None):
-        self.memory=memory; self.research_bridge=research_bridge; self.config=config or BrainConfig()
-        self.risk=RiskGovernor(risk_config); self.ensemble=AdaptiveExpertEnsemble(memory,ensemble_config)
+class AdaptiveBrain:
+    VERSION = "0.2.0"
+
+    def __init__(
+        self,
+        memory: BrainMemory,
+        research_bridge: ResearchBridge,
+        config: BrainConfig | None = None,
+        risk_config: RiskConfig | None = None,
+        ensemble_config: EnsembleConfig | None = None,
+    ):
+        self.memory = memory
+        self.research_bridge = research_bridge
+        self.config = config or BrainConfig()
+        self.risk = RiskGovernor(risk_config)
+        self.ensemble = AdaptiveExpertEnsemble(memory, ensemble_config)
         self.risk.ensure_mode_allowed(self.config.mode)
 
     @classmethod
-    def from_env(cls):
-        backend_root=Path(__file__).resolve().parents[1]
-        data_dir=Path(os.environ.get("SUPERBOT_DATA_DIR",backend_root/"data"))
-        db_path=os.environ.get("SUPERBOT_BRAIN_DB_PATH",str(data_dir/"adaptive_brain"/"brain_memory.db"))
-        mode=BrainMode(os.environ.get("SUPERBOT_BRAIN_MODE","PAPER").upper())
-        return cls(BrainMemory(db_path),ResearchBridge(backend_root),BrainConfig(mode=mode))
+    def from_env(cls) -> "AdaptiveBrain":
+        backend_root = Path(__file__).resolve().parents[1]
+        data_dir = Path(os.environ.get("SUPERBOT_DATA_DIR", backend_root / "data"))
+        db_path = os.environ.get(
+            "SUPERBOT_BRAIN_DB_PATH",
+            str(data_dir / "adaptive_brain" / "brain_memory.db"),
+        )
+        mode = BrainMode(os.environ.get("SUPERBOT_BRAIN_MODE", "PAPER").upper())
+        return cls(
+            memory=BrainMemory(db_path),
+            research_bridge=ResearchBridge(backend_root),
+            config=BrainConfig(mode=mode),
+        )
 
-    def ingest(self,o:Observation):
-        if not 0<=o.confidence<=1: raise ValueError("confidence must be in [0,1]")
-        self.memory.add_observation(o)
+    def ingest(self, observation: Observation) -> None:
+        if not 0.0 <= observation.confidence <= 1.0:
+            raise ValueError("confidence must be in [0,1]")
+        self.memory.add_observation(observation)
 
-    def decide(self,symbol:str,signals:list[ExpertSignal],portfolio:PortfolioState|None=None):
+    def ingest_evidence(self, item: EvidenceItem) -> bool:
+        if not 0.0 <= item.confidence <= 1.0:
+            raise ValueError("evidence confidence must be in [0,1]")
+        return self.memory.add_evidence(item)
+
+    def decide(
+        self,
+        symbol: str,
+        signals: list[ExpertSignal],
+        portfolio: PortfolioState | None = None,
+        context: dict | None = None,
+    ) -> BrainDecision:
         self.risk.ensure_mode_allowed(self.config.mode)
-        symbol=symbol.strip().upper(); portfolio=portfolio or PortfolioState()
-        usable=[s for s in self.ensemble.usable(signals) if s.symbol.upper()==symbol]
-        rationale=[]; nw={}
-        if len(usable)<self.config.min_experts:
-            action=Action.FLAT; score=0.0; confidence=0.0; rationale.append("INSUFFICIENT_FRESH_EXPERTS")
+        symbol = symbol.strip().upper()
+        portfolio = portfolio or PortfolioState()
+
+        usable = [
+            s for s in self.ensemble.usable(signals)
+            if s.symbol.upper() == symbol
+        ]
+        rationale: list[str] = []
+        normalized_weights: dict[str, float] = {}
+
+        if len(usable) < self.config.min_experts:
+            action = Action.FLAT
+            score = 0.0
+            confidence = 0.0
+            rationale.append("INSUFFICIENT_FRESH_EXPERTS")
         else:
-            score,nw=self.ensemble.score(usable); confidence=abs(score)
-            if abs(score)<self.config.decision_threshold:
-                action=Action.FLAT; rationale.append("ENSEMBLE_BELOW_DECISION_THRESHOLD")
+            score, normalized_weights = self.ensemble.score(usable)
+            confidence = abs(score)
+            if abs(score) < self.config.decision_threshold:
+                action = Action.FLAT
+                rationale.append("ENSEMBLE_BELOW_DECISION_THRESHOLD")
             else:
-                action=Action.LONG if score>0 else Action.SHORT; rationale.append("ENSEMBLE_DIRECTION_ACCEPTED")
-        rd=self.risk.assess(action,confidence,score,portfolio)
-        if not rd.allowed:
-            action=Action.FLAT; confidence=0.0; risk_budget=0.0; rationale.extend(rd.reasons)
+                action = Action.LONG if score > 0 else Action.SHORT
+                rationale.append("ENSEMBLE_DIRECTION_ACCEPTED")
+
+        if context and context.get("regime"):
+            rationale.append(f"REGIME={context['regime']}")
+
+        risk_decision = self.risk.assess(action, confidence, score, portfolio)
+        if not risk_decision.allowed:
+            action = Action.FLAT
+            confidence = 0.0
+            risk_budget = 0.0
+            rationale.extend(risk_decision.reasons)
         else:
-            risk_budget=rd.risk_budget_fraction; rationale.extend(rd.reasons)
-        snap=[]
-        for s in usable:
-            d=s.to_dict(); d["ensemble_weight"]=nw.get(s.expert_id,0.0); snap.append(d)
-        d=BrainDecision(str(uuid.uuid4()),utcnow_iso(),symbol,action,confidence,score,risk_budget,self.config.mode,rationale,snap)
-        self.memory.add_decision(d); return d
+            risk_budget = risk_decision.risk_budget_fraction
+            rationale.extend(risk_decision.reasons)
 
-    def record_outcome(self,decision_id:str,market_move_bps:float,pnl_bps:float,max_adverse_excursion_bps=None,metadata=None):
-        d=self.memory.get_decision(decision_id)
-        if d is None: raise KeyError(f"unknown decision_id: {decision_id}")
-        raw=json.loads(d["expert_snapshot_json"])
-        signals=[ExpertSignal(
-            expert_id=s["expert_id"],source_type=SourceType(s["source_type"]),symbol=s["symbol"],
-            direction=float(s["direction"]),confidence=float(s["confidence"]),expected_edge_bps=float(s.get("expected_edge_bps",0.0)),
-            observed_at=s["observed_at"],ttl_seconds=int(s.get("ttl_seconds",120)),metadata=dict(s.get("metadata") or {})
-        ) for s in raw]
-        self.memory.add_outcome(decision_id,market_move_bps,pnl_bps,max_adverse_excursion_bps,metadata)
-        return self.ensemble.learn(signals,market_move_bps)
+        snapshot = []
+        for signal in usable:
+            d = signal.to_dict()
+            d["ensemble_weight"] = normalized_weights.get(signal.expert_id, 0.0)
+            snapshot.append(d)
 
-    def status(self):
-        return {"version":self.VERSION,"mode":self.config.mode.value,"live_execution_enabled":False,
-                "decision_threshold":self.config.decision_threshold,"min_experts":self.config.min_experts,
-                "expert_weights":self.memory.weights(),"learning_metrics":self.memory.metrics(),
-                "research_bridge":self.research_bridge.snapshot(),
-                "safety":{"learner_can_change_risk_limits":False,"learner_can_place_orders":False,"research_console_mutation":False}}
+        decision = BrainDecision(
+            decision_id=str(uuid.uuid4()),
+            created_at=utcnow_iso(),
+            symbol=symbol,
+            action=action,
+            confidence=confidence,
+            raw_score=score,
+            risk_budget_fraction=risk_budget,
+            mode=self.config.mode,
+            rationale=rationale,
+            expert_snapshot=snapshot,
+        )
+        self.memory.add_decision(decision)
+        return decision
+
+    def record_outcome(
+        self,
+        decision_id: str,
+        market_move_bps: float,
+        pnl_bps: float,
+        max_adverse_excursion_bps: float | None = None,
+        metadata: dict | None = None,
+    ) -> dict[str, float]:
+        decision = self.memory.get_decision(decision_id)
+        if decision is None:
+            raise KeyError(f"unknown decision_id: {decision_id}")
+
+        raw_signals = json.loads(decision["expert_snapshot_json"])
+        signals = [
+            ExpertSignal(
+                expert_id=s["expert_id"],
+                source_type=SourceType(s["source_type"]),
+                symbol=s["symbol"],
+                direction=float(s["direction"]),
+                confidence=float(s["confidence"]),
+                expected_edge_bps=float(s.get("expected_edge_bps", 0.0)),
+                observed_at=s["observed_at"],
+                ttl_seconds=int(s.get("ttl_seconds", 120)),
+                metadata=dict(s.get("metadata") or {}),
+            )
+            for s in raw_signals
+        ]
+
+        self.memory.add_outcome(
+            decision_id=decision_id,
+            market_move_bps=market_move_bps,
+            pnl_bps=pnl_bps,
+            max_adverse_excursion_bps=max_adverse_excursion_bps,
+            metadata=metadata,
+        )
+
+        for signal in signals:
+            product = signal.direction * float(market_move_bps)
+            correct = None if product == 0 else product > 0
+            self.memory.touch_source(
+                signal.expert_id,
+                signal.source_type.value,
+                correct=correct,
+            )
+
+        return self.ensemble.learn(signals, market_move_bps)
+
+    def status(self) -> dict:
+        return {
+            "version": self.VERSION,
+            "mode": self.config.mode.value,
+            "live_execution_enabled": False,
+            "decision_threshold": self.config.decision_threshold,
+            "min_experts": self.config.min_experts,
+            "expert_weights": self.memory.weights(),
+            "learning_metrics": self.memory.metrics(),
+            "research_bridge": self.research_bridge.snapshot(),
+            "safety": {
+                "learner_can_change_risk_limits": False,
+                "learner_can_place_orders": False,
+                "research_console_mutation": False,
+                "private_exchange_api_present": False,
+            },
+        }

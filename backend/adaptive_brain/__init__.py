@@ -1,3 +1,4 @@
-"""SuperBot Adaptive Trading Brain v0."""
+"""SuperBot Adaptive Trading Brain."""
 from .brain import AdaptiveBrain, BrainConfig
+
 __all__ = ["AdaptiveBrain", "BrainConfig"]
