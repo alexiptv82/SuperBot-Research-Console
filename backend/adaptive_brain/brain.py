@@ -6,10 +6,14 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
+from .drift import DriftMonitor
 from .ensemble import AdaptiveExpertEnsemble, EnsembleConfig
 from .memory import BrainMemory
+from .model_registry import ModelRegistry
 from .research_bridge import ResearchBridge
 from .risk import RiskConfig, RiskGovernor
+from .source_reputation import SourceReputationEngine
+from .strategy_router import StrategyRouter
 from .schema import (
     Action,
     BrainDecision,
@@ -31,7 +35,7 @@ class BrainConfig:
 
 
 class AdaptiveBrain:
-    VERSION = "0.2.0"
+    VERSION = "0.4.0"
 
     def __init__(
         self,
@@ -46,6 +50,14 @@ class AdaptiveBrain:
         self.config = config or BrainConfig()
         self.risk = RiskGovernor(risk_config)
         self.ensemble = AdaptiveExpertEnsemble(memory, ensemble_config)
+        self.reputation = SourceReputationEngine(memory)
+        self.drift = DriftMonitor(memory)
+        self.router = StrategyRouter(self.reputation, self.drift)
+        self.models = ModelRegistry(
+            memory,
+            reputation=self.reputation,
+            drift=self.drift,
+        )
         self.risk.ensure_mode_allowed(self.config.mode)
 
     @classmethod
@@ -84,12 +96,16 @@ class AdaptiveBrain:
         symbol = symbol.strip().upper()
         portfolio = portfolio or PortfolioState()
 
+        regime = (context or {}).get("regime")
+        routed_signals, routing_audit = self.router.route(signals, regime)
         usable = [
-            s for s in self.ensemble.usable(signals)
+            s for s in self.ensemble.usable(routed_signals)
             if s.symbol.upper() == symbol
         ]
         rationale: list[str] = []
         normalized_weights: dict[str, float] = {}
+        if routing_audit:
+            rationale.append(f"ROUTER_APPLIED={len(routing_audit)}")
 
         if len(usable) < self.config.min_experts:
             action = Action.FLAT
@@ -214,16 +230,56 @@ class AdaptiveBrain:
             metadata=metadata,
         )
 
+        learning_signals: list[ExpertSignal] = []
         for signal in signals:
+            original_confidence = float(
+                signal.metadata.get(
+                    "router_original_confidence",
+                    signal.confidence,
+                )
+            )
+            original_confidence = max(0.0, min(1.0, original_confidence))
+            learning_signal = ExpertSignal(
+                expert_id=signal.expert_id,
+                source_type=signal.source_type,
+                symbol=signal.symbol,
+                direction=signal.direction,
+                confidence=original_confidence,
+                expected_edge_bps=signal.expected_edge_bps,
+                observed_at=signal.observed_at,
+                ttl_seconds=signal.ttl_seconds,
+                metadata=dict(signal.metadata),
+            )
+            learning_signals.append(learning_signal)
+
             product = signal.direction * float(market_move_bps)
             correct = None if product == 0 else product > 0
+            reward = max(
+                -1.0,
+                min(
+                    1.0,
+                    product / self.ensemble.config.reward_scale_bps,
+                ),
+            ) * original_confidence
             self.memory.touch_source(
                 signal.expert_id,
                 signal.source_type.value,
                 correct=correct,
             )
+            self.memory.add_source_outcome(
+                source_id=signal.expert_id,
+                source_type=signal.source_type.value,
+                decision_id=decision_id,
+                correct=correct,
+                reward=reward,
+                pnl_bps=pnl_bps,
+                metadata={
+                    "market_move_bps": float(market_move_bps),
+                    "decision_symbol": decision["symbol"],
+                },
+            )
 
-        return self.ensemble.learn(signals, market_move_bps)
+        return self.ensemble.learn(learning_signals, market_move_bps)
 
     def status(self) -> dict:
         return {
@@ -234,6 +290,9 @@ class AdaptiveBrain:
             "min_experts": self.config.min_experts,
             "expert_weights": self.memory.weights(),
             "learning_metrics": self.memory.metrics(),
+            "source_reputation": self.reputation.all(),
+            "drift": self.drift.all(),
+            "registered_models": self.models.list(),
             "research_bridge": self.research_bridge.snapshot(),
             "safety": {
                 "learner_can_change_risk_limits": False,

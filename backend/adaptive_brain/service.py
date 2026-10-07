@@ -7,11 +7,13 @@ import time
 from dataclasses import dataclass
 
 from .adapters.bitget_public import BitgetPublicConfig, BitgetPublicTickerStream
+from .advisers import AdviserHub
 from .brain import AdaptiveBrain
 from .market_state import MarketState
 from .news import RSSFeed, RSSNewsPoller
 from .news_intelligence import NewsIntelligenceEngine
 from .paper import PaperConfig, PaperPortfolioSimulator
+from .paper_lifecycle import PaperLifecycleManager
 from .regime import RegimeDetector
 from .schema import MarketTick, Observation, SourceType
 
@@ -45,6 +47,11 @@ class BrainRuntimeService:
         self.market = MarketState()
         self.regime = RegimeDetector()
         self.paper = PaperPortfolioSimulator(brain.memory, PaperConfig())
+        self.paper_lifecycle = PaperLifecycleManager(
+            brain.memory,
+            self.paper,
+        )
+        self.advisers = AdviserHub()
         self.news = NewsIntelligenceEngine(
             brain.memory,
             tracked_assets=self.config.market_symbols,
@@ -54,6 +61,7 @@ class BrainRuntimeService:
         self._last_market_persist: dict[str, float] = {}
         self._last_error: str | None = None
         self._rss_inserted = 0
+        self._last_paper_lifecycle: dict | None = None
 
     @staticmethod
     def _config_from_env() -> RuntimeConfig:
@@ -182,6 +190,7 @@ class BrainRuntimeService:
     async def _on_tick(self, tick: MarketTick) -> None:
         self.market.update(tick)
         self.regime.update(tick)
+        self._last_paper_lifecycle = self.paper_lifecycle.process_tick(tick)
         self.brain.memory.touch_source(
             "bitget-public-ticker",
             SourceType.MARKET.value,
@@ -288,5 +297,7 @@ class BrainRuntimeService:
                 symbol: self.news.policy_for(symbol).to_dict()
                 for symbol in self.config.market_symbols
             },
+            "paper_lifecycle_last": self._last_paper_lifecycle,
+            "advisers_registered": self.advisers.list(),
             "last_error": self._last_error,
         }

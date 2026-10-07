@@ -144,6 +144,42 @@ class BrainMemory:
               rationale_json TEXT NOT NULL,
               UNIQUE(fingerprint, asset)
             );
+
+            CREATE TABLE IF NOT EXISTS source_outcomes(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              source_id TEXT NOT NULL,
+              source_type TEXT NOT NULL,
+              decision_id TEXT NOT NULL,
+              realized_at TEXT NOT NULL,
+              correct INTEGER,
+              reward REAL NOT NULL,
+              pnl_bps REAL NOT NULL,
+              metadata_json TEXT NOT NULL,
+              UNIQUE(source_id, decision_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS model_registry(
+              expert_id TEXT PRIMARY KEY,
+              model_id TEXT NOT NULL,
+              version TEXT NOT NULL,
+              role TEXT NOT NULL,
+              enabled INTEGER NOT NULL DEFAULT 1,
+              created_at TEXT NOT NULL,
+              promoted_at TEXT,
+              metadata_json TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS paper_marks(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              position_id TEXT NOT NULL,
+              symbol TEXT NOT NULL,
+              mark_price REAL NOT NULL,
+              unrealized_pnl REAL NOT NULL,
+              r_multiple REAL NOT NULL,
+              held_minutes REAL NOT NULL,
+              created_at TEXT NOT NULL,
+              FOREIGN KEY(position_id) REFERENCES paper_positions(position_id)
+            );
             """)
 
     def add_observation(self, o: Observation) -> None:
@@ -297,6 +333,95 @@ class BrainMemory:
             out.append(d)
         return out
 
+    def add_source_outcome(
+        self,
+        *,
+        source_id: str,
+        source_type: str,
+        decision_id: str,
+        correct: bool | None,
+        reward: float,
+        pnl_bps: float,
+        metadata: dict[str, Any] | None = None,
+    ) -> bool:
+        with self._connect() as c:
+            cur = c.execute(
+                """INSERT OR IGNORE INTO source_outcomes(
+                   source_id,source_type,decision_id,realized_at,correct,reward,
+                   pnl_bps,metadata_json
+                ) VALUES(?,?,?,?,?,?,?,?)""",
+                (
+                    source_id,
+                    source_type,
+                    decision_id,
+                    utcnow_iso(),
+                    None if correct is None else int(correct),
+                    float(reward),
+                    float(pnl_bps),
+                    json.dumps(metadata or {}, sort_keys=True),
+                ),
+            )
+            return cur.rowcount == 1
+
+    def source_outcomes(
+        self,
+        source_id: str,
+        newest_first: bool = False,
+    ) -> list[dict[str, Any]]:
+        order = "DESC" if newest_first else "ASC"
+        with self._connect() as c:
+            rows = c.execute(
+                f"""SELECT * FROM source_outcomes
+                    WHERE source_id=? ORDER BY realized_at {order}, id {order}""",
+                (source_id,),
+            ).fetchall()
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            d = dict(row)
+            if d["correct"] is not None:
+                d["correct"] = bool(d["correct"])
+            d["metadata"] = json.loads(d.pop("metadata_json") or "{}")
+            out.append(d)
+        return out
+
+    def source_outcome_sources(self) -> list[str]:
+        with self._connect() as c:
+            rows = c.execute(
+                "SELECT DISTINCT source_id FROM source_outcomes ORDER BY source_id"
+            ).fetchall()
+        return [str(r["source_id"]) for r in rows]
+
+    def add_paper_mark(self, mark: dict[str, Any]) -> None:
+        with self._connect() as c:
+            c.execute(
+                """INSERT INTO paper_marks(
+                   position_id,symbol,mark_price,unrealized_pnl,r_multiple,
+                   held_minutes,created_at
+                ) VALUES(?,?,?,?,?,?,?)""",
+                (
+                    mark["position_id"],
+                    mark["symbol"],
+                    float(mark["mark_price"]),
+                    float(mark["unrealized_pnl"]),
+                    float(mark["r_multiple"]),
+                    float(mark["held_minutes"]),
+                    mark["created_at"],
+                ),
+            )
+
+    def paper_marks(
+        self,
+        position_id: str,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        with self._connect() as c:
+            rows = c.execute(
+                """SELECT * FROM paper_marks
+                   WHERE position_id=? ORDER BY id DESC LIMIT ?""",
+                (position_id, int(max(1, min(limit, 5000)))),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
     def add_news_assessment(self, assessment: dict[str, Any]) -> bool:
         with self._connect() as c:
             cur = c.execute(
@@ -348,6 +473,16 @@ class BrainMemory:
                    AVG(CASE WHEN pnl_bps>0 THEN 1.0 ELSE 0.0 END) hit_rate,
                    MIN(pnl_bps) worst,MAX(pnl_bps) best FROM outcomes"""
             ).fetchone()
+        with self._connect() as c:
+            source_outcome_count = int(
+                c.execute("SELECT COUNT(*) n FROM source_outcomes").fetchone()["n"]
+            )
+            registered_model_count = int(
+                c.execute("SELECT COUNT(*) n FROM model_registry").fetchone()["n"]
+            )
+            paper_mark_count = int(
+                c.execute("SELECT COUNT(*) n FROM paper_marks").fetchone()["n"]
+            )
         return {
             "outcome_count": int(r["n"] or 0),
             "avg_pnl_bps": r["avg_pnl_bps"],
@@ -356,4 +491,7 @@ class BrainMemory:
             "best_pnl_bps": r["best"],
             "evidence_count": self.evidence_count(),
             "source_count": len(self.list_sources()),
+            "source_outcome_count": source_outcome_count,
+            "registered_model_count": registered_model_count,
+            "paper_mark_count": paper_mark_count,
         }

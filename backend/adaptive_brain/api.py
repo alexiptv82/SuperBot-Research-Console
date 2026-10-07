@@ -87,6 +87,19 @@ class PaperCloseBody(BaseModel):
     position_id: str
 
 
+class ModelRegisterBody(BaseModel):
+    model_id: str
+    version: str
+    role: str = "CHALLENGER"
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ModelPromotionBody(BaseModel):
+    challenger_expert_id: str
+    champion_expert_id: str | None = None
+    execute: bool = False
+
+
 @router.on_event("startup")
 async def _brain_startup() -> None:
     await runtime.start()
@@ -212,6 +225,92 @@ def sources(_: str = Depends(require_brain_auth)) -> dict:
     return {"count": len(rows), "sources": rows}
 
 
+@router.get("/reputation")
+def reputation(_: str = Depends(require_brain_auth)) -> dict:
+    rows = brain.reputation.all()
+    return {"count": len(rows), "sources": rows}
+
+
+@router.get("/reputation/{source_id}")
+def reputation_source(
+    source_id: str,
+    _: str = Depends(require_brain_auth),
+) -> dict:
+    return brain.reputation.assess(source_id).to_dict()
+
+
+@router.get("/drift")
+def drift(_: str = Depends(require_brain_auth)) -> dict:
+    rows = brain.drift.all()
+    return {"count": len(rows), "sources": rows}
+
+
+@router.get("/drift/{source_id}")
+def drift_source(
+    source_id: str,
+    _: str = Depends(require_brain_auth),
+) -> dict:
+    return brain.drift.assess(source_id).to_dict()
+
+
+@router.get("/models")
+def models(_: str = Depends(require_brain_auth)) -> dict:
+    rows = brain.models.list()
+    return {
+        "count": len(rows),
+        "champion": brain.models.current_champion(),
+        "models": rows,
+    }
+
+
+@router.post("/models/register")
+def model_register(
+    body: ModelRegisterBody,
+    _: str = Depends(require_brain_auth),
+) -> dict:
+    try:
+        return brain.models.register(
+            body.model_id,
+            body.version,
+            role=body.role,
+            metadata=body.metadata,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/models/promotion")
+def model_promotion(
+    body: ModelPromotionBody,
+    _: str = Depends(require_brain_auth),
+) -> dict:
+    decision = brain.models.evaluate(
+        body.challenger_expert_id,
+        body.champion_expert_id,
+    )
+    if not body.execute:
+        return {"executed": False, "decision": decision.to_dict()}
+    if not decision.allowed:
+        raise HTTPException(
+            status_code=409,
+            detail={"reasons": decision.reasons},
+        )
+    try:
+        result = brain.models.promote(
+            body.challenger_expert_id,
+            body.champion_expert_id,
+        )
+    except (ValueError, KeyError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"executed": True, **result}
+
+
+@router.get("/advisers")
+def advisers(_: str = Depends(require_brain_auth)) -> dict:
+    rows = runtime.advisers.list()
+    return {"count": len(rows), "advisers": rows}
+
+
 @router.get("/market")
 def market(_: str = Depends(require_brain_auth)) -> dict:
     return runtime.market.status()
@@ -290,3 +389,16 @@ def paper_close(
 @router.get("/paper/portfolio")
 def paper_portfolio(_: str = Depends(require_brain_auth)) -> dict:
     return runtime.paper.portfolio()
+
+
+@router.get("/paper/marks/{position_id}")
+def paper_marks(
+    position_id: str,
+    limit: int = 200,
+    _: str = Depends(require_brain_auth),
+) -> dict:
+    position = runtime.paper.get_position(position_id)
+    if position is None:
+        raise HTTPException(status_code=404, detail="position not found")
+    rows = runtime.paper_lifecycle.marks(position_id, limit=limit)
+    return {"position_id": position_id, "count": len(rows), "marks": rows}

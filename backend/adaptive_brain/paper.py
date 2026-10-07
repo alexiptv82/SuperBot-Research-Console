@@ -88,7 +88,12 @@ class PaperPortfolioSimulator:
             )
         return self.get_position(position_id)
 
-    def close(self, position_id: str, tick: MarketTick) -> dict:
+    def close(
+        self,
+        position_id: str,
+        tick: MarketTick,
+        reason: str = "MANUAL_PAPER_CLOSE",
+    ) -> dict:
         p = self.get_position(position_id)
         if p is None:
             raise KeyError(f"unknown position_id: {position_id}")
@@ -115,7 +120,10 @@ class PaperPortfolioSimulator:
                 "INSERT INTO paper_fills VALUES(?,?,?,?,?,?,?,?)",
                 (
                     fill_id, position_id, "CLOSE", price, qty, close_fee, now,
-                    json.dumps({"paper": True}, sort_keys=True),
+                    json.dumps(
+                        {"paper": True, "reason": reason},
+                        sort_keys=True,
+                    ),
                 ),
             )
         return self.get_position(position_id)
@@ -127,7 +135,28 @@ class PaperPortfolioSimulator:
             ).fetchone()
         return dict(r) if r else None
 
-    def close_symbol_positions(self, symbol: str, tick: MarketTick) -> list[dict]:
+    def list_open_positions(self, symbol: str | None = None) -> list[dict]:
+        with self.memory._connect() as c:
+            if symbol:
+                rows = c.execute(
+                    """SELECT * FROM paper_positions
+                       WHERE symbol=? AND status='OPEN'
+                       ORDER BY opened_at""",
+                    (symbol.upper(),),
+                ).fetchall()
+            else:
+                rows = c.execute(
+                    """SELECT * FROM paper_positions
+                       WHERE status='OPEN' ORDER BY opened_at"""
+                ).fetchall()
+        return [dict(r) for r in rows]
+
+    def close_symbol_positions(
+        self,
+        symbol: str,
+        tick: MarketTick,
+        reason: str = "FORCE_EXIT_PAPER",
+    ) -> list[dict]:
         with self.memory._connect() as c:
             rows = c.execute(
                 """SELECT position_id FROM paper_positions
@@ -137,7 +166,13 @@ class PaperPortfolioSimulator:
             ).fetchall()
         closed = []
         for row in rows:
-            closed.append(self.close(str(row["position_id"]), tick))
+            closed.append(
+                self.close(
+                    str(row["position_id"]),
+                    tick,
+                    reason=reason,
+                )
+            )
         return closed
 
     def portfolio(self) -> dict:
